@@ -155,14 +155,13 @@ function setupChatListeners(): void {
 		if (!data || typeof data !== 'object')
 			return;
 
-		// 安全限制：拒绝通过公共消息总线更新 apiKey
-		if ('apiKey' in data && data.apiKey) {
+		// 安全限制：完全拒绝包含 apiKey 字段的消息
+		if ('apiKey' in data) {
 			publishToIFrame(CHAT_TOPICS.ERROR, {
-				message: '安全限制：API Key 不能通过消息总线更新。请使用扩展配置界面设置。',
+				message: '安全限制：API Key 不能通过消息总线更新。请使用扩展配置入口设置。',
 				code: 'CONFIG_APIKEY_FORBIDDEN',
 			});
-			// 移除 apiKey 字段，继续处理其他配置
-			delete data.apiKey;
+			return; // 直接返回，不处理任何配置
 		}
 
 		// 验证字段类型和长度

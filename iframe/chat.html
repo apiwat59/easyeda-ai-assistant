@@ -510,6 +510,13 @@
         var pendingRequests = {}; // 待处理的请求 {requestId: {sessionId, timestamp}}
         var saveHistoryTimer = null; // 历史保存节流定时器
 
+        // 不触发历史保存的系统错误（避免错误循环）
+        var NON_PERSIST_SYSTEM_ERROR = {
+            HISTORY_SAVE_FAILED: true,
+            CONFIG_SAVE_FAILED: true,
+            CONFIG_APIKEY_FORBIDDEN: true
+        };
+
         var sidebar = document.getElementById('sidebar');
         var messagesContainer = document.getElementById('messages');
         var messageInput = document.getElementById('message-input');
@@ -566,14 +573,16 @@
         function doSaveHistory() {
             if (messages.length === 0) return;
 
-            // 更新当前会话到历史会话列表
-            var lightweight = messages.map(function(msg) {
-                var copy = { role: msg.role, content: msg.content, timestamp: msg.timestamp };
-                if (msg.images && msg.images.length > 0) {
-                    copy.imageCount = msg.images.length;
-                }
-                return copy;
-            });
+            // 更新当前会话到历史会话列表（过滤临时消息）
+            var lightweight = messages
+                .filter(function(msg) { return !msg.transient; }) // 过滤临时消息
+                .map(function(msg) {
+                    var copy = { role: msg.role, content: msg.content, timestamp: msg.timestamp };
+                    if (msg.images && msg.images.length > 0) {
+                        copy.imageCount = msg.images.length;
+                    }
+                    return copy;
+                });
 
             if (!currentSessionId) {
                 currentSessionId = 'session_' + Date.now();
@@ -661,7 +670,8 @@
                     var warningMsg = {
                         role: 'ai',
                         content: '💡 提示：您正在查看历史会话。继续提问将基于新的上下文，不会延续此历史对话。',
-                        timestamp: Date.now()
+                        timestamp: Date.now(),
+                        transient: true // 标记为临时消息，不持久化
                     };
                     messages.push(warningMsg);
                     renderMessages();
@@ -890,11 +900,20 @@
                 delete pendingRequests[data.requestId];
                 isThinking = false;
                 setStatus('ready', '就绪');
+                messages.push({ role: 'ai', content: '错误: ' + (data.message || '未知错误'), timestamp: Date.now() });
+                saveHistory(); // 请求错误可以保存
+                renderMessages();
+                return;
             }
 
-            // 系统错误（无 requestId）或验证通过的请求错误，都要显示给用户
+            // 系统错误（无 requestId）：显示给用户，但不触发历史保存（避免循环）
             messages.push({ role: 'ai', content: '错误: ' + (data.message || '未知错误'), timestamp: Date.now() });
-            saveHistory();
+
+            // 只有非敏感系统错误才触发历史保存
+            if (!NON_PERSIST_SYSTEM_ERROR[data.code]) {
+                saveHistory();
+            }
+
             renderMessages();
         }
 
@@ -1010,28 +1029,28 @@
             var apiKeyInput = document.getElementById('cfg-apikey');
             var newApiKey = apiKeyInput.value.trim();
 
+            // 安全限制：永不通过消息总线发送 apiKey
+            if (newApiKey) {
+                messages.push({
+                    role: 'ai',
+                    content: '⚠️ 出于安全考虑，请使用扩展配置入口设置 API Key。当前聊天界面不支持修改 API Key。',
+                    timestamp: Date.now(),
+                    transient: true
+                });
+                renderMessages();
+                // 不发送 config-update，避免误导用户
+                closeConfigModal();
+                return;
+            }
+
+            // 只发送 apiUrl 和 model，不包含 apiKey
             var config = {
                 provider: 'openai_compatible',
                 apiUrl: document.getElementById('cfg-apiurl').value,
                 model: document.getElementById('cfg-model').value
             };
 
-            // 安全限制：不通过消息总线发送 apiKey
-            // 如果用户输入了新的 apiKey，提示使用主扩展配置入口
-            if (newApiKey && !currentConfig.apiKey?.includes('***')) {
-                // 首次配置 apiKey，允许发送（向后兼容）
-                config.apiKey = newApiKey;
-            } else if (newApiKey && currentConfig.apiKey?.includes('***')) {
-                // 已有配置，不允许通过消息总线更新
-                messages.push({
-                    role: 'ai',
-                    content: '⚠️ 安全提示：API Key 已配置。出于安全考虑，如需修改请使用扩展管理器中的配置入口。',
-                    timestamp: Date.now()
-                });
-                renderMessages();
-            }
-
-            // 通过MessageBus发送给主扩展保存，不使用IFrame的localStorage
+            // 通过MessageBus发送给主扩展保存
             publishMessage('ai-chat/config-update', config);
             closeConfigModal();
         }
