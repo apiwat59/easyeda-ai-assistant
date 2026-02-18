@@ -167,6 +167,11 @@ async function makeRequest(
 			}
 		}
 		catch (error) {
+			// P1: ReviewError应该直接透传，不应该被重试逻辑吞掉
+			if (error instanceof ReviewError) {
+				throw error;
+			}
+
 			lastError = error instanceof Error ? error : new Error(String(error));
 
 			// 判断错误类型
@@ -182,6 +187,15 @@ async function makeRequest(
 				throw new ReviewError(
 					ErrorCode.AI_RATE_LIMIT,
 					'API请求频率超限',
+					lastError,
+				);
+			}
+
+			// P1: 超时错误应该映射到AI_TIMEOUT，而非AI_NETWORK_ERROR
+			if (lastError.message.includes('Request timeout')) {
+				throw new ReviewError(
+					ErrorCode.AI_TIMEOUT,
+					`AI请求超时（>${timeout}秒）`,
 					lastError,
 				);
 			}

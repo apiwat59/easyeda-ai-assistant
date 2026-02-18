@@ -287,7 +287,8 @@
                 const card = document.createElement('div');
                 card.className = `review-card ${currentTab === 'must_fix' ? 'must-fix' : 'suggestion'}`;
 
-                const confidencePercent = Math.round(item.confidence * 100);
+                // P2: 防止confidence非数字导致NaN%
+                const confidencePercent = Math.max(0, Math.min(100, Math.round((Number(item.confidence) || 0) * 100)));
 
                 let evidenceHtml = '';
                 if (item.evidence) {
@@ -394,6 +395,11 @@
 
         // Message Bus Listener
         window.handleReviewUpdate = function(data) {
+            // P2: 验证消息payload结构
+            if (!data || typeof data !== 'object') {
+                console.warn('Invalid message payload:', data);
+                return;
+            }
             console.log('Received review data:', data);
             if (data.status) {
                 if (data.status === 'analyzing') showStatus('AI 正在分析原理图...', 'processing');
@@ -402,8 +408,9 @@
             }
 
             if (data.result) {
-                reviewData.must_fix = data.result.must_fix || [];
-                reviewData.suggestions = data.result.suggestions || [];
+                // P2: 使用Array.isArray验证数组
+                reviewData.must_fix = Array.isArray(data.result.must_fix) ? data.result.must_fix : [];
+                reviewData.suggestions = Array.isArray(data.result.suggestions) ? data.result.suggestions : [];
                 updateBadges();
                 render();
             }
@@ -416,8 +423,9 @@
 
         // Utility
         function escapeHtml(text) {
-            if (!text) return '';
-            return text
+            // P2: 防止非字符串输入导致.replace报错
+            if (text === null || text === undefined) return '';
+            return String(text)
                 .replace(/&/g, "&amp;")
                 .replace(/</g, "&lt;")
                 .replace(/>/g, "&gt;")

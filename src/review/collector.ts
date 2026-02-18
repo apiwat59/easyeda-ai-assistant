@@ -108,9 +108,8 @@ async function collectComponents(): Promise<RawComponent[]> {
  */
 async function collectNetlist(): Promise<string | undefined> {
 	try {
-		// P2: 使用正确的枚举类型，避免 as any 绕过类型系统
-		// ESYS_NetlistType.JLCEDA_PRO 的值为 "JLCEDA"
-		const netlist = await eda.sch_Netlist.getNetlist('JLCEDA');
+		// P2: 使用正确的枚举类型ESYS_NetlistType.JLCEDA_PRO
+		const netlist = await eda.sch_Netlist.getNetlist(ESYS_NetlistType.JLCEDA_PRO);
 		return netlist;
 	}
 	catch {

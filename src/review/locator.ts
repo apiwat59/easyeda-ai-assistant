@@ -42,11 +42,7 @@ async function addVisualMarkers(_request: LocateRequest): Promise<void> {
 	try {
 		// 构建标记数据
 		// P1: 使用正确的IDMT_IndicatorMarkerShape格式
-		const markers: Array<{
-			type: 'point';
-			x: number;
-			y: number;
-		}> = [];
+		const markers: IDMT_IndicatorMarkerShape[] = [];
 
 		// 注意：这里需要获取器件/引脚的坐标
 		// 由于我们在定位时已经选中了对象，这里可以简化处理

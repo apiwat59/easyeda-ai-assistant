@@ -177,20 +177,25 @@ function setupMessageBusListeners(): void {
 	const urlTask = eda.sys_MessageBus.subscribePublic(
 		MESSAGE_TOPICS.OPEN_URL,
 		(data: any) => {
-			if (data.url && typeof data.url === 'string') {
-				// P0: 验证URL协议，仅允许http/https
-				try {
-					const parsed = new URL(data.url);
-					if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-						window.open(data.url, '_blank');
-					}
-					else {
-						console.warn('Blocked non-HTTP URL:', data.url);
-					}
+			// P1: 先验证data是否为对象
+			if (!data || typeof data !== 'object' || typeof data.url !== 'string') {
+				console.warn('Invalid open-url data:', data);
+				return;
+			}
+
+			// P0: 验证URL协议，仅允许http/https
+			try {
+				const parsed = new URL(data.url);
+				if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+					// P1: 添加noopener,noreferrer防止opener通道风险
+					window.open(parsed.toString(), '_blank', 'noopener,noreferrer');
 				}
-				catch {
-					console.warn('Invalid URL:', data.url);
+				else {
+					console.warn('Blocked non-HTTP URL:', data.url);
 				}
+			}
+			catch {
+				console.warn('Invalid URL:', data.url);
 			}
 		},
 	);

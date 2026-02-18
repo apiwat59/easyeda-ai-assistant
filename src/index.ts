@@ -29,7 +29,13 @@ export function about(): void {
  */
 export function aiSchematicReview(): void {
 	runSchematicReview().catch((error) => {
+		const message = error instanceof Error ? error.message : String(error);
 		console.error('Schematic review failed:', error);
+		// P2: 启动阶段异常也需要通知用户
+		eda.sys_Dialog.showInformationMessage(
+			`审查启动失败: ${message}`,
+			eda.sys_I18n.text('Review failed'),
+		);
 	});
 }
 

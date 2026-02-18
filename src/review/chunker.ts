@@ -71,11 +71,14 @@ export function chunkData(
 
 			// P1: 强制执行字节限制
 			const chunkSize = estimateJsonSize(chunk);
+			let shouldResetChunk = true;
+
 			if (chunkSize > cfg.maxBytesPerChunk) {
 				console.warn(`Chunk ${chunks.length} exceeds byte limit: ${chunkSize} > ${cfg.maxBytesPerChunk}`);
 				// 如果单个器件就超过限制，仍然需要添加（否则会死循环）
 				if (currentChunkComponents.length === 1) {
 					console.warn('Single component exceeds byte limit, adding anyway');
+					chunks.push(chunk);
 				}
 				else {
 					// 移除最后一个器件，重新生成分块
@@ -93,16 +96,21 @@ export function chunkData(
 						const lastComponentPins = componentPinsMap.get(lastComponent.primitiveId) || [];
 						currentChunkComponents = [lastComponent];
 						currentChunkPinCount = lastComponentPins.length;
-						continue;
+
+						// 不重置分块，让当前component加入到包含lastComponent的新分块中
+						shouldResetChunk = false;
 					}
 				}
 			}
+			else {
+				chunks.push(chunk);
+			}
 
-			chunks.push(chunk);
-
-			// 重置当前分块
-			currentChunkComponents = [];
-			currentChunkPinCount = 0;
+			// 只有在没有进行字节限制分裂时才重置
+			if (shouldResetChunk) {
+				currentChunkComponents = [];
+				currentChunkPinCount = 0;
+			}
 		}
 
 		// 添加到当前分块
@@ -118,7 +126,32 @@ export function chunkData(
 			chunks.length,
 			-1,
 		);
-		chunks.push(chunk);
+
+		// P1: 最后一块也要执行字节限制检查
+		const chunkSize = estimateJsonSize(chunk);
+		if (chunkSize > cfg.maxBytesPerChunk && currentChunkComponents.length > 1) {
+			const lastComponent = currentChunkComponents.pop();
+			if (lastComponent) {
+				const reducedChunk = buildChunk(
+					data,
+					currentChunkComponents,
+					chunks.length,
+					-1,
+				);
+				chunks.push(reducedChunk);
+
+				const singleChunk = buildChunk(
+					data,
+					[lastComponent],
+					chunks.length,
+					-1,
+				);
+				chunks.push(singleChunk);
+			}
+		}
+		else {
+			chunks.push(chunk);
+		}
 	}
 
 	// 更新所有分块的chunkCount
