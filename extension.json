@@ -57,7 +57,7 @@
 				"menuItems": [
 					{
 						"id": "SchematicReview",
-						"title": "AI Schematic Review...",
+						"title": "AI 原理图助手...",
 						"registerFn": "aiSchematicReview"
 					},
 					{

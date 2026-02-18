@@ -12,7 +12,7 @@
  */
 import * as extensionConfig from '../extension.json';
 import { showConfigDialog } from './review/config';
-import { runSchematicReview } from './review/orchestrator';
+import { startAIChat } from './review/orchestrator';
 
 // eslint-disable-next-line unused-imports/no-unused-vars
 export function activate(status?: 'onStartupFinished', arg?: string): void {}
@@ -25,27 +25,26 @@ export function about(): void {
 }
 
 /**
- * AI原理图审查入口
+ * AI原理图对话助手入口
  */
 export function aiSchematicReview(): void {
-	runSchematicReview().catch((error) => {
+	startAIChat().catch((error) => {
 		const message = error instanceof Error ? error.message : String(error);
-		console.error('Schematic review failed:', error);
-		// 通知用户，但Dialog本身也可能失败，需要二次保护
+		console.error('AI Chat failed:', error);
 		try {
 			eda.sys_Dialog.showInformationMessage(
-				`审查启动失败: ${message}`,
-				eda.sys_I18n.text('Review failed'),
+				`AI助手启动失败: ${message}`,
+				'启动失败',
 			);
 		}
 		catch {
-			// Dialog调用失败时静默降级，错误已在console.error输出
+			// Dialog调用失败时静默降级
 		}
 	});
 }
 
 /**
- * AI审查配置入口
+ * AI配置入口
  */
 export function aiReviewConfig(): void {
 	showConfigDialog();

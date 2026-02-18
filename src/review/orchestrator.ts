@@ -1,305 +1,228 @@
 /**
- * AI原理图审查 - 流程编排器
+ * AI原理图审查 - 对话模式编排器
  *
- * 串联完整审查流程：collect -> serialize -> chunk -> rule -> ai -> merge -> publish
+ * 管理IFrame面板与AI对话的完整生命周期
  */
-import type { ReviewIssue, ReviewResult, StatusMessage } from './types';
-import { reviewChunkWithAI } from './ai-adapter';
-import { chunkData } from './chunker';
+import type { CollectedData, UserMessage } from './types';
+import { ChatSession } from './chat-adapter';
 import { collectSchematicData } from './collector';
-import { loadConfig, validateConfig } from './config';
-import { locateItems } from './locator';
-import { runLocalRules } from './rule-engine';
-import { ErrorCode, IssueSeverity, MESSAGE_TOPICS, ReviewError } from './types';
+import { loadConfig, saveConfig, validateConfig } from './config';
+import { CHAT_TOPICS, ErrorCode, ReviewError } from './types';
 
 /**
- * MessageBus订阅任务引用（用于清理）
+ * 全局对话会话
  */
-let subscriptionTasks: Array<{ cancel: () => void }> = [];
+let chatSession: ChatSession | null = null;
 
 /**
- * 运行原理图审查主流程
+ * 缓存的原理图数据
  */
-export async function runSchematicReview(): Promise<void> {
-	const config = loadConfig();
+let cachedSchematicData: CollectedData | null = null;
 
-	// 打开IFrame面板
+/**
+ * MessageBus订阅引用
+ */
+const subscriptions: Array<{ cancel: () => void }> = [];
+
+/**
+ * 启动AI对话面板
+ */
+export async function startAIChat(): Promise<void> {
+	// 打开IFrame面板（不阻塞，不立即采集数据）
 	try {
-		await eda.sys_IFrame.openIFrame('/iframe/review.html', 900, 680, 'ai-sch-review');
+		await eda.sys_IFrame.openIFrame('/iframe/chat.html', 960, 700, 'ai-sch-chat');
 	}
 	catch {
-		throw new ReviewError(
-			ErrorCode.UI_IFRAME_FAILED,
-			'无法打开审查面板',
-		);
+		throw new ReviewError(ErrorCode.UI_IFRAME_FAILED, '无法打开对话面板');
 	}
 
-	// 设置MessageBus监听（接收IFrame的定位请求）
-	setupMessageBusListeners();
+	// 初始化对话会话
+	chatSession = new ChatSession();
 
+	// 设置MessageBus监听
+	setupChatListeners();
+
+	// 异步采集原理图数据（不阻塞UI）
+	collectDataInBackground();
+}
+
+/**
+ * 后台采集原理图数据
+ */
+async function collectDataInBackground(): Promise<void> {
 	try {
-		// Step 1: 数据采集
-		publishStatus({ status: 'collecting', message: '正在提取原理图数据...', progress: 10 });
-		eda.sys_LoadingAndProgressBar.showProgressBar(5, eda.sys_I18n.text('Collecting schematic data...'));
+		cachedSchematicData = await collectSchematicData();
+		chatSession?.setSchematicContext(cachedSchematicData);
 
-		const collectedData = await collectSchematicData();
-
-		eda.sys_LoadingAndProgressBar.showProgressBar(5, `已采集 ${collectedData.components.length} 个器件，${collectedData.pins.length} 个引脚`);
-
-		// Step 2: 本地规则检查
-		publishStatus({ status: 'collecting', message: '正在执行本地规则检查...', progress: 30 });
-		eda.sys_LoadingAndProgressBar.showProgressBar(5, eda.sys_I18n.text('Running local rule checks...'));
-
-		const localIssues = runLocalRules(collectedData);
-
-		// Step 3: 分块
-		const chunks = chunkData(collectedData, {
-			maxPinsPerChunk: config.maxPinsPerChunk || 1200,
-		});
-
-		// Step 4: AI审查（如果配置了API Key）
-		const aiIssues: ReviewIssue[] = [];
-		const configError = validateConfig(config);
-
-		if (!configError) {
-			publishStatus({ status: 'analyzing', message: '正在发送给AI分析...', progress: 40 });
-			eda.sys_LoadingAndProgressBar.showProgressBar(5, eda.sys_I18n.text('Sending to AI for analysis...'));
-
-			const progressPerChunk = chunks.length > 0 ? 50 / chunks.length : 50;
-
-			for (let i = 0; i < chunks.length; i++) {
-				try {
-					publishStatus({
-						status: 'analyzing',
-						message: `正在AI分析第 ${i + 1}/${chunks.length} 块...`,
-						progress: 40 + progressPerChunk * i,
-					});
-
-					const aiResult = await reviewChunkWithAI(chunks[i], config);
-
-					// 转换AI结果为ReviewIssue
-					for (const item of aiResult.must_fix) {
-						aiIssues.push(convertAIIssue(item, IssueSeverity.MUST_FIX, i));
-					}
-					for (const item of aiResult.suggestions) {
-						aiIssues.push(convertAIIssue(item, IssueSeverity.SUGGESTION, i));
-					}
-				}
-				catch (error) {
-					console.error(`AI审查第 ${i + 1} 块失败:`, error);
-					// AI审查失败不阻塞整个流程，继续处理其他分块
-				}
-			}
-		}
-		else {
-			console.warn(`AI配置未完成: ${configError}，仅使用本地规则`);
-		}
-
-		// Step 5: 合并去重
-		const allIssues = mergeAndDeduplicate(localIssues, aiIssues);
-
-		// Step 6: 构建结果
-		const result: ReviewResult = {
-			must_fix: allIssues.filter(i => i.severity === IssueSeverity.MUST_FIX),
-			suggestions: allIssues.filter(i => i.severity === IssueSeverity.SUGGESTION),
-			metadata: {
-				timestamp: Date.now(),
-				totalComponents: collectedData.components.length,
-				totalPins: collectedData.pins.length,
-				totalNets: collectedData.nets.length,
-				chunksProcessed: chunks.length,
-				aiProvider: configError ? undefined : config.provider,
-				aiModel: configError ? undefined : config.model,
+		// 通知IFrame数据已就绪
+		publishToIFrame(CHAT_TOPICS.SCHEMATIC_DATA, {
+			summary: {
+				components: cachedSchematicData.components.length,
+				pins: cachedSchematicData.pins.length,
+				nets: cachedSchematicData.nets.length,
 			},
-		};
-
-		// Step 7: 发布结果到IFrame
-		publishStatus({ status: 'complete', message: '分析完成', progress: 100 });
-		publishData(result);
-
-		eda.sys_LoadingAndProgressBar.showProgressBar(5, eda.sys_I18n.text('Review complete'));
-		eda.sys_Dialog.showInformationMessage(
-			`审查完成！发现 ${result.must_fix.length} 个必须修复的问题，${result.suggestions.length} 个建议。`,
-			eda.sys_I18n.text('Review complete'),
-		);
+			timestamp: cachedSchematicData.timestamp,
+		});
 	}
 	catch (error) {
-		const message = error instanceof ReviewError ? error.message : String(error);
-		publishStatus({ status: 'error', message });
-		eda.sys_Dialog.showInformationMessage(
-			`审查失败: ${message}`,
-			eda.sys_I18n.text('Review failed'),
-		);
+		console.warn('后台采集数据失败:', error);
+		// 数据采集失败不阻塞对话，用户仍可以上传截图
+		publishToIFrame(CHAT_TOPICS.SCHEMATIC_DATA, {
+			summary: {
+				components: 0,
+				pins: 0,
+				nets: 0,
+			},
+			timestamp: Date.now(),
+		});
 	}
 }
 
 /**
- * 设置MessageBus监听
+ * 设置MessageBus监听器
  */
-function setupMessageBusListeners(): void {
-	// 清理旧的订阅
+function setupChatListeners(): void {
 	cleanupSubscriptions();
 
-	// 监听定位请求
-	const locateTask = eda.sys_MessageBus.subscribePublic(
-		MESSAGE_TOPICS.LOCATE,
-		(data: any) => {
-			// P1: 验证MessageBus数据结构
-			if (!data || typeof data !== 'object') {
-				console.warn('Invalid locate data:', data);
-				return;
-			}
-			locateItems({
-				components: Array.isArray(data.components) ? data.components : [],
-				pins: Array.isArray(data.pins) ? data.pins : [],
-				nets: Array.isArray(data.nets) ? data.nets : [],
+	// 监听IFrame请求原理图数据
+	subscribe(CHAT_TOPICS.REQUEST_DATA, () => {
+		if (cachedSchematicData) {
+			publishToIFrame(CHAT_TOPICS.SCHEMATIC_DATA, {
+				summary: {
+					components: cachedSchematicData.components.length,
+					pins: cachedSchematicData.pins.length,
+					nets: cachedSchematicData.nets.length,
+				},
+				timestamp: cachedSchematicData.timestamp,
 			});
-		},
-	);
-	subscriptionTasks.push(locateTask);
+		}
+	});
+
+	// 监听用户消息
+	subscribe(CHAT_TOPICS.USER_MESSAGE, async (data: any) => {
+		if (!data || typeof data !== 'object')
+			return;
+		await handleUserMessage(data as UserMessage);
+	});
+
+	// 监听定位请求
+	subscribe(CHAT_TOPICS.LOCATE, async (data: any) => {
+		if (!data?.reference)
+			return;
+		await handleLocateRequest(data.reference);
+	});
 
 	// 监听配置更新
-	const configTask = eda.sys_MessageBus.subscribePublic(
-		MESSAGE_TOPICS.CONFIG_UPDATE,
-		async (data: any) => {
-			// P1: 验证配置数据
-			if (!data || typeof data !== 'object') {
-				console.warn('Invalid config data:', data);
-				return;
-			}
-			const { saveConfig } = await import('./config');
-			saveConfig(data);
-		},
-	);
-	subscriptionTasks.push(configTask);
-
-	// 监听URL打开请求
-	const urlTask = eda.sys_MessageBus.subscribePublic(
-		MESSAGE_TOPICS.OPEN_URL,
-		(data: any) => {
-			// P1: 先验证data是否为对象
-			if (!data || typeof data !== 'object' || typeof data.url !== 'string') {
-				console.warn('Invalid open-url data:', data);
-				return;
-			}
-
-			// P0: 验证URL协议，仅允许http/https
-			try {
-				const parsed = new URL(data.url);
-				if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-					// P1: 添加noopener,noreferrer防止opener通道风险
-					window.open(parsed.toString(), '_blank', 'noopener,noreferrer');
-				}
-				else {
-					console.warn('Blocked non-HTTP URL:', data.url);
-				}
-			}
-			catch {
-				console.warn('Invalid URL:', data.url);
-			}
-		},
-	);
-	subscriptionTasks.push(urlTask);
+	subscribe(CHAT_TOPICS.CONFIG_UPDATE, (data: any) => {
+		if (!data || typeof data !== 'object')
+			return;
+		saveConfig(data);
+	});
 }
 
 /**
- * 清理MessageBus订阅
+ * 处理用户消息
+ */
+async function handleUserMessage(msg: UserMessage): Promise<void> {
+	if (!chatSession) {
+		publishToIFrame(CHAT_TOPICS.ERROR, { message: '会话未初始化' });
+		return;
+	}
+
+	const config = loadConfig();
+	const configError = validateConfig(config);
+
+	if (configError) {
+		publishToIFrame(CHAT_TOPICS.ERROR, {
+			message: `请先配置AI: ${configError}`,
+			code: ErrorCode.AI_NO_CONFIG,
+		});
+		return;
+	}
+
+	try {
+		const reply = await chatSession.sendMessage(msg, config);
+
+		publishToIFrame(CHAT_TOPICS.AI_RESPONSE, {
+			content: reply,
+			timestamp: Date.now(),
+		});
+	}
+	catch (error) {
+		const message = error instanceof ReviewError
+			? error.message
+			: `AI请求失败: ${error instanceof Error ? error.message : String(error)}`;
+
+		publishToIFrame(CHAT_TOPICS.ERROR, {
+			message,
+			code: error instanceof ReviewError ? error.code : undefined,
+		});
+	}
+}
+
+/**
+ * 处理定位请求
+ */
+async function handleLocateRequest(reference: string): Promise<void> {
+	try {
+		// 判断是器件位号还是网络名
+		const isComponent = /^[URCLDQJK]\d+$/i.test(reference);
+
+		if (isComponent) {
+			await eda.sch_SelectControl.doCrossProbeSelect(
+				[reference], // components
+				[], // pins
+				[], // nets
+				true, // clearSelection
+				true, // zoomToFit
+			);
+		}
+		else {
+			await eda.sch_SelectControl.doCrossProbeSelect(
+				[],
+				[],
+				[reference],
+				true,
+				true,
+			);
+		}
+	}
+	catch (error) {
+		console.warn('定位失败:', error);
+	}
+}
+
+/**
+ * 发布消息到IFrame
+ */
+function publishToIFrame(topic: string, data: unknown): void {
+	try {
+		eda.sys_MessageBus.publishPublic(topic, data);
+	}
+	catch {
+		console.warn('发布消息失败:', topic);
+	}
+}
+
+/**
+ * 订阅MessageBus
+ */
+function subscribe(topic: string, handler: (data: any) => void | Promise<void>): void {
+	const task = eda.sys_MessageBus.subscribePublic(topic, handler);
+	subscriptions.push(task);
+}
+
+/**
+ * 清理所有订阅
  */
 function cleanupSubscriptions(): void {
-	for (const task of subscriptionTasks) {
+	for (const sub of subscriptions) {
 		try {
-			task.cancel();
+			sub.cancel();
 		}
 		catch {
-			// 忽略清理错误
+			// ignore cleanup errors
 		}
 	}
-	subscriptionTasks = [];
-}
-
-/**
- * 发布状态消息
- */
-function publishStatus(status: StatusMessage): void {
-	try {
-		eda.sys_MessageBus.publishPublic(MESSAGE_TOPICS.STATUS, status);
-	}
-	catch {
-		console.warn('Failed to publish status');
-	}
-}
-
-/**
- * 发布数据消息
- */
-function publishData(result: ReviewResult): void {
-	try {
-		eda.sys_MessageBus.publishPublic(MESSAGE_TOPICS.DATA, {
-			status: 'complete',
-			result,
-		});
-	}
-	catch {
-		console.warn('Failed to publish data');
-	}
-}
-
-/**
- * 转换AI问题为ReviewIssue
- */
-function convertAIIssue(
-	item: any,
-	severity: IssueSeverity,
-	chunkIndex: number,
-): ReviewIssue {
-	return {
-		id: `ai-${severity}-${chunkIndex}-${Math.random().toString(36).substring(2, 8)}`,
-		severity,
-		title: item.title || '未知问题',
-		reason: item.reason || '',
-		impact: item.impact || '',
-		confidence: item.confidence || 0.5,
-		fix: item.fix || '',
-		evidence: {
-			components: item.evidence?.components || [],
-			pins: item.evidence?.pins || [],
-			nets: item.evidence?.nets || [],
-			datasheet_urls: item.evidence?.datasheet_urls || [],
-		},
-		source: 'ai',
-	};
-}
-
-/**
- * 合并去重本地规则和AI结果
- */
-function mergeAndDeduplicate(
-	localIssues: ReviewIssue[],
-	aiIssues: ReviewIssue[],
-): ReviewIssue[] {
-	const merged: ReviewIssue[] = [...localIssues];
-
-	for (const aiIssue of aiIssues) {
-		// 检查是否与本地规则重复（通过比较evidence中的器件/引脚/网络）
-		const isDuplicate = localIssues.some((localIssue) => {
-			const localEvidence = localIssue.evidence;
-			const aiEvidence = aiIssue.evidence;
-
-			// 如果引用了相同的器件和引脚，认为是重复
-			const sameComponents = localEvidence.components?.some(
-				c => aiEvidence.components?.includes(c),
-			);
-			const samePins = localEvidence.pins?.some(
-				p => aiEvidence.pins?.includes(p),
-			);
-
-			return sameComponents && samePins;
-		});
-
-		if (!isDuplicate) {
-			merged.push(aiIssue);
-		}
-	}
-
-	return merged;
+	subscriptions.length = 0;
 }

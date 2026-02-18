@@ -152,45 +152,70 @@ export interface ConfigStore {
 	timeout?: number; // 请求超时（秒），默认120
 }
 
-// ============ 通信协议 ============
+// ============ 对话模式通信协议 ============
 
 /**
- * MessageBus主题
+ * MessageBus主题（对话模式）
  */
-export const MESSAGE_TOPICS = {
-	// 主扩展 -> IFrame
-	DATA: 'ai-review/data',
-	STATUS: 'ai-review/status',
-
+export const CHAT_TOPICS = {
 	// IFrame -> 主扩展
-	LOCATE: 'ai-review/locate',
-	CONFIG_UPDATE: 'ai-review/config-update',
-	OPEN_URL: 'ai-review/open-url',
+	REQUEST_DATA: 'ai-chat/request-data',
+	USER_MESSAGE: 'ai-chat/user-message',
+	LOCATE: 'ai-chat/locate',
+	CONFIG_UPDATE: 'ai-chat/config-update',
+
+	// 主扩展 -> IFrame
+	SCHEMATIC_DATA: 'ai-chat/schematic-data',
+	AI_RESPONSE: 'ai-chat/ai-response',
+	ERROR: 'ai-chat/error',
 } as const;
 
 /**
- * 状态消息
+ * 原理图数据摘要（发送给IFrame）
  */
-export interface StatusMessage {
-	status: 'idle' | 'collecting' | 'analyzing' | 'complete' | 'error';
-	message?: string;
-	progress?: number; // 0-100
+export interface SchematicDataSummary {
+	summary: {
+		components: number;
+		pins: number;
+		nets: number;
+	};
+	timestamp: number;
 }
 
 /**
- * 数据消息
+ * 用户消息（IFrame -> 主扩展）
  */
-export interface DataMessage {
-	result: ReviewResult;
+export interface UserMessage {
+	text: string;
+	images?: Array<{
+		name: string;
+		type: string;
+		data: string; // base64
+	}>;
+	schematicData?: SchematicDataSummary | null;
 }
 
 /**
- * 定位请求
+ * AI响应（主扩展 -> IFrame）
+ */
+export interface AIResponse {
+	content: string;
+	timestamp: number;
+}
+
+/**
+ * 定位请求（IFrame -> 主扩展）
  */
 export interface LocateRequest {
-	components: string[];
-	pins: string[];
-	nets: string[];
+	reference: string; // 器件位号或网络名
+}
+
+/**
+ * 错误消息（主扩展 -> IFrame）
+ */
+export interface ErrorMessage {
+	message: string;
+	code?: string;
 }
 
 // ============ 错误码 ============
