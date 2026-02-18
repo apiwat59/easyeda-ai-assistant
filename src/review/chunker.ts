@@ -69,48 +69,19 @@ export function chunkData(
 				-1, // 暂时不知道总数
 			);
 
-			// P1: 强制执行字节限制
+			// 强制执行字节限制：与尾块使用相同的递归拆分逻辑
 			const chunkSize = estimateJsonSize(chunk);
-			let shouldResetChunk = true;
-
 			if (chunkSize > cfg.maxBytesPerChunk) {
 				console.warn(`Chunk ${chunks.length} exceeds byte limit: ${chunkSize} > ${cfg.maxBytesPerChunk}`);
-				// 如果单个器件就超过限制，仍然需要添加（否则会死循环）
-				if (currentChunkComponents.length === 1) {
-					console.warn('Single component exceeds byte limit, adding anyway');
-					chunks.push(chunk);
-				}
-				else {
-					// 移除最后一个器件，重新生成分块
-					const lastComponent = currentChunkComponents.pop();
-					if (lastComponent) {
-						const reducedChunk = buildChunk(
-							data,
-							currentChunkComponents,
-							chunks.length,
-							-1,
-						);
-						chunks.push(reducedChunk);
-
-						// 将移除的器件作为新分块的起点
-						const lastComponentPins = componentPinsMap.get(lastComponent.primitiveId) || [];
-						currentChunkComponents = [lastComponent];
-						currentChunkPinCount = lastComponentPins.length;
-
-						// 不重置分块，让当前component加入到包含lastComponent的新分块中
-						shouldResetChunk = false;
-					}
-				}
+				splitAndPushChunk(data, [...currentChunkComponents], chunks, cfg);
 			}
 			else {
 				chunks.push(chunk);
 			}
 
-			// 只有在没有进行字节限制分裂时才重置
-			if (shouldResetChunk) {
-				currentChunkComponents = [];
-				currentChunkPinCount = 0;
-			}
+			// 当前块已完成输出，开始累积下一块
+			currentChunkComponents = [];
+			currentChunkPinCount = 0;
 		}
 
 		// 添加到当前分块
