@@ -554,6 +554,15 @@
             }, 500);
         }
 
+        function flushHistory() {
+            // 立即落盘，取消待处理的定时器
+            if (saveHistoryTimer) {
+                clearTimeout(saveHistoryTimer);
+                saveHistoryTimer = null;
+            }
+            doSaveHistory();
+        }
+
         function doSaveHistory() {
             if (messages.length === 0) return;
 
@@ -630,6 +639,11 @@
         }
 
         function loadSession(sessionId) {
+            // 切换前先落盘当前会话，防止丢失
+            if (messages.length > 0) {
+                flushHistory();
+            }
+
             for (var i = 0; i < historySessions.length; i++) {
                 if (historySessions[i].id === sessionId) {
                     currentSessionId = sessionId;
@@ -832,9 +846,16 @@
                 return;
             }
 
-            // 检查会话是否匹配
+            // 检查会话是否匹配（严格校验：pending 和 data 的 sessionId 都要匹配）
             if (pending.sessionId !== currentSessionId) {
                 console.warn('收到旧会话的响应，已丢弃:', data.requestId, pending.sessionId, currentSessionId);
+                delete pendingRequests[data.requestId];
+                return;
+            }
+
+            // 严格校验：响应的 sessionId 必须与请求的 sessionId 一致
+            if (data.sessionId !== pending.sessionId) {
+                console.warn('响应 sessionId 与请求不匹配，丢弃:', data.requestId, data.sessionId, pending.sessionId);
                 delete pendingRequests[data.requestId];
                 return;
             }
@@ -849,28 +870,29 @@
         }
 
         function handleError(data) {
-            if (!isThinking) return; // 防止重复处理
-
-            // 如果有 requestId，验证是否匹配
+            // 如果有 requestId，验证是否匹配（请求相关错误）
             if (data.requestId) {
+                if (!isThinking) return; // 请求相关错误需要在 thinking 状态
+
                 var pending = pendingRequests[data.requestId];
                 if (!pending) {
                     console.warn('收到未知请求的错误:', data.requestId);
                     return;
                 }
 
-                // 检查会话是否匹配
-                if (data.sessionId && pending.sessionId !== currentSessionId) {
-                    console.warn('收到旧会话的错误，已丢弃:', data.requestId);
+                // 严格校验：响应的 sessionId 必须与请求的 sessionId 一致
+                if (data.sessionId !== pending.sessionId) {
+                    console.warn('错误响应 sessionId 与请求不匹配，丢弃:', data.requestId);
                     delete pendingRequests[data.requestId];
                     return;
                 }
 
                 delete pendingRequests[data.requestId];
+                isThinking = false;
+                setStatus('ready', '就绪');
             }
 
-            isThinking = false;
-            setStatus('ready', '就绪');
+            // 系统错误（无 requestId）或验证通过的请求错误，都要显示给用户
             messages.push({ role: 'ai', content: '错误: ' + (data.message || '未知错误'), timestamp: Date.now() });
             saveHistory();
             renderMessages();
@@ -994,15 +1016,20 @@
                 model: document.getElementById('cfg-model').value
             };
 
-            // 只有在用户输入了新的 apiKey 时才发送（不为空）
-            // 如果为空且当前配置已有 apiKey（掩码），则不发送，保持原有配置
-            if (newApiKey) {
+            // 安全限制：不通过消息总线发送 apiKey
+            // 如果用户输入了新的 apiKey，提示使用主扩展配置入口
+            if (newApiKey && !currentConfig.apiKey?.includes('***')) {
+                // 首次配置 apiKey，允许发送（向后兼容）
                 config.apiKey = newApiKey;
-            } else if (!currentConfig.apiKey || !currentConfig.apiKey.includes('***')) {
-                // 如果当前没有配置或不是掩码，则发送空值
-                config.apiKey = '';
+            } else if (newApiKey && currentConfig.apiKey?.includes('***')) {
+                // 已有配置，不允许通过消息总线更新
+                messages.push({
+                    role: 'ai',
+                    content: '⚠️ 安全提示：API Key 已配置。出于安全考虑，如需修改请使用扩展管理器中的配置入口。',
+                    timestamp: Date.now()
+                });
+                renderMessages();
             }
-            // 如果为空且当前是掩码，则不包含 apiKey 字段，后端保持原值
 
             // 通过MessageBus发送给主扩展保存，不使用IFrame的localStorage
             publishMessage('ai-chat/config-update', config);
@@ -1010,9 +1037,9 @@
         }
 
         function newChat() {
-            // 如果当前有消息，先保存
+            // 如果当前有消息，先强制落盘
             if (messages.length > 0) {
-                saveHistory();
+                flushHistory();
             }
             // 创建新会话
             currentSessionId = null;

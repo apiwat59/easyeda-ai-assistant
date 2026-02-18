@@ -155,13 +155,19 @@ function setupChatListeners(): void {
 		if (!data || typeof data !== 'object')
 			return;
 
+		// 安全限制：拒绝通过公共消息总线更新 apiKey
+		if ('apiKey' in data && data.apiKey) {
+			publishToIFrame(CHAT_TOPICS.ERROR, {
+				message: '安全限制：API Key 不能通过消息总线更新。请使用扩展配置界面设置。',
+				code: 'CONFIG_APIKEY_FORBIDDEN',
+			});
+			// 移除 apiKey 字段，继续处理其他配置
+			delete data.apiKey;
+		}
+
 		// 验证字段类型和长度
 		if (data.apiUrl && (typeof data.apiUrl !== 'string' || data.apiUrl.length > 500)) {
 			console.warn('无效的 apiUrl');
-			return;
-		}
-		if (data.apiKey && (typeof data.apiKey !== 'string' || data.apiKey.length > 500)) {
-			console.warn('无效的 apiKey');
 			return;
 		}
 		if (data.model && (typeof data.model !== 'string' || data.model.length > 100)) {
@@ -190,6 +196,7 @@ function setupChatListeners(): void {
 			// 保存失败，发送错误消息
 			publishToIFrame(CHAT_TOPICS.ERROR, {
 				message: `配置保存失败: ${result.error || '未知错误'}`,
+				code: 'CONFIG_SAVE_FAILED',
 			});
 			return;
 		}
@@ -250,6 +257,7 @@ function setupChatListeners(): void {
 			// 保存失败，发送错误消息
 			publishToIFrame(CHAT_TOPICS.ERROR, {
 				message: `历史记录保存失败: ${result.error || '未知错误'}`,
+				code: 'HISTORY_SAVE_FAILED',
 			});
 		}
 	});
