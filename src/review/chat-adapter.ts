@@ -165,10 +165,14 @@ async function makeRequest(
 			handleHttpError(response.status, errorText);
 		}
 
+		// 检查响应头判断是否是 SSE 流式响应
+		const contentType = response.headers.get('content-type') || '';
+		const isSSE = contentType.includes('text/event-stream') || contentType.includes('text/plain');
+
 		const responseText = await response.text();
 
-		// 检测是否是 SSE 流式响应格式
-		if (responseText.startsWith('data:') || responseText.includes('\ndata:')) {
+		// 如果是 SSE 格式或响应文本包含 SSE 标记，使用 SSE 解析
+		if (isSSE || responseText.startsWith('data:') || responseText.includes('\ndata:')) {
 			return parseSSEResponse(responseText);
 		}
 
@@ -177,12 +181,24 @@ async function makeRequest(
 		return extractResponseText(data);
 	}
 	catch (error) {
-		// 捕获外部交互权限错误
-		if (error instanceof Error && error.message.includes('外部交互权限')) {
-			throw new ReviewError(
-				ErrorCode.AI_NETWORK_ERROR,
-				'未启用扩展的外部交互权限。请在扩展管理器中找到本扩展，勾选"允许外部交互"选项。',
-			);
+		// 捕获外部交互权限错误（支持中英文多种表述）
+		if (error instanceof Error) {
+			const msg = error.message.toLowerCase();
+			const permissionKeywords = [
+				'外部交互权限',
+				'外部交互',
+				'external interaction',
+				'permission denied',
+				'access denied',
+				'cors',
+			];
+
+			if (permissionKeywords.some(keyword => msg.includes(keyword.toLowerCase()))) {
+				throw new ReviewError(
+					ErrorCode.AI_NETWORK_ERROR,
+					'未启用扩展的外部交互权限。请在扩展管理器中找到本扩展，勾选"允许外部交互"选项。',
+				);
+			}
 		}
 		throw error;
 	}
@@ -193,29 +209,58 @@ async function makeRequest(
 }
 
 /**
- * 解析 SSE 流式响应
+ * 解析 SSE 流式响应（支持多行 data 事件）
  */
 function parseSSEResponse(text: string): string {
 	const lines = text.split('\n');
 	let fullContent = '';
+	let currentEventData: string[] = [];
 
-	for (const line of lines) {
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i].trim();
+
+		// 空行表示事件结束
+		if (line === '') {
+			if (currentEventData.length > 0) {
+				// 处理当前事件的所有 data 行
+				const eventText = currentEventData.join('\n');
+				try {
+					const chunk = JSON.parse(eventText);
+					const content = chunk.choices?.[0]?.delta?.content || chunk.choices?.[0]?.message?.content || '';
+					fullContent += content;
+				}
+				catch {
+					// 忽略无法解析的事件
+				}
+				currentEventData = [];
+			}
+			continue;
+		}
+
+		// 处理 data: 行
 		if (line.startsWith('data:')) {
-			const jsonStr = line.substring(5).trim();
+			const dataContent = line.substring(5).trim();
 
 			// 跳过 [DONE] 标记
-			if (jsonStr === '[DONE]') {
+			if (dataContent === '[DONE]') {
 				continue;
 			}
 
-			try {
-				const chunk = JSON.parse(jsonStr);
-				const content = chunk.choices?.[0]?.delta?.content || chunk.choices?.[0]?.message?.content || '';
-				fullContent += content;
-			}
-			catch {
-				// 忽略无法解析的行
-			}
+			// 累积多行 data
+			currentEventData.push(dataContent);
+		}
+	}
+
+	// 处理最后一个事件（如果没有以空行结尾）
+	if (currentEventData.length > 0) {
+		const eventText = currentEventData.join('\n');
+		try {
+			const chunk = JSON.parse(eventText);
+			const content = chunk.choices?.[0]?.delta?.content || chunk.choices?.[0]?.message?.content || '';
+			fullContent += content;
+		}
+		catch {
+			// 忽略无法解析的事件
 		}
 	}
 

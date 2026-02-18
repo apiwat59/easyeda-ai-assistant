@@ -198,6 +198,8 @@ export interface UserMessage {
 		data: string; // base64
 	}>;
 	schematicData?: SchematicDataSummary | null;
+	requestId: string; // 请求唯一标识，用于匹配响应
+	sessionId: string; // 会话标识，防止串线
 }
 
 /**
@@ -206,6 +208,8 @@ export interface UserMessage {
 export interface AIResponse {
 	content: string;
 	timestamp: number;
+	requestId: string; // 回传请求ID
+	sessionId: string; // 回传会话ID
 }
 
 /**
@@ -221,6 +225,8 @@ export interface LocateRequest {
 export interface ErrorMessage {
 	message: string;
 	code?: string;
+	requestId?: string; // 回传请求ID（如果有）
+	sessionId?: string; // 回传会话ID（如果有）
 }
 
 // ============ 错误码 ============

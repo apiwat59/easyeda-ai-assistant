@@ -507,6 +507,8 @@
         var currentConfig = {};
         var historySessions = []; // 历史会话列表
         var currentSessionId = null; // 当前会话ID
+        var pendingRequests = {}; // 待处理的请求 {requestId: {sessionId, timestamp}}
+        var saveHistoryTimer = null; // 历史保存节流定时器
 
         var sidebar = document.getElementById('sidebar');
         var messagesContainer = document.getElementById('messages');
@@ -520,6 +522,15 @@
         var configModal = document.getElementById('config-modal');
         var historyList = document.getElementById('history-list');
 
+        // 生成 UUID
+        function generateUUID() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                var r = Math.random() * 16 | 0;
+                var v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
         init();
 
         function init() {
@@ -532,6 +543,18 @@
         }
 
         function saveHistory() {
+            // 使用节流机制，避免频繁保存（最多每500ms保存一次）
+            if (saveHistoryTimer) {
+                clearTimeout(saveHistoryTimer);
+            }
+
+            saveHistoryTimer = setTimeout(function() {
+                saveHistoryTimer = null;
+                doSaveHistory();
+            }, 500);
+        }
+
+        function doSaveHistory() {
             if (messages.length === 0) return;
 
             // 更新当前会话到历史会话列表
@@ -611,10 +634,23 @@
                 if (historySessions[i].id === sessionId) {
                     currentSessionId = sessionId;
                     messages = historySessions[i].messages.slice();
+                    isThinking = false;
+                    setStatus('ready', '就绪');
+                    // 清空待处理请求，防止旧会话响应串线
+                    pendingRequests = {};
                     renderMessages();
                     renderHistoryList();
                     // 通知后端清空会话，因为后端不存储历史
                     publishMessage('ai-chat/clear-session', {});
+
+                    // 显示提示：历史会话是只读的，继续提问将开启新上下文
+                    var warningMsg = {
+                        role: 'ai',
+                        content: '💡 提示：您正在查看历史会话。继续提问将基于新的上下文，不会延续此历史对话。',
+                        timestamp: Date.now()
+                    };
+                    messages.push(warningMsg);
+                    renderMessages();
                     return;
                 }
             }
@@ -669,7 +705,15 @@
             // 如果配置弹窗正在打开，立即回填
             if (configModal.classList.contains('active')) {
                 document.getElementById('cfg-apiurl').value = data.apiUrl || 'https://api.openai.com/v1/chat/completions';
-                document.getElementById('cfg-apikey').value = data.apiKey || '';
+                // 如果 apiKey 是掩码，显示占位符
+                var apiKeyInput = document.getElementById('cfg-apikey');
+                if (data.apiKey && data.apiKey.includes('***')) {
+                    apiKeyInput.value = '';
+                    apiKeyInput.placeholder = data.apiKey; // 显示 "***已配置***"
+                } else {
+                    apiKeyInput.value = data.apiKey || '';
+                    apiKeyInput.placeholder = '输入你的 API Key';
+                }
                 document.getElementById('cfg-model').value = data.model || 'gpt-4o';
             }
         }
@@ -705,13 +749,27 @@
             attachedFiles.forEach(function(file, index) {
                 var preview = document.createElement('div');
                 preview.className = 'file-preview';
-                preview.innerHTML =
-                    '<img src="' + file.data + '" alt="' + file.name + '">' +
-                    '<button class="file-preview-remove" data-index="' + index + '">&times;</button>';
-                preview.querySelector('.file-preview-remove').addEventListener('click', function() {
+
+                // 安全地创建图片元素，防止 XSS
+                var img = document.createElement('img');
+                // 白名单校验：仅允许 data:image 格式
+                if (file.data && file.data.startsWith('data:image/')) {
+                    img.src = file.data;
+                }
+                img.alt = file.name || '';
+
+                var btn = document.createElement('button');
+                btn.className = 'file-preview-remove';
+                btn.setAttribute('data-index', index);
+                btn.textContent = '×';
+
+                btn.addEventListener('click', function() {
                     attachedFiles.splice(index, 1);
                     renderFilePreviews();
                 });
+
+                preview.appendChild(img);
+                preview.appendChild(btn);
                 filePreviews.appendChild(preview);
             });
         }
@@ -720,6 +778,14 @@
             var text = messageInput.value.trim();
             if (!text && attachedFiles.length === 0) return;
             if (isThinking) return;
+
+            // 确保有会话ID
+            if (!currentSessionId) {
+                currentSessionId = 'session_' + Date.now();
+            }
+
+            // 生成请求ID
+            var requestId = generateUUID();
 
             var userMsg = { role: 'user', content: text, images: attachedFiles.slice(), timestamp: Date.now() };
             messages.push(userMsg);
@@ -733,13 +799,50 @@
 
             setStatus('thinking', 'AI 正在思考...');
             isThinking = true;
-            publishMessage('ai-chat/user-message', { text: text, images: userMsg.images, schematicData: schematicData });
+
+            // 记录待处理请求
+            pendingRequests[requestId] = {
+                sessionId: currentSessionId,
+                timestamp: Date.now()
+            };
+
+            // 发送消息，包含 requestId 和 sessionId
+            publishMessage('ai-chat/user-message', {
+                text: text,
+                images: userMsg.images,
+                schematicData: schematicData,
+                requestId: requestId,
+                sessionId: currentSessionId
+            });
         }
 
         function handleAIResponse(data) {
+            if (!data || !data.content) return;
+
+            // 验证 requestId 和 sessionId
+            if (!data.requestId || !data.sessionId) {
+                console.warn('收到无效的 AI 响应（缺少 requestId 或 sessionId）');
+                return;
+            }
+
+            // 检查是否是待处理的请求
+            var pending = pendingRequests[data.requestId];
+            if (!pending) {
+                console.warn('收到未知请求的响应:', data.requestId);
+                return;
+            }
+
+            // 检查会话是否匹配
+            if (pending.sessionId !== currentSessionId) {
+                console.warn('收到旧会话的响应，已丢弃:', data.requestId, pending.sessionId, currentSessionId);
+                delete pendingRequests[data.requestId];
+                return;
+            }
+
+            // 验证通过，处理响应
+            delete pendingRequests[data.requestId];
             isThinking = false;
             setStatus('ready', '就绪');
-            if (!data || !data.content) return;
             messages.push({ role: 'ai', content: data.content, timestamp: Date.now() });
             saveHistory();
             renderMessages();
@@ -747,6 +850,25 @@
 
         function handleError(data) {
             if (!isThinking) return; // 防止重复处理
+
+            // 如果有 requestId，验证是否匹配
+            if (data.requestId) {
+                var pending = pendingRequests[data.requestId];
+                if (!pending) {
+                    console.warn('收到未知请求的错误:', data.requestId);
+                    return;
+                }
+
+                // 检查会话是否匹配
+                if (data.sessionId && pending.sessionId !== currentSessionId) {
+                    console.warn('收到旧会话的错误，已丢弃:', data.requestId);
+                    delete pendingRequests[data.requestId];
+                    return;
+                }
+
+                delete pendingRequests[data.requestId];
+            }
+
             isThinking = false;
             setStatus('ready', '就绪');
             messages.push({ role: 'ai', content: '错误: ' + (data.message || '未知错误'), timestamp: Date.now() });
@@ -783,19 +905,42 @@
             html = parseMarkdown(html);
             html = highlightReferences(html);
 
-            var imgHtml = '';
+            // 安全地构建 DOM 元素，防止 XSS
+            var avatarDiv = document.createElement('div');
+            avatarDiv.className = 'message-avatar';
+            avatarDiv.textContent = avatar;
+
+            var contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            contentDiv.innerHTML = html; // html 已经过 escapeHtml 处理
+
+            // 安全地添加图片
             if (msg.images && msg.images.length > 0) {
-                imgHtml = '<div class="message-images">' +
-                    msg.images.map(function(img) { return '<img src="' + img.data + '" class="message-image" alt="' + img.name + '">'; }).join('') +
-                    '</div>';
+                var imagesDiv = document.createElement('div');
+                imagesDiv.className = 'message-images';
+                msg.images.forEach(function(img) {
+                    var imgEl = document.createElement('img');
+                    imgEl.className = 'message-image';
+                    // 白名单校验：仅允许 data:image 格式
+                    if (img.data && img.data.startsWith('data:image/')) {
+                        imgEl.src = img.data;
+                    }
+                    imgEl.alt = img.name || '';
+                    imagesDiv.appendChild(imgEl);
+                });
+                contentDiv.appendChild(imagesDiv);
             } else if (msg.imageCount && msg.imageCount > 0) {
                 // 历史记录中的图片已被移除，显示占位符
-                imgHtml = '<div class="message-images" style="color: var(--text-secondary); font-style: italic;">[' + msg.imageCount + ' 张图片]</div>';
+                var placeholderDiv = document.createElement('div');
+                placeholderDiv.className = 'message-images';
+                placeholderDiv.style.color = 'var(--text-secondary)';
+                placeholderDiv.style.fontStyle = 'italic';
+                placeholderDiv.textContent = '[' + msg.imageCount + ' 张图片]';
+                contentDiv.appendChild(placeholderDiv);
             }
 
-            el.innerHTML =
-                '<div class="message-avatar">' + avatar + '</div>' +
-                '<div class="message-content">' + html + imgHtml + '</div>';
+            el.appendChild(avatarDiv);
+            el.appendChild(contentDiv);
 
             el.querySelectorAll('.ref-tag').forEach(function(tag) {
                 tag.addEventListener('click', function() { locateReference(tag.dataset.ref); });
@@ -825,22 +970,42 @@
             publishMessage('ai-chat/request-config', {});
             // 填入当前缓存的配置
             document.getElementById('cfg-apiurl').value = currentConfig.apiUrl || 'https://api.openai.com/v1/chat/completions';
-            document.getElementById('cfg-apikey').value = currentConfig.apiKey || '';
+            // 如果 apiKey 是掩码，显示占位符
+            var apiKeyInput = document.getElementById('cfg-apikey');
+            if (currentConfig.apiKey && currentConfig.apiKey.includes('***')) {
+                apiKeyInput.value = '';
+                apiKeyInput.placeholder = currentConfig.apiKey; // 显示 "***已配置***"
+            } else {
+                apiKeyInput.value = currentConfig.apiKey || '';
+                apiKeyInput.placeholder = '输入你的 API Key';
+            }
             document.getElementById('cfg-model').value = currentConfig.model || 'gpt-4o';
         }
 
         function closeConfigModal() { configModal.classList.remove('active'); }
 
         function saveConfig() {
+            var apiKeyInput = document.getElementById('cfg-apikey');
+            var newApiKey = apiKeyInput.value.trim();
+
             var config = {
                 provider: 'openai_compatible',
                 apiUrl: document.getElementById('cfg-apiurl').value,
-                apiKey: document.getElementById('cfg-apikey').value,
                 model: document.getElementById('cfg-model').value
             };
+
+            // 只有在用户输入了新的 apiKey 时才发送（不为空）
+            // 如果为空且当前配置已有 apiKey（掩码），则不发送，保持原有配置
+            if (newApiKey) {
+                config.apiKey = newApiKey;
+            } else if (!currentConfig.apiKey || !currentConfig.apiKey.includes('***')) {
+                // 如果当前没有配置或不是掩码，则发送空值
+                config.apiKey = '';
+            }
+            // 如果为空且当前是掩码，则不包含 apiKey 字段，后端保持原值
+
             // 通过MessageBus发送给主扩展保存，不使用IFrame的localStorage
             publishMessage('ai-chat/config-update', config);
-            currentConfig = config;
             closeConfigModal();
         }
 
@@ -854,6 +1019,8 @@
             messages = [];
             isThinking = false;
             setStatus('ready', '就绪');
+            // 清空待处理请求，防止旧会话响应串线
+            pendingRequests = {};
             // 通知后端清空对话会话
             publishMessage('ai-chat/clear-session', {});
             messagesContainer.innerHTML =

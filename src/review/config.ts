@@ -43,16 +43,22 @@ export function loadConfig(): ConfigStore {
 /**
  * 保存配置到 eda.sys_Storage
  */
-export async function saveConfig(config: Partial<ConfigStore>): Promise<ConfigStore> {
+export async function saveConfig(config: Partial<ConfigStore>): Promise<{ success: boolean; config: ConfigStore; error?: string }> {
 	const current = loadConfig();
 	const merged: ConfigStore = { ...current, ...config };
 	try {
-		await eda.sys_Storage.setExtensionUserConfig(CONFIG_KEY, merged);
+		const success = await eda.sys_Storage.setExtensionUserConfig(CONFIG_KEY, merged);
+		if (!success) {
+			return { success: false, config: current, error: '存储写入失败' };
+		}
+		// 返回实际保存的配置（从存储中重新读取）
+		const saved = loadConfig();
+		return { success: true, config: saved };
 	}
 	catch (e) {
 		console.warn('保存配置失败:', e);
+		return { success: false, config: current, error: e instanceof Error ? e.message : String(e) };
 	}
-	return merged;
 }
 
 /**
@@ -91,12 +97,17 @@ export function loadChatHistory(): unknown[] {
 /**
  * 保存对话历史记录
  */
-export async function saveChatHistory(messages: unknown[]): Promise<void> {
+export async function saveChatHistory(messages: unknown[]): Promise<{ success: boolean; error?: string }> {
 	try {
-		await eda.sys_Storage.setExtensionUserConfig(HISTORY_KEY, messages);
+		const success = await eda.sys_Storage.setExtensionUserConfig(HISTORY_KEY, messages);
+		if (!success) {
+			return { success: false, error: '存储写入失败' };
+		}
+		return { success: true };
 	}
 	catch (e) {
 		console.warn('保存历史记录失败:', e);
+		return { success: false, error: e instanceof Error ? e.message : String(e) };
 	}
 }
 

@@ -13,6 +13,14 @@ async function promiseAllWithLimit<T>(
 	tasks: Array<() => Promise<T>>,
 	limit: number,
 ): Promise<T[]> {
+	// 参数守卫
+	if (limit < 1) {
+		throw new Error('promiseAllWithLimit: limit must be >= 1');
+	}
+	if (tasks.length === 0) {
+		return [];
+	}
+
 	const results: T[] = Array.from({ length: tasks.length });
 	let index = 0;
 
@@ -81,11 +89,23 @@ export async function collectSchematicData(): Promise<CollectedData> {
 async function collectComponents(): Promise<RawComponent[]> {
 	const primitives = await eda.sch_PrimitiveComponent.getAll(undefined, true);
 
-	// 使用并发控制，限制同时处理50个器件
-	const componentTasks = primitives.map(primitive => async () => {
-		// 将所有API调用都并行化，包括componentType
+	// 第一阶段：仅获取 componentType 进行过滤（减少不必要的 API 调用）
+	const filterTasks = primitives.map(primitive => async () => ({
+		primitive,
+		componentType: await primitive.getState_ComponentType(),
+	}));
+
+	const filtered = await promiseAllWithLimit(filterTasks, 50);
+
+	// 过滤掉网络标记类器件（NET_FLAG/NET_PORT）
+	const validPrimitives = filtered.filter(
+		item => item.componentType !== 'netflag' && item.componentType !== 'netport',
+	);
+
+	// 第二阶段：仅对有效器件获取详细信息
+	const componentTasks = validPrimitives.map(({ primitive }) => async () => {
+		// 并行获取所有基本字段
 		const [
-			componentType,
 			primitiveId,
 			designator,
 			name,
@@ -93,7 +113,6 @@ async function collectComponents(): Promise<RawComponent[]> {
 			y,
 			rotation,
 		] = await Promise.all([
-			primitive.getState_ComponentType(),
 			primitive.getState_PrimitiveId(),
 			primitive.getState_Designator(),
 			primitive.getState_Name(),
@@ -101,11 +120,6 @@ async function collectComponents(): Promise<RawComponent[]> {
 			primitive.getState_Y(),
 			primitive.getState_Rotation(),
 		]);
-
-		// 过滤掉网络标记类器件（NET_FLAG/NET_PORT）
-		if (componentType === 'netflag' || componentType === 'netport') {
-			return null;
-		}
 
 		// 并行获取制造商信息（可能不存在）
 		let manufacturer = '';
@@ -131,13 +145,12 @@ async function collectComponents(): Promise<RawComponent[]> {
 			x,
 			y,
 			rotation: rotation || 0,
-			schematicPageUuid: undefined as string | undefined, // 需要从其他API获取
+			schematicPageUuid: undefined, // 需要从其他API获取
 		};
 	});
 
 	const results = await promiseAllWithLimit(componentTasks, 20);
-	// 过滤掉null值（网络标记类器件）
-	return results.filter((c): c is RawComponent => c !== null);
+	return results;
 }
 
 /**

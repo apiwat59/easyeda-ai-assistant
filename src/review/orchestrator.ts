@@ -122,9 +122,10 @@ function setupChatListeners(): void {
 	// 监听IFrame请求配置数据
 	subscribe(CHAT_TOPICS.REQUEST_CONFIG, () => {
 		const config = loadConfig();
+		// 安全考虑：不发送 apiKey 到 IFrame，仅发送配置状态
 		publishToIFrame(CHAT_TOPICS.CONFIG_DATA, {
 			apiUrl: config.apiUrl,
-			apiKey: config.apiKey,
+			apiKey: config.apiKey ? '***已配置***' : '', // 仅显示状态，不发送实际值
 			model: config.model,
 		});
 	});
@@ -153,12 +154,51 @@ function setupChatListeners(): void {
 	subscribe(CHAT_TOPICS.CONFIG_UPDATE, async (data: any) => {
 		if (!data || typeof data !== 'object')
 			return;
-		await saveConfig(data);
-		// 保存成功后回传确认
+
+		// 验证字段类型和长度
+		if (data.apiUrl && (typeof data.apiUrl !== 'string' || data.apiUrl.length > 500)) {
+			console.warn('无效的 apiUrl');
+			return;
+		}
+		if (data.apiKey && (typeof data.apiKey !== 'string' || data.apiKey.length > 500)) {
+			console.warn('无效的 apiKey');
+			return;
+		}
+		if (data.model && (typeof data.model !== 'string' || data.model.length > 100)) {
+			console.warn('无效的 model');
+			return;
+		}
+
+		// 验证 URL 格式
+		if (data.apiUrl) {
+			try {
+				const url = new URL(data.apiUrl);
+				if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+					console.warn('apiUrl 必须是 http 或 https 协议');
+					return;
+				}
+			}
+			catch {
+				console.warn('apiUrl 格式无效');
+				return;
+			}
+		}
+
+		const result = await saveConfig(data);
+
+		if (!result.success) {
+			// 保存失败，发送错误消息
+			publishToIFrame(CHAT_TOPICS.ERROR, {
+				message: `配置保存失败: ${result.error || '未知错误'}`,
+			});
+			return;
+		}
+
+		// 保存成功后回传配置状态（安全考虑：不发送 apiKey 实际值）
 		publishToIFrame(CHAT_TOPICS.CONFIG_DATA, {
-			apiUrl: data.apiUrl,
-			apiKey: data.apiKey,
-			model: data.model,
+			apiUrl: result.config.apiUrl,
+			apiKey: result.config.apiKey ? '***已配置***' : '', // 仅显示状态
+			model: result.config.model,
 		});
 	});
 
@@ -166,7 +206,52 @@ function setupChatListeners(): void {
 	subscribe(CHAT_TOPICS.HISTORY_UPDATE, async (data: any) => {
 		if (!data || !Array.isArray(data.messages))
 			return;
-		await saveChatHistory(data.messages);
+
+		// 验证数组大小
+		if (data.messages.length > 100) {
+			console.warn('历史会话数量过多（最大 100）');
+			return;
+		}
+
+		// 验证每个会话的结构
+		for (const session of data.messages) {
+			if (!session || typeof session !== 'object') {
+				console.warn('无效的会话结构');
+				return;
+			}
+			if (!session.id || typeof session.id !== 'string' || session.id.length > 100) {
+				console.warn('无效的会话 ID');
+				return;
+			}
+			if (!Array.isArray(session.messages) || session.messages.length > 1000) {
+				console.warn('无效的会话消息列表');
+				return;
+			}
+			// 验证消息结构
+			for (const msg of session.messages) {
+				if (!msg || typeof msg !== 'object') {
+					console.warn('无效的消息结构');
+					return;
+				}
+				if (!msg.role || (msg.role !== 'user' && msg.role !== 'ai')) {
+					console.warn('无效的消息角色');
+					return;
+				}
+				if (typeof msg.content !== 'string' || msg.content.length > 100000) {
+					console.warn('无效的消息内容');
+					return;
+				}
+			}
+		}
+
+		const result = await saveChatHistory(data.messages);
+
+		if (!result.success) {
+			// 保存失败，发送错误消息
+			publishToIFrame(CHAT_TOPICS.ERROR, {
+				message: `历史记录保存失败: ${result.error || '未知错误'}`,
+			});
+		}
 	});
 
 	// 监听清空会话请求
@@ -181,8 +266,58 @@ function setupChatListeners(): void {
  * 处理用户消息
  */
 async function handleUserMessage(msg: UserMessage): Promise<void> {
+	// 验证消息结构
+	if (!msg || typeof msg !== 'object') {
+		return;
+	}
+
+	// 验证必需字段
+	if (!msg.requestId || !msg.sessionId) {
+		publishToIFrame(CHAT_TOPICS.ERROR, {
+			message: '消息格式错误：缺少 requestId 或 sessionId',
+		});
+		return;
+	}
+
+	// 验证文本长度
+	if (msg.text && msg.text.length > 50000) {
+		publishToIFrame(CHAT_TOPICS.ERROR, {
+			message: '消息过长（最大 50000 字符）',
+			requestId: msg.requestId,
+			sessionId: msg.sessionId,
+		});
+		return;
+	}
+
+	// 验证图片数量和大小
+	if (msg.images) {
+		if (msg.images.length > 10) {
+			publishToIFrame(CHAT_TOPICS.ERROR, {
+				message: '图片数量过多（最大 10 张）',
+				requestId: msg.requestId,
+				sessionId: msg.sessionId,
+			});
+			return;
+		}
+
+		for (const img of msg.images) {
+			if (img.data && img.data.length > 10 * 1024 * 1024) {
+				publishToIFrame(CHAT_TOPICS.ERROR, {
+					message: '图片过大（单张最大 10MB）',
+					requestId: msg.requestId,
+					sessionId: msg.sessionId,
+				});
+				return;
+			}
+		}
+	}
+
 	if (!chatSession) {
-		publishToIFrame(CHAT_TOPICS.ERROR, { message: '会话未初始化' });
+		publishToIFrame(CHAT_TOPICS.ERROR, {
+			message: '会话未初始化',
+			requestId: msg.requestId,
+			sessionId: msg.sessionId,
+		});
 		return;
 	}
 
@@ -193,6 +328,8 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		publishToIFrame(CHAT_TOPICS.ERROR, {
 			message: `请先配置AI: ${configError}`,
 			code: ErrorCode.AI_NO_CONFIG,
+			requestId: msg.requestId,
+			sessionId: msg.sessionId,
 		});
 		return;
 	}
@@ -203,6 +340,8 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		publishToIFrame(CHAT_TOPICS.AI_RESPONSE, {
 			content: reply,
 			timestamp: Date.now(),
+			requestId: msg.requestId,
+			sessionId: msg.sessionId,
 		});
 	}
 	catch (error) {
@@ -213,6 +352,8 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		publishToIFrame(CHAT_TOPICS.ERROR, {
 			message,
 			code: error instanceof ReviewError ? error.code : undefined,
+			requestId: msg.requestId,
+			sessionId: msg.sessionId,
 		});
 	}
 }
