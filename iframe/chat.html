@@ -652,8 +652,7 @@
         // 不触发历史保存的系统错误（避免错误循环）
         var NON_PERSIST_SYSTEM_ERROR = {
             HISTORY_SAVE_FAILED: true,
-            CONFIG_SAVE_FAILED: true,
-            CONFIG_APIKEY_FORBIDDEN: true
+            CONFIG_SAVE_FAILED: true
         };
 
         // ============ DOM 引用 ============
@@ -1013,14 +1012,7 @@
             currentConfig = data;
             if (configModal.classList.contains('active')) {
                 document.getElementById('cfg-apiurl').value = data.apiUrl || 'https://api.openai.com/v1/chat/completions';
-                var apiKeyInput = document.getElementById('cfg-apikey');
-                if (data.apiKey && data.apiKey.indexOf('***') !== -1) {
-                    apiKeyInput.value = '';
-                    apiKeyInput.placeholder = data.apiKey;
-                } else {
-                    apiKeyInput.value = data.apiKey || '';
-                    apiKeyInput.placeholder = '输入你的 API Key';
-                }
+                document.getElementById('cfg-apikey').value = data.apiKey || '';
                 document.getElementById('cfg-model').value = data.model || 'gpt-4o';
             }
         }
@@ -1831,39 +1823,17 @@
             configModal.classList.add('active');
             publishMessage('ai-chat/request-config', {});
             document.getElementById('cfg-apiurl').value = currentConfig.apiUrl || 'https://api.openai.com/v1/chat/completions';
-            var apiKeyInput = document.getElementById('cfg-apikey');
-            if (currentConfig.apiKey && currentConfig.apiKey.indexOf('***') !== -1) {
-                apiKeyInput.value = '';
-                apiKeyInput.placeholder = currentConfig.apiKey;
-            } else {
-                apiKeyInput.value = currentConfig.apiKey || '';
-                apiKeyInput.placeholder = '输入你的 API Key';
-            }
+            document.getElementById('cfg-apikey').value = currentConfig.apiKey || '';
             document.getElementById('cfg-model').value = currentConfig.model || 'gpt-4o';
         }
 
         function closeConfigModal() { configModal.classList.remove('active'); }
 
         function saveConfig() {
-            var apiKeyInput = document.getElementById('cfg-apikey');
-            var newApiKey = apiKeyInput.value.trim();
-
-            if (newApiKey) {
-                messages.push({
-                    id: generateUUID(),
-                    role: 'ai',
-                    blocks: [{ id: generateUUID(), type: 'text', content: '出于安全考虑，请使用扩展配置入口设置 API Key。', status: 'success' }],
-                    timestamp: Date.now(),
-                    transient: true
-                });
-                renderMessages();
-                closeConfigModal();
-                return;
-            }
-
             var config = {
                 provider: 'openai_compatible',
                 apiUrl: document.getElementById('cfg-apiurl').value,
+                apiKey: document.getElementById('cfg-apikey').value.trim(),
                 model: document.getElementById('cfg-model').value
             };
             publishMessage('ai-chat/config-update', config);

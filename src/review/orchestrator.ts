@@ -144,10 +144,9 @@ function setupChatListeners(): void {
 	// 监听IFrame请求配置数据
 	subscribe(CHAT_TOPICS.REQUEST_CONFIG, () => {
 		const config = loadConfig();
-		// 安全考虑：不发送 apiKey 到 IFrame，仅发送配置状态
 		publishToIFrame(CHAT_TOPICS.CONFIG_DATA, {
 			apiUrl: config.apiUrl,
-			apiKey: config.apiKey ? '***已配置***' : '', // 仅显示状态，不发送实际值
+			apiKey: config.apiKey || '',
 			model: config.model,
 		});
 	});
@@ -191,18 +190,13 @@ function setupChatListeners(): void {
 		if (!data || typeof data !== 'object')
 			return;
 
-		// 安全限制：完全拒绝包含 apiKey 字段的消息
-		if ('apiKey' in data) {
-			publishToIFrame(CHAT_TOPICS.ERROR, {
-				message: '安全限制：API Key 不能通过消息总线更新。请使用扩展配置入口设置。',
-				code: 'CONFIG_APIKEY_FORBIDDEN',
-			});
-			return; // 直接返回，不处理任何配置
-		}
-
 		// 验证字段类型和长度
 		if (data.apiUrl && (typeof data.apiUrl !== 'string' || data.apiUrl.length > 500)) {
 			console.warn('无效的 apiUrl');
+			return;
+		}
+		if (data.apiKey && (typeof data.apiKey !== 'string' || data.apiKey.length > 500)) {
+			console.warn('无效的 apiKey');
 			return;
 		}
 		if (data.model && (typeof data.model !== 'string' || data.model.length > 100)) {
@@ -235,10 +229,10 @@ function setupChatListeners(): void {
 			return;
 		}
 
-		// 保存成功后回传配置状态（安全考虑：不发送 apiKey 实际值）
+		// 保存成功后回传配置
 		publishToIFrame(CHAT_TOPICS.CONFIG_DATA, {
 			apiUrl: result.config.apiUrl,
-			apiKey: result.config.apiKey ? '***已配置***' : '',
+			apiKey: result.config.apiKey || '',
 			model: result.config.model,
 		});
 	});
