@@ -546,6 +546,108 @@
             border-top: 1px solid var(--border-color);
         }
 
+        /* --- 调试日志模态框 --- */
+        #debug-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.4);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+        }
+        #debug-modal.active {
+            display: flex;
+        }
+        .debug-modal-content {
+            background: var(--bg-panel);
+            border: 1px solid var(--border-color);
+            width: 700px;
+            max-width: 90%;
+            max-height: 80vh;
+            border-radius: var(--radius-md);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+        }
+        .debug-modal-header {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .debug-modal-body {
+            flex: 1;
+            overflow-y: auto;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 12px;
+            border-radius: var(--radius-sm);
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+        .debug-log-entry {
+            margin-bottom: 8px;
+            padding: 6px 8px;
+            border-left: 3px solid transparent;
+            border-radius: var(--radius-sm);
+        }
+        .debug-log-entry.info {
+            border-left-color: #4fc3f7;
+            background: rgba(79, 195, 247, 0.1);
+        }
+        .debug-log-entry.warn {
+            border-left-color: #ffb74d;
+            background: rgba(255, 183, 77, 0.1);
+        }
+        .debug-log-entry.error {
+            border-left-color: #e57373;
+            background: rgba(229, 115, 115, 0.1);
+        }
+        .debug-log-entry.success {
+            border-left-color: #81c784;
+            background: rgba(129, 199, 132, 0.1);
+        }
+        .debug-log-time {
+            color: #888;
+            margin-right: 8px;
+        }
+        .debug-log-level {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: 600;
+            margin-right: 8px;
+        }
+        .debug-log-level.info { background: #4fc3f7; color: #000; }
+        .debug-log-level.warn { background: #ffb74d; color: #000; }
+        .debug-log-level.error { background: #e57373; color: #fff; }
+        .debug-log-level.success { background: #81c784; color: #000; }
+        .debug-log-message {
+            color: #d4d4d4;
+        }
+        .debug-modal-footer {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 12px;
+            padding-top: 10px;
+            border-top: 1px solid var(--border-color);
+        }
+        .debug-stats {
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
         /* Markdown 样式 */
         .message-content h1 { font-size: 1.5em; font-weight: 600; margin: 0.8em 0 0.5em 0; border-bottom: 1px solid var(--border-color); padding-bottom: 0.3em; }
         .message-content h2 { font-size: 1.3em; font-weight: 600; margin: 0.7em 0 0.4em 0; }
@@ -584,6 +686,9 @@
             </div>
             <div class="info-section">
                 <button class="btn btn-secondary" id="btn-new-chat">新建对话</button>
+            </div>
+            <div class="info-section">
+                <button class="btn btn-secondary" id="btn-debug-log">调试日志</button>
             </div>
             <div class="history-section">
                 <div class="info-label">历史会话</div>
@@ -655,6 +760,28 @@
         </div>
     </div>
 
+    <div id="debug-modal">
+        <div class="debug-modal-content">
+            <div class="debug-modal-header">
+                <span>调试日志</span>
+                <span class="debug-stats" id="debug-stats">0 条日志</span>
+            </div>
+            <div class="debug-modal-body" id="debug-modal-body">
+                <div style="color: #888; text-align: center; padding: 20px;">暂无日志</div>
+            </div>
+            <div class="debug-modal-footer">
+                <div class="debug-stats">
+                    <span id="debug-filter-info">显示全部</span>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-secondary" id="btn-clear-debug-log">清空</button>
+                    <button class="btn btn-secondary" id="btn-copy-debug-log">复制全部</button>
+                    <button class="btn btn-secondary" id="btn-close-debug-modal">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         // ============ 状态管理 ============
 
@@ -674,6 +801,82 @@
             HISTORY_SAVE_FAILED: true,
             CONFIG_SAVE_FAILED: true
         };
+
+        // ============ 调试日志 ============
+
+        var debugLogs = [];
+        var MAX_DEBUG_LOGS = 500;
+
+        function addDebugLog(level, message, data) {
+            var timestamp = new Date().toISOString().substring(11, 23); // HH:mm:ss.SSS
+            debugLogs.push({
+                timestamp: timestamp,
+                level: level,
+                message: message,
+                data: data
+            });
+            if (debugLogs.length > MAX_DEBUG_LOGS) {
+                debugLogs.shift();
+            }
+        }
+
+        function renderDebugLogs() {
+            var body = document.getElementById('debug-modal-body');
+            var stats = document.getElementById('debug-stats');
+
+            if (debugLogs.length === 0) {
+                body.innerHTML = '<div style="color: #888; text-align: center; padding: 20px;">暂无日志</div>';
+                stats.textContent = '0 条日志';
+                return;
+            }
+
+            stats.textContent = debugLogs.length + ' 条日志';
+
+            var html = '';
+            for (var i = debugLogs.length - 1; i >= 0; i--) {
+                var log = debugLogs[i];
+                html += '<div class="debug-log-entry ' + log.level + '">';
+                html += '<span class="debug-log-time">' + log.timestamp + '</span>';
+                html += '<span class="debug-log-level ' + log.level + '">' + log.level.toUpperCase() + '</span>';
+                html += '<span class="debug-log-message">' + escapeHtml(log.message) + '</span>';
+                if (log.data) {
+                    html += '<pre style="margin-top: 4px; color: #888; font-size: 11px;">' + escapeHtml(JSON.stringify(log.data, null, 2)) + '</pre>';
+                }
+                html += '</div>';
+            }
+            body.innerHTML = html;
+        }
+
+        function copyDebugLogs() {
+            var text = '=== AI 原理图助手 - 调试日志 ===\n';
+            text += '生成时间: ' + new Date().toISOString() + '\n';
+            text += '日志数量: ' + debugLogs.length + '\n\n';
+
+            for (var i = 0; i < debugLogs.length; i++) {
+                var log = debugLogs[i];
+                text += '[' + log.timestamp + '] [' + log.level.toUpperCase() + '] ' + log.message;
+                if (log.data) {
+                    text += '\n' + JSON.stringify(log.data, null, 2);
+                }
+                text += '\n\n';
+            }
+
+            copyToClipboard(text);
+        }
+
+        function clearDebugLogs() {
+            debugLogs = [];
+            renderDebugLogs();
+        }
+
+        function openDebugModal() {
+            renderDebugLogs();
+            document.getElementById('debug-modal').classList.add('active');
+        }
+
+        function closeDebugModal() {
+            document.getElementById('debug-modal').classList.remove('active');
+        }
 
         // ============ DOM 引用 ============
 
@@ -995,6 +1198,10 @@
             document.getElementById('btn-save-config').addEventListener('click', saveConfig);
             document.getElementById('btn-new-chat').addEventListener('click', newChat);
             document.getElementById('btn-close-error-modal').addEventListener('click', closeErrorModal);
+            document.getElementById('btn-debug-log').addEventListener('click', openDebugModal);
+            document.getElementById('btn-close-debug-modal').addEventListener('click', closeDebugModal);
+            document.getElementById('btn-copy-debug-log').addEventListener('click', copyDebugLogs);
+            document.getElementById('btn-clear-debug-log').addEventListener('click', clearDebugLogs);
             attachBtn.addEventListener('click', function() { fileInput.click(); });
             fileInput.addEventListener('change', handleFileSelect);
             sendBtn.addEventListener('click', handleSendOrAbort);
@@ -1028,6 +1235,18 @@
             var c = data.summary.components;
             var p = data.summary.pins;
             var n = data.summary.nets;
+
+            if (c < 0) {
+                addDebugLog('info', '原理图数据采集中...');
+            } else {
+                addDebugLog('success', '原理图数据就绪', {
+                    components: c,
+                    pins: p,
+                    nets: n,
+                    timestamp: data.timestamp
+                });
+            }
+
             document.getElementById('info-components').textContent = '器件: ' + (c < 0 ? '采集中...' : c);
             document.getElementById('info-pins').textContent = '引脚: ' + (p < 0 ? '采集中...' : p);
             document.getElementById('info-nets').textContent = '网络: ' + (n < 0 ? '采集中...' : n);
@@ -1058,6 +1277,11 @@
         function handleAIResponse(data) {
             if (!data || !data.content) return;
             if (!data.requestId || !data.sessionId) return;
+
+            addDebugLog('info', 'AI 响应完成', {
+                requestId: data.requestId,
+                contentLength: data.content.length
+            });
 
             var pending = pendingRequests[data.requestId];
             if (!pending) return;
@@ -1283,6 +1507,12 @@
         }
 
         function handleError(data) {
+            addDebugLog('error', '收到错误: ' + (data.message || '未知错误'), {
+                code: data.code,
+                requestId: data.requestId,
+                details: data.details
+            });
+
             if (data.requestId) {
                 var pending = pendingRequests[data.requestId];
                 if (!pending) return;
