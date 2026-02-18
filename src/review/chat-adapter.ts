@@ -51,12 +51,18 @@ export class ChatSession {
 	 * 发送用户消息并获取AI回复
 	 *
 	 * @param onBlock 可选的流式分块回调，接收 thinking/text 事件
+	 * @param signal 可选的 AbortSignal，用于取消请求
 	 */
 	async sendMessage(
 		userMsg: UserMessage,
 		config: ConfigStore,
 		onBlock?: MessageBlockHandler,
+		signal?: AbortSignal,
 	): Promise<string> {
+		if (signal?.aborted) {
+			throw createAbortReviewError('请求在发送前已取消', undefined, signal.reason);
+		}
+
 		const systemPrompt = buildChatSystemPrompt(this.schematicContext);
 
 		// 构建用户消息内容
@@ -72,7 +78,7 @@ export class ChatSession {
 		];
 
 		try {
-			const result = await callOpenAICompatibleChat(messages, config, onBlock);
+			const result = await callOpenAICompatibleChat(messages, config, onBlock, signal);
 			const reply = result.textContent || result.reasoningContent;
 
 			// 将AI回复加入历史
@@ -87,9 +93,27 @@ export class ChatSession {
 	}
 
 	/**
-	 * 清空对话历史
+	 * 清空最后一轮对话（用于重新生成）
 	 */
 	clear(): void {
+		if (this.history.length === 0)
+			return;
+
+		const lastMessage = this.history[this.history.length - 1];
+		if (lastMessage?.role === 'assistant') {
+			this.history.pop();
+		}
+
+		const userMessage = this.history[this.history.length - 1];
+		if (userMessage?.role === 'user') {
+			this.history.pop();
+		}
+	}
+
+	/**
+	 * 清空全部对话历史（用于会话销毁）
+	 */
+	reset(): void {
 		this.history = [];
 	}
 
@@ -129,6 +153,7 @@ async function callOpenAICompatibleChat(
 	messages: ChatMessage[],
 	config: ConfigStore,
 	onBlock?: MessageBlockHandler,
+	signal?: AbortSignal,
 ): Promise<ChatCompletionResult> {
 	const url = config.apiUrl || 'https://api.openai.com/v1/chat/completions';
 
@@ -142,7 +167,7 @@ async function callOpenAICompatibleChat(
 		stream: true,
 	};
 
-	return await makeRequest(url, config, body, onBlock);
+	return await makeRequest(url, config, body, onBlock, signal);
 }
 
 /**
@@ -153,19 +178,38 @@ async function makeRequest(
 	config: ConfigStore,
 	body: unknown,
 	onBlock?: MessageBlockHandler,
+	signal?: AbortSignal,
 ): Promise<ChatCompletionResult> {
 	const timeout = (config.timeout || 120) * 1000;
 	let timeoutId: ReturnType<typeof setTimeout> | undefined;
+	let abortHandler: (() => void) | undefined;
 
 	const timeoutPromise = new Promise<never>((_, reject) => {
 		timeoutId = setTimeout(() => reject(new ReviewError(
 			ErrorCode.AI_TIMEOUT,
 			`请求超时（>${config.timeout || 120}秒）`,
+			{ timeoutMs: timeout, url },
 		)), timeout);
 	});
 
+	const abortPromise = signal
+		? new Promise<never>((_, reject) => {
+				const onAbort = (): void => {
+					reject(createAbortReviewError('请求已取消', url, signal.reason));
+				};
+
+				if (signal.aborted) {
+					onAbort();
+					return;
+				}
+
+				abortHandler = onAbort;
+				signal.addEventListener('abort', onAbort, { once: true });
+			})
+		: undefined;
+
 	try {
-		const response = await Promise.race([
+		const requestTasks: Array<Promise<unknown>> = [
 			eda.sys_ClientUrl.request(
 				url,
 				'POST',
@@ -176,13 +220,21 @@ async function makeRequest(
 						'Authorization': `Bearer ${config.apiKey}`,
 					},
 				},
-			),
+			) as Promise<unknown>,
 			timeoutPromise,
-		]);
+		];
+		if (abortPromise)
+			requestTasks.push(abortPromise);
+
+		const response = await Promise.race(requestTasks) as Response;
 
 		if (!response.ok) {
 			const errorText = await response.text();
-			handleHttpError(response.status, errorText);
+			handleHttpError(response.status, errorText, url);
+		}
+
+		if (signal?.aborted) {
+			throw createAbortReviewError('请求已取消', url, signal.reason);
 		}
 
 		// 检查响应头判断是否是 SSE 流式响应
@@ -191,13 +243,32 @@ async function makeRequest(
 
 		const responseText = await response.text();
 
+		if (signal?.aborted) {
+			throw createAbortReviewError('请求已取消', url, signal.reason);
+		}
+
 		// 如果是 SSE 格式或响应文本包含 SSE 标记，使用 SSE 解析
 		if (isSSE || responseText.startsWith('data:') || responseText.includes('\ndata:')) {
 			return parseSSEResponse(responseText, onBlock);
 		}
 
 		// 标准 JSON 响应（非流式回退）
-		const data = JSON.parse(responseText);
+		let data: any;
+		try {
+			data = JSON.parse(responseText);
+		}
+		catch (parseError) {
+			throw new ReviewError(
+				ErrorCode.AI_INVALID_RESPONSE,
+				'AI响应解析失败：返回了非JSON内容',
+				{
+					url,
+					responseBody: responseText.substring(0, 2000),
+					parseError: serializeUnknownError(parseError),
+				},
+			);
+		}
+
 		const textContent = extractResponseText(data);
 		const reasoningContent = extractReasoningText(data);
 
@@ -206,6 +277,14 @@ async function makeRequest(
 		return { textContent, reasoningContent };
 	}
 	catch (error) {
+		if (isAbortLikeError(error)) {
+			throw createAbortReviewError('请求已取消', url, signal?.reason);
+		}
+
+		if (error instanceof ReviewError) {
+			throw error;
+		}
+
 		// 捕获外部交互权限错误（支持中英文多种表述）
 		if (error instanceof Error) {
 			const msg = error.message.toLowerCase();
@@ -222,14 +301,29 @@ async function makeRequest(
 				throw new ReviewError(
 					ErrorCode.AI_NETWORK_ERROR,
 					'未启用扩展的外部交互权限。请在扩展管理器中找到本扩展，勾选"允许外部交互"选项。',
+					{
+						url,
+						originalError: serializeUnknownError(error),
+					},
 				);
 			}
 		}
-		throw error;
+
+		throw new ReviewError(
+			ErrorCode.AI_NETWORK_ERROR,
+			`AI请求失败: ${error instanceof Error ? error.message : String(error)}`,
+			{
+				url,
+				originalError: serializeUnknownError(error),
+			},
+		);
 	}
 	finally {
 		if (timeoutId !== undefined)
 			clearTimeout(timeoutId);
+		if (signal && abortHandler) {
+			signal.removeEventListener('abort', abortHandler);
+		}
 	}
 }
 
@@ -445,14 +539,17 @@ function normalizeChunkText(value: unknown): string {
 /**
  * 处理HTTP错误
  */
-function handleHttpError(status: number, body: string): never {
+function handleHttpError(status: number, body: string, url?: string): never {
+	const responseBody = body.substring(0, 2000);
+	const details = { httpStatus: status, responseBody, url };
+
 	if (status === 401 || status === 403) {
-		throw new ReviewError(ErrorCode.AI_AUTH_ERROR, 'API Key无效或权限不足');
+		throw new ReviewError(ErrorCode.AI_AUTH_ERROR, 'API Key无效或权限不足', details);
 	}
 	if (status === 429) {
-		throw new ReviewError(ErrorCode.AI_RATE_LIMIT, 'API请求频率超限，请稍后重试');
+		throw new ReviewError(ErrorCode.AI_RATE_LIMIT, 'API请求频率超限，请稍后重试', details);
 	}
-	throw new ReviewError(ErrorCode.AI_NETWORK_ERROR, `HTTP ${status}: ${body.substring(0, 200)}`);
+	throw new ReviewError(ErrorCode.AI_NETWORK_ERROR, `HTTP ${status}: ${responseBody.substring(0, 200)}`, details);
 }
 
 /**
@@ -474,4 +571,50 @@ function extractReasoningText(data: any): string {
 		|| data.choices?.[0]?.message?.reasoning
 		|| data.choices?.[0]?.reasoning_content,
 	);
+}
+
+// ============ 中止与错误序列化 ============
+
+/**
+ * 构造统一的中止错误
+ */
+function createAbortReviewError(message: string, url?: string, reason?: unknown): ReviewError {
+	return new ReviewError(
+		ErrorCode.AI_ABORTED,
+		message,
+		{
+			aborted: true,
+			url,
+			reason: reason === undefined ? undefined : serializeUnknownError(reason),
+		},
+	);
+}
+
+/**
+ * 判断错误是否为中止错误
+ */
+function isAbortLikeError(error: unknown): boolean {
+	if (error instanceof ReviewError) {
+		return error.code === ErrorCode.AI_ABORTED;
+	}
+	return error instanceof Error && error.name === 'AbortError';
+}
+
+/**
+ * 将 unknown 错误序列化为可传输对象
+ */
+function serializeUnknownError(error: unknown): Record<string, unknown> {
+	if (error instanceof Error) {
+		return {
+			name: error.name,
+			message: error.message,
+			stack: error.stack,
+		};
+	}
+
+	if (error && typeof error === 'object') {
+		return { ...(error as Record<string, unknown>) };
+	}
+
+	return { value: String(error) };
 }

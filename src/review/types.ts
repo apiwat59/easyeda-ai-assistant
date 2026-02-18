@@ -162,6 +162,8 @@ export const CHAT_TOPICS = {
 	REQUEST_CONFIG: 'ai-chat/request-config',
 	REQUEST_HISTORY: 'ai-chat/request-history',
 	USER_MESSAGE: 'ai-chat/user-message',
+	ABORT_REQUEST: 'ai-chat/abort-request',
+	REGENERATE_REQUEST: 'ai-chat/regenerate-request',
 	LOCATE: 'ai-chat/locate',
 	CONFIG_UPDATE: 'ai-chat/config-update',
 	HISTORY_UPDATE: 'ai-chat/history-update',
@@ -227,6 +229,11 @@ export enum ChunkType {
 }
 
 /**
+ * 流式分块状态
+ */
+export type MessageBlockStatus = 'success' | 'paused' | 'streaming' | 'error';
+
+/**
  * AI流式消息分块（后端内部使用）
  */
 export interface MessageBlock {
@@ -234,6 +241,7 @@ export interface MessageBlock {
 	content: string; // 当前增量内容
 	accumulatedContent: string; // 到当前为止的累计内容
 	timestamp: number;
+	status?: MessageBlockStatus;
 }
 
 /**
@@ -252,11 +260,28 @@ export interface LocateRequest {
 }
 
 /**
+ * 停止生成请求（IFrame -> 主扩展）
+ */
+export interface AbortRequest {
+	requestId: string;
+	sessionId: string;
+}
+
+/**
+ * 重新生成请求（IFrame -> 主扩展）
+ */
+export interface RegenerateRequest {
+	requestId: string;
+	sessionId: string;
+}
+
+/**
  * 错误消息（主扩展 -> IFrame）
  */
 export interface ErrorMessage {
 	message: string;
 	code?: string;
+	details?: unknown;
 	requestId?: string; // 回传请求ID（如果有）
 	sessionId?: string; // 回传会话ID（如果有）
 }
@@ -278,6 +303,7 @@ export enum ErrorCode {
 	AI_AUTH_ERROR = 'AI_AUTH_ERROR',
 	AI_RATE_LIMIT = 'AI_RATE_LIMIT',
 	AI_TIMEOUT = 'AI_TIMEOUT',
+	AI_ABORTED = 'AI_ABORTED',
 	AI_INVALID_RESPONSE = 'AI_INVALID_RESPONSE',
 
 	// UI错误

@@ -4,7 +4,7 @@
  * 管理IFrame面板与AI对话的完整生命周期
  * 按 sessionId 隔离对话会话，支持流式 thinking/text 推送
  */
-import type { AIBlockResponse, CollectedData, MessageBlock, UserMessage } from './types';
+import type { AbortRequest, AIBlockResponse, CollectedData, MessageBlock, RegenerateRequest, UserMessage } from './types';
 import { ChatSession } from './chat-adapter';
 import { collectSchematicData } from './collector';
 import { loadChatHistory, loadConfig, saveChatHistory, saveConfig, validateConfig } from './config';
@@ -14,6 +14,23 @@ import { CHAT_TOPICS, ChunkType, ErrorCode, ReviewError } from './types';
  * 按 sessionId 维护对话会话（替代单一全局 chatSession）
  */
 const chatSessions = new Map<string, ChatSession>();
+
+/**
+ * 进行中请求的状态（按 requestId 隔离）
+ */
+interface PendingRequestState {
+	sessionId: string;
+	abortController: AbortController;
+	thinkingAccumulated: string;
+	textAccumulated: string;
+}
+
+const pendingRequests = new Map<string, PendingRequestState>();
+
+/**
+ * 记录每个会话最后一条用户消息（用于重新生成）
+ */
+const lastUserMessageBySession = new Map<string, UserMessage>();
 
 /**
  * 缓存的原理图数据
@@ -148,6 +165,20 @@ function setupChatListeners(): void {
 		await handleUserMessage(data as UserMessage);
 	});
 
+	// 监听停止生成请求
+	subscribe(CHAT_TOPICS.ABORT_REQUEST, (data: any) => {
+		if (!data || typeof data !== 'object')
+			return;
+		handleAbortRequest(data as AbortRequest);
+	});
+
+	// 监听重新生成请求
+	subscribe(CHAT_TOPICS.REGENERATE_REQUEST, async (data: any) => {
+		if (!data || typeof data !== 'object')
+			return;
+		await handleRegenerateRequest(data as RegenerateRequest);
+	});
+
 	// 监听定位请求
 	subscribe(CHAT_TOPICS.LOCATE, async (data: any) => {
 		if (!data?.reference)
@@ -271,9 +302,12 @@ function setupChatListeners(): void {
 			: '';
 
 		if (sessionId) {
+			abortPendingRequestsBySession(sessionId);
+			lastUserMessageBySession.delete(sessionId);
+
 			const session = chatSessions.get(sessionId);
 			if (session) {
-				session.clear();
+				session.reset();
 				chatSessions.delete(sessionId);
 			}
 			return;
@@ -347,6 +381,22 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		return;
 	}
 
+	// 如果已有相同 requestId 的请求，先中止
+	const existingPending = pendingRequests.get(msg.requestId);
+	if (existingPending) {
+		existingPending.abortController.abort();
+		pendingRequests.delete(msg.requestId);
+	}
+
+	// 创建新的 AbortController
+	const abortController = new AbortController();
+	pendingRequests.set(msg.requestId, {
+		sessionId: msg.sessionId,
+		abortController,
+		thinkingAccumulated: '',
+		textAccumulated: '',
+	});
+
 	try {
 		// 按 sessionId 获取或创建会话（核心隔离机制）
 		const session = getOrCreateChatSession(msg.sessionId);
@@ -355,9 +405,28 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 			msg,
 			config,
 			(block) => {
+				if (abortController.signal.aborted)
+					return;
+
+				// 记录累积内容
+				const pending = pendingRequests.get(msg.requestId);
+				if (pending) {
+					if (isThinkingBlock(block.type))
+						pending.thinkingAccumulated = block.accumulatedContent;
+					else
+						pending.textAccumulated = block.accumulatedContent;
+				}
+
 				publishMessageBlock(msg.requestId, msg.sessionId, block);
 			},
+			abortController.signal,
 		);
+
+		if (abortController.signal.aborted)
+			return;
+
+		// 保存最后一条用户消息（用于重新生成）
+		lastUserMessageBySession.set(msg.sessionId, cloneUserMessage(msg));
 
 		publishToIFrame(CHAT_TOPICS.AI_RESPONSE, {
 			content: reply,
@@ -367,16 +436,19 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		});
 	}
 	catch (error) {
-		const message = error instanceof ReviewError
-			? error.message
-			: `AI请求失败: ${error instanceof Error ? error.message : String(error)}`;
+		// 如果是中止错误，静默处理
+		if (isAbortError(error))
+			return;
 
+		const payload = buildErrorPayload(error);
 		publishToIFrame(CHAT_TOPICS.ERROR, {
-			message,
-			code: error instanceof ReviewError ? error.code : undefined,
+			...payload,
 			requestId: msg.requestId,
 			sessionId: msg.sessionId,
 		});
+	}
+	finally {
+		pendingRequests.delete(msg.requestId);
 	}
 }
 
@@ -435,10 +507,183 @@ function getOrCreateChatSession(sessionId: string): ChatSession {
  * 清空所有对话会话
  */
 function clearAllChatSessions(): void {
+	abortAllPendingRequests();
+
 	for (const session of chatSessions.values()) {
-		session.clear();
+		session.reset();
 	}
 	chatSessions.clear();
+	lastUserMessageBySession.clear();
+}
+
+// ============ 中止管理 ============
+
+/**
+ * 处理停止生成请求
+ */
+function handleAbortRequest(data: AbortRequest): void {
+	const requestId = typeof data?.requestId === 'string' ? data.requestId : '';
+	const sessionId = typeof data?.sessionId === 'string' ? data.sessionId : '';
+
+	if (!requestId || !sessionId)
+		return;
+
+	const pending = pendingRequests.get(requestId);
+	if (!pending)
+		return;
+	if (pending.sessionId !== sessionId)
+		return;
+
+	pending.abortController.abort();
+	publishPausedCompleteBlocks(requestId, sessionId, pending);
+	pendingRequests.delete(requestId);
+}
+
+/**
+ * 处理重新生成请求
+ */
+async function handleRegenerateRequest(data: RegenerateRequest): Promise<void> {
+	const requestId = typeof data?.requestId === 'string' ? data.requestId : '';
+	const sessionId = typeof data?.sessionId === 'string' ? data.sessionId : '';
+
+	if (!requestId || !sessionId) {
+		publishToIFrame(CHAT_TOPICS.ERROR, {
+			message: '重新生成请求格式错误',
+			code: 'REGENERATE_REQUEST_INVALID',
+		});
+		return;
+	}
+
+	// 如果当前会话还有进行中的请求，先中止
+	abortPendingRequestsBySession(sessionId);
+
+	const session = chatSessions.get(sessionId);
+	if (!session) {
+		publishToIFrame(CHAT_TOPICS.ERROR, {
+			message: '未找到可重新生成的会话',
+			code: 'REGENERATE_SESSION_NOT_FOUND',
+			requestId,
+			sessionId,
+		});
+		return;
+	}
+
+	const lastUserMessage = lastUserMessageBySession.get(sessionId);
+	if (!lastUserMessage) {
+		publishToIFrame(CHAT_TOPICS.ERROR, {
+			message: '当前会话没有可重新生成的用户消息',
+			code: 'REGENERATE_NO_MESSAGE',
+			requestId,
+			sessionId,
+		});
+		return;
+	}
+
+	// 回滚最后一轮对话，再重新发送
+	session.clear();
+
+	const regenerateMessage: UserMessage = {
+		...cloneUserMessage(lastUserMessage),
+		requestId,
+		sessionId,
+	};
+	await handleUserMessage(regenerateMessage);
+}
+
+/**
+ * 中止全部进行中请求
+ */
+function abortAllPendingRequests(): void {
+	for (const pending of pendingRequests.values()) {
+		pending.abortController.abort();
+	}
+	pendingRequests.clear();
+}
+
+/**
+ * 中止指定会话的所有进行中请求
+ */
+function abortPendingRequestsBySession(sessionId: string): void {
+	for (const [requestId, pending] of pendingRequests.entries()) {
+		if (pending.sessionId !== sessionId)
+			continue;
+
+		pending.abortController.abort();
+		pendingRequests.delete(requestId);
+	}
+}
+
+/**
+ * 发送 paused 状态的 COMPLETE 事件（中止时使用）
+ */
+function publishPausedCompleteBlocks(
+	requestId: string,
+	sessionId: string,
+	pending: PendingRequestState,
+): void {
+	if (pending.thinkingAccumulated) {
+		publishMessageBlock(requestId, sessionId, {
+			type: ChunkType.THINKING_COMPLETE,
+			content: '',
+			accumulatedContent: pending.thinkingAccumulated,
+			timestamp: Date.now(),
+			status: 'paused',
+		});
+	}
+	publishMessageBlock(requestId, sessionId, {
+		type: ChunkType.TEXT_COMPLETE,
+		content: '',
+		accumulatedContent: pending.textAccumulated,
+		timestamp: Date.now(),
+		status: 'paused',
+	});
+}
+
+/**
+ * 判断是否为中止错误
+ */
+function isAbortError(error: unknown): boolean {
+	return error instanceof ReviewError && error.code === ErrorCode.AI_ABORTED;
+}
+
+/**
+ * 构建错误消息的 payload
+ */
+function buildErrorPayload(error: unknown): { message: string; code?: string; details?: unknown } {
+	if (error instanceof ReviewError) {
+		return {
+			message: error.message,
+			code: error.code,
+			details: error.details,
+		};
+	}
+
+	if (error instanceof Error) {
+		return {
+			message: `AI请求失败: ${error.message}`,
+			details: { name: error.name, message: error.message },
+		};
+	}
+
+	return {
+		message: `AI请求失败: ${String(error)}`,
+	};
+}
+
+/**
+ * 深拷贝用户消息（用于重新生成）
+ */
+function cloneUserMessage(msg: UserMessage): UserMessage {
+	return {
+		...msg,
+		images: msg.images?.map(img => ({ ...img })),
+		schematicData: msg.schematicData
+			? {
+					summary: { ...msg.schematicData.summary },
+					timestamp: msg.schematicData.timestamp,
+				}
+			: msg.schematicData,
+	};
 }
 
 // ============ 流式 Block 推送 ============
