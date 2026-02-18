@@ -383,6 +383,168 @@
         .empty-state-icon { font-size: 40px; opacity: 0.3; }
         .empty-state-text { font-size: 15px; color: var(--text-primary); }
         .empty-state-hint { font-size: 12px; }
+
+        /* --- 停止生成按钮 --- */
+        #send-btn.generating {
+            background: var(--error-color);
+            border-color: var(--error-color);
+        }
+        #send-btn.generating:hover:not(:disabled) {
+            opacity: 0.85;
+        }
+
+        /* --- 错误消息卡片 --- */
+        .error-message-card {
+            background: rgba(245, 108, 108, 0.08);
+            border: 1px solid var(--error-color);
+            border-radius: var(--radius-md);
+            padding: 10px 12px;
+            margin-bottom: 8px;
+        }
+        .error-header {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 500;
+            color: var(--error-color);
+            margin-bottom: 6px;
+        }
+        .error-code {
+            opacity: 0.7;
+            font-size: 11px;
+            font-family: Consolas, monospace;
+        }
+        .error-details-btn {
+            background: none;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            padding: 3px 8px;
+            cursor: pointer;
+            font-size: 11px;
+            color: var(--text-secondary);
+            transition: all 0.15s;
+        }
+        .error-details-btn:hover {
+            background: var(--bg-hover);
+            border-color: var(--accent-color);
+            color: var(--accent-color);
+        }
+
+        /* --- 消息操作栏 --- */
+        .message-actions {
+            display: flex;
+            gap: 4px;
+            margin-top: 4px;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        .message.ai:hover .message-actions {
+            opacity: 1;
+        }
+        .action-btn {
+            background: none;
+            border: 1px solid transparent;
+            border-radius: var(--radius-sm);
+            padding: 2px 6px;
+            cursor: pointer;
+            font-size: 11px;
+            color: var(--text-secondary);
+            transition: all 0.15s;
+            display: flex;
+            align-items: center;
+            gap: 3px;
+        }
+        .action-btn:hover {
+            background: var(--bg-hover);
+            border-color: var(--border-color);
+            color: var(--text-primary);
+        }
+
+        /* --- ThinkingBlock 优化 --- */
+        .thinking-copy-btn {
+            background: none;
+            border: 1px solid transparent;
+            border-radius: var(--radius-sm);
+            padding: 2px 6px;
+            cursor: pointer;
+            font-size: 10px;
+            color: var(--text-secondary);
+            transition: all 0.15s;
+            margin-left: auto;
+        }
+        .thinking-copy-btn:hover {
+            background: rgba(0,0,0,0.05);
+            border-color: var(--border-color);
+        }
+        .thinking-loading {
+            display: inline-block;
+            animation: thinking-dots 1.5s infinite;
+        }
+        @keyframes thinking-dots {
+            0%, 20% { content: ''; }
+            40% { content: '.'; }
+            60% { content: '..'; }
+            80%, 100% { content: '...'; }
+        }
+        .status-paused {
+            color: var(--warning-color);
+            font-style: italic;
+        }
+
+        /* --- 错误详情模态框 --- */
+        #error-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.4);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+        }
+        #error-modal.active {
+            display: flex;
+        }
+        .error-modal-content {
+            background: var(--bg-panel);
+            border: 1px solid var(--border-color);
+            width: 500px;
+            max-width: 90%;
+            max-height: 80vh;
+            border-radius: var(--radius-md);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+        }
+        .error-modal-header {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .error-modal-body {
+            flex: 1;
+            overflow-y: auto;
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            padding: 10px;
+            font-family: Consolas, Monaco, monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .error-modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 12px;
+            padding-top: 10px;
+            border-top: 1px solid var(--border-color);
+        }
     </style>
 </head>
 <body>
@@ -463,6 +625,16 @@
         </div>
     </div>
 
+    <div id="error-modal">
+        <div class="error-modal-content">
+            <div class="error-modal-header">错误详情</div>
+            <div class="error-modal-body" id="error-modal-body"></div>
+            <div class="error-modal-footer">
+                <button class="btn btn-secondary" id="btn-close-error-modal">关闭</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // ============ 状态管理 ============
 
@@ -475,6 +647,7 @@
         var currentSessionId = null; // 当前会话 ID
         var pendingRequests = {};    // 待处理的请求 {requestId: {sessionId, timestamp}}
         var saveHistoryTimer = null; // 历史保存节流定时器
+        var activeRequestId = null;  // 当前正在进行的请求ID（用于 abort）
 
         // 不触发历史保存的系统错误（避免错误循环）
         var NON_PERSIST_SYSTEM_ERROR = {
@@ -538,12 +711,15 @@
                             if (update.status === 'streaming') {
                                 var elapsed = ((Date.now() - update.startTime) / 1000).toFixed(1);
                                 statusEl.textContent = '思考中... ' + elapsed + 's';
+                            } else if (update.status === 'paused') {
+                                var pausedTotal = ((update.thinkingMs || 0) / 1000).toFixed(1);
+                                statusEl.innerHTML = '<span class="status-paused">已停止思考（' + pausedTotal + ' 秒）</span>';
                             } else {
                                 var total = ((update.thinkingMs || 0) / 1000).toFixed(1);
                                 statusEl.textContent = '已深度思考 ' + total + ' 秒';
                             }
                         }
-                        // 流式状态下自动展开
+                        // 流式状态下自动展开，完成/暂停后折叠
                         if (update.status === 'streaming') {
                             if (el.className.indexOf('streaming') === -1) {
                                 el.className += ' streaming';
@@ -553,6 +729,10 @@
                             }
                         } else {
                             el.className = el.className.replace(' streaming', '');
+                            // 完成或暂停后自动折叠
+                            if (update.status === 'success' || update.status === 'paused') {
+                                el.className = el.className.replace(' expanded', '');
+                            }
                         }
                     } else {
                         // text block 更新
@@ -566,6 +746,15 @@
                             }
                         } else {
                             el.className = el.className.replace(' block-streaming', '');
+                            // paused 状态添加标记（避免重复追加）
+                            if (update.status === 'paused' && !el.querySelector('.status-paused')) {
+                                var pausedMark = document.createElement('div');
+                                pausedMark.className = 'status-paused';
+                                pausedMark.style.fontSize = '11px';
+                                pausedMark.style.marginTop = '6px';
+                                pausedMark.textContent = '[已停止生成]';
+                                el.appendChild(pausedMark);
+                            }
                         }
                     }
                 }
@@ -619,11 +808,13 @@
                 .map(function(msg) {
                     var content = '';
                     if (msg.blocks && msg.blocks.length > 0) {
-                        // 从 blocks 中提取 text 内容
+                        // 从 blocks 中提取 text 和 error 内容
                         for (var i = 0; i < msg.blocks.length; i++) {
                             var block = msg.blocks[i];
                             if (block.type === 'text' && block.content) {
                                 content += block.content;
+                            } else if (block.type === 'error' && block.content) {
+                                content += '错误: ' + block.content;
                             }
                         }
                     }
@@ -746,6 +937,8 @@
 
                     isThinking = false;
                     setStatus('ready', '就绪');
+                    activeRequestId = null;
+                    updateSendButton();
                     pendingRequests = {};
                     renderMessages();
                     renderHistoryList();
@@ -776,13 +969,14 @@
             document.getElementById('btn-cancel-config').addEventListener('click', closeConfigModal);
             document.getElementById('btn-save-config').addEventListener('click', saveConfig);
             document.getElementById('btn-new-chat').addEventListener('click', newChat);
+            document.getElementById('btn-close-error-modal').addEventListener('click', closeErrorModal);
             attachBtn.addEventListener('click', function() { fileInput.click(); });
             fileInput.addEventListener('change', handleFileSelect);
-            sendBtn.addEventListener('click', sendMessage);
+            sendBtn.addEventListener('click', handleSendOrAbort);
             messageInput.addEventListener('keydown', function(e) {
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    sendMessage();
+                    if (!isThinking) sendMessage();
                 }
             });
             messageInput.addEventListener('input', function() {
@@ -859,8 +1053,7 @@
             }
 
             delete pendingRequests[data.requestId];
-            isThinking = false;
-            setStatus('ready', '就绪');
+            finishPendingRequest(data.requestId);
 
             // 查找流式创建的 AI 消息，更新其状态为 success
             var streamMsg = findStreamingMessage(data.requestId);
@@ -956,16 +1149,19 @@
                     if (thinkingBlock) {
                         thinkingBlock.content = data.accumulatedContent || thinkingBlock.content;
                         thinkingBlock.thinkingMs = Date.now() - (thinkingBlock.startTime || Date.now());
-                        thinkingBlock.status = 'success';
+                        thinkingBlock.status = data.status === 'paused' ? 'paused' : 'success';
                         StreamManager.updateBlock(
                             thinkingBlock.id,
                             thinkingBlock.content,
                             'thinking',
-                            'success',
+                            thinkingBlock.status,
                             thinkingBlock.startTime,
                             thinkingBlock.thinkingMs
                         );
                     }
+                    // 注意：paused 状态不在此清理 pending，
+                    // 后端会先发 THINKING_COMPLETE 再发 TEXT_COMPLETE，
+                    // 清理推迟到 TEXT_COMPLETE(paused) 统一处理
                     break;
             }
         }
@@ -1012,13 +1208,18 @@
                 case 'TEXT_COMPLETE':
                     if (textBlock) {
                         textBlock.content = data.accumulatedContent || textBlock.content;
-                        textBlock.status = 'success';
+                        textBlock.status = data.status === 'paused' ? 'paused' : 'success';
                         StreamManager.updateBlock(
                             textBlock.id,
                             textBlock.content,
                             'text',
-                            'success'
+                            textBlock.status
                         );
+                    }
+                    // paused 状态需要清理 thinking 状态
+                    if (data.status === 'paused') {
+                        finishPendingRequest(data.requestId);
+                        renderMessages(); // 确保 DOM 更新
                     }
                     break;
             }
@@ -1065,32 +1266,60 @@
 
         function handleError(data) {
             if (data.requestId) {
-                if (!isThinking) return;
                 var pending = pendingRequests[data.requestId];
                 if (!pending) return;
-                if (data.sessionId !== pending.sessionId) {
+                if (data.sessionId && data.sessionId !== pending.sessionId) {
                     delete pendingRequests[data.requestId];
                     return;
                 }
                 delete pendingRequests[data.requestId];
-                isThinking = false;
-                setStatus('ready', '就绪');
-                messages.push({
-                    id: generateUUID(),
-                    role: 'ai',
-                    blocks: [{ id: generateUUID(), type: 'text', content: '错误: ' + (data.message || '未知错误'), status: 'success' }],
-                    timestamp: Date.now()
-                });
+                finishPendingRequest(data.requestId);
+
+                // 查找已有的流式消息，在其上追加错误 block
+                var streamMsg = findStreamingMessage(data.requestId);
+                if (streamMsg) {
+                    streamMsg.blocks.push({
+                        id: generateUUID(),
+                        type: 'error',
+                        content: data.message || '未知错误',
+                        errorCode: data.code || '',
+                        errorDetails: data.details || null,
+                        status: 'error'
+                    });
+                    streamMsg.status = 'error';
+                } else {
+                    messages.push({
+                        id: generateUUID(),
+                        role: 'ai',
+                        blocks: [{
+                            id: generateUUID(),
+                            type: 'error',
+                            content: data.message || '未知错误',
+                            errorCode: data.code || '',
+                            errorDetails: data.details || null,
+                            status: 'error'
+                        }],
+                        timestamp: Date.now(),
+                        requestId: data.requestId
+                    });
+                }
                 saveHistory();
                 renderMessages();
                 return;
             }
 
-            // 系统错误
+            // 系统错误（无 requestId）
             messages.push({
                 id: generateUUID(),
                 role: 'ai',
-                blocks: [{ id: generateUUID(), type: 'text', content: '错误: ' + (data.message || '未知错误'), status: 'success' }],
+                blocks: [{
+                    id: generateUUID(),
+                    type: 'error',
+                    content: data.message || '未知错误',
+                    errorCode: data.code || '',
+                    errorDetails: data.details || null,
+                    status: 'error'
+                }],
                 timestamp: Date.now()
             });
             if (!NON_PERSIST_SYSTEM_ERROR[data.code]) saveHistory();
@@ -1098,6 +1327,14 @@
         }
 
         // ============ 发送消息 ============
+
+        function handleSendOrAbort() {
+            if (isThinking && activeRequestId) {
+                abortGeneration();
+            } else {
+                sendMessage();
+            }
+        }
 
         function sendMessage() {
             var text = messageInput.value.trim();
@@ -1109,6 +1346,7 @@
             }
 
             var requestId = generateUUID();
+            activeRequestId = requestId;
 
             // 创建用户消息（Block 架构）
             var userBlocks = [];
@@ -1135,6 +1373,7 @@
 
             setStatus('thinking', 'AI 正在思考...');
             isThinking = true;
+            updateSendButton();
 
             pendingRequests[requestId] = {
                 sessionId: currentSessionId,
@@ -1148,6 +1387,90 @@
                 requestId: requestId,
                 sessionId: currentSessionId
             });
+        }
+
+        function abortGeneration() {
+            if (!activeRequestId) return;
+
+            publishMessage('ai-chat/abort-request', {
+                requestId: activeRequestId,
+                sessionId: currentSessionId
+            });
+
+            // 不立即清理状态，等后端返回 paused 状态后再清理
+            // 但如果后端不返回（极端情况），设置超时兜底
+            var abortedRequestId = activeRequestId;
+            setTimeout(function() {
+                if (activeRequestId === abortedRequestId) {
+                    finishPendingRequest(abortedRequestId);
+                    renderMessages();
+                }
+            }, 3000);
+        }
+
+        function regenerateMessage() {
+            if (isThinking) return;
+            if (messages.length < 2) return;
+
+            // 找到最后一条用户消息（确保存在）
+            var lastUserMsg = null;
+            for (var i = messages.length - 1; i >= 0; i--) {
+                if (messages[i].role === 'user') {
+                    lastUserMsg = messages[i];
+                    break;
+                }
+            }
+            if (!lastUserMsg) return;
+
+            // 标记最后一条 AI 消息为待替换（不立即删除，等收到新回复时替换）
+            for (var j = messages.length - 1; j >= 0; j--) {
+                if (messages[j].role === 'ai' && !messages[j].transient) {
+                    messages.splice(j, 1);
+                    break;
+                }
+            }
+
+            var requestId = generateUUID();
+            activeRequestId = requestId;
+
+            setStatus('thinking', 'AI 正在思考...');
+            isThinking = true;
+            updateSendButton();
+            renderMessages();
+
+            pendingRequests[requestId] = {
+                sessionId: currentSessionId,
+                timestamp: Date.now()
+            };
+
+            publishMessage('ai-chat/regenerate-request', {
+                requestId: requestId,
+                sessionId: currentSessionId
+            });
+        }
+
+        function finishPendingRequest(requestId) {
+            // 只有当前活跃请求才清理全局状态
+            if (activeRequestId === requestId) {
+                activeRequestId = null;
+                isThinking = false;
+                setStatus('ready', '就绪');
+                updateSendButton();
+            }
+            // 清理 pendingRequests
+            delete pendingRequests[requestId];
+        }
+
+        function updateSendButton() {
+            if (isThinking) {
+                sendBtn.classList.add('generating');
+                sendBtn.innerHTML = '&#9632;'; // 方块图标
+                sendBtn.title = '停止生成';
+            } else {
+                sendBtn.classList.remove('generating');
+                sendBtn.innerHTML = '&#10148;'; // 发送图标
+                sendBtn.title = '发送';
+            }
         }
 
         // ============ 渲染 ============
@@ -1206,6 +1529,8 @@
                         bodyDiv.appendChild(createThinkingBlockElement(block));
                     } else if (block.type === 'text') {
                         bodyDiv.appendChild(createTextBlockElement(block, msg.role));
+                    } else if (block.type === 'error') {
+                        bodyDiv.appendChild(createErrorBlockElement(block));
                     }
                 }
             } else if (msg.content) {
@@ -1216,6 +1541,40 @@
                     content: msg.content,
                     status: 'success'
                 }, msg.role));
+            }
+
+            // 添加操作栏（仅 AI 消息且非错误且非历史会话）
+            if (msg.role === 'ai' && !msg.blocks.some(function(b) { return b.type === 'error'; }) && !msg.transient) {
+                var actionsDiv = document.createElement('div');
+                actionsDiv.className = 'message-actions';
+
+                // 复制按钮
+                var copyBtn = document.createElement('button');
+                copyBtn.className = 'action-btn';
+                copyBtn.innerHTML = '&#128203; 复制';
+                copyBtn.title = '复制内容';
+                copyBtn.addEventListener('click', function() {
+                    var textContent = '';
+                    for (var j = 0; j < msg.blocks.length; j++) {
+                        if (msg.blocks[j].type === 'text') {
+                            textContent += msg.blocks[j].content;
+                        }
+                    }
+                    copyToClipboard(textContent);
+                });
+                actionsDiv.appendChild(copyBtn);
+
+                // 重新生成按钮（仅最后一条 AI 消息且当前会话有效）
+                if (messages[messages.length - 1] === msg && currentSessionId && !isThinking) {
+                    var regenBtn = document.createElement('button');
+                    regenBtn.className = 'action-btn';
+                    regenBtn.innerHTML = '&#8635; 重新生成';
+                    regenBtn.title = '重新生成回复';
+                    regenBtn.addEventListener('click', regenerateMessage);
+                    actionsDiv.appendChild(regenBtn);
+                }
+
+                bodyDiv.appendChild(actionsDiv);
             }
 
             // 图片
@@ -1274,13 +1633,29 @@
             statusSpan.className = 'thinking-status-text';
             if (block.status === 'streaming') {
                 statusSpan.textContent = '思考中...';
+            } else if (block.status === 'paused') {
+                var pausedSecs = ((block.thinkingMs || 0) / 1000).toFixed(1);
+                statusSpan.innerHTML = '<span class="status-paused">已停止思考（' + pausedSecs + ' 秒）</span>';
             } else {
                 var secs = ((block.thinkingMs || 0) / 1000).toFixed(1);
                 statusSpan.textContent = '已深度思考 ' + secs + ' 秒';
             }
 
+            // 复制思考内容按钮
+            var copyBtn = document.createElement('button');
+            copyBtn.className = 'thinking-copy-btn';
+            copyBtn.textContent = '复制';
+            copyBtn.title = '复制思考内容';
+            copyBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                copyToClipboard(block.content || '');
+            });
+
             header.appendChild(icon);
             header.appendChild(statusSpan);
+            if (block.content && block.status !== 'streaming') {
+                header.appendChild(copyBtn);
+            }
 
             header.addEventListener('click', function() {
                 var isExpanded = container.className.indexOf('expanded') !== -1;
@@ -1323,6 +1698,38 @@
             return div;
         }
 
+        /**
+         * 创建错误 Block DOM 元素
+         */
+        function createErrorBlockElement(block) {
+            var card = document.createElement('div');
+            card.className = 'error-message-card';
+            card.id = block.id;
+
+            var header = document.createElement('div');
+            header.className = 'error-header';
+            header.innerHTML = '&#9888; ' + escapeHtml(block.content || '未知错误');
+            if (block.errorCode) {
+                var codeSpan = document.createElement('span');
+                codeSpan.className = 'error-code';
+                codeSpan.textContent = ' (' + block.errorCode + ')';
+                header.appendChild(codeSpan);
+            }
+            card.appendChild(header);
+
+            if (block.errorDetails) {
+                var detailsBtn = document.createElement('button');
+                detailsBtn.className = 'error-details-btn';
+                detailsBtn.textContent = '查看详情';
+                detailsBtn.addEventListener('click', function() {
+                    showErrorDetails(block.errorDetails);
+                });
+                card.appendChild(detailsBtn);
+            }
+
+            return card;
+        }
+
         // ============ Markdown / 工具函数 ============
 
         function parseMarkdown(t) {
@@ -1345,6 +1752,37 @@
             var d = document.createElement('div');
             d.textContent = text;
             return d.innerHTML;
+        }
+
+        function copyToClipboard(text) {
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(text);
+            } else {
+                // 降级方案
+                var textarea = document.createElement('textarea');
+                textarea.value = text;
+                textarea.style.position = 'fixed';
+                textarea.style.left = '-9999px';
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+            }
+        }
+
+        function showErrorDetails(details) {
+            var modal = document.getElementById('error-modal');
+            var body = document.getElementById('error-modal-body');
+            try {
+                body.textContent = JSON.stringify(details, null, 2);
+            } catch (e) {
+                body.textContent = String(details);
+            }
+            modal.classList.add('active');
+        }
+
+        function closeErrorModal() {
+            document.getElementById('error-modal').classList.remove('active');
         }
 
         // ============ 文件处理 ============
@@ -1437,7 +1875,9 @@
             currentSessionId = null;
             messages = [];
             isThinking = false;
+            activeRequestId = null;
             setStatus('ready', '就绪');
+            updateSendButton();
             pendingRequests = {};
             publishMessage('ai-chat/clear-session', {});
             messagesContainer.innerHTML =
