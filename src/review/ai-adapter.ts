@@ -191,13 +191,16 @@ async function makeRequest(
 				);
 			}
 
-			// P1: 超时错误应该映射到AI_TIMEOUT，而非AI_NETWORK_ERROR
+			// P1: 超时错误映射到AI_TIMEOUT，但允许重试1次（网络抖动）
 			if (lastError.message.includes('Request timeout')) {
-				throw new ReviewError(
-					ErrorCode.AI_TIMEOUT,
-					`AI请求超时（>${timeout}秒）`,
-					lastError,
-				);
+				if (attempt === maxRetries) {
+					throw new ReviewError(
+						ErrorCode.AI_TIMEOUT,
+						`AI请求超时（>${timeout}秒，已重试${maxRetries}次）`,
+						lastError,
+					);
+				}
+				// 超时允许重试，但不抛出，继续下一次尝试
 			}
 
 			if (lastError.message.includes('CORS')) {

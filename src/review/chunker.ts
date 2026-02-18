@@ -118,41 +118,8 @@ export function chunkData(
 		currentChunkPinCount += pinCount;
 	}
 
-	// 处理最后一个分块
-	if (currentChunkComponents.length > 0) {
-		const chunk = buildChunk(
-			data,
-			currentChunkComponents,
-			chunks.length,
-			-1,
-		);
-
-		// P1: 最后一块也要执行字节限制检查
-		const chunkSize = estimateJsonSize(chunk);
-		if (chunkSize > cfg.maxBytesPerChunk && currentChunkComponents.length > 1) {
-			const lastComponent = currentChunkComponents.pop();
-			if (lastComponent) {
-				const reducedChunk = buildChunk(
-					data,
-					currentChunkComponents,
-					chunks.length,
-					-1,
-				);
-				chunks.push(reducedChunk);
-
-				const singleChunk = buildChunk(
-					data,
-					[lastComponent],
-					chunks.length,
-					-1,
-				);
-				chunks.push(singleChunk);
-			}
-		}
-		else {
-			chunks.push(chunk);
-		}
-	}
+	// 处理最后一个分块（可能需要递归拆分以满足字节限制）
+	splitAndPushChunk(data, currentChunkComponents, chunks, cfg);
 
 	// 更新所有分块的chunkCount
 	const totalChunks = chunks.length;
@@ -162,6 +129,49 @@ export function chunkData(
 	}
 
 	return chunks;
+}
+
+/**
+ * 递归拆分并推送分块，确保每块都满足字节限制
+ */
+function splitAndPushChunk(
+	data: CollectedData,
+	components: typeof data.components,
+	chunks: SchReviewChunk[],
+	cfg: ChunkConfig,
+): void {
+	if (components.length === 0) {
+		return;
+	}
+
+	const chunk = buildChunk(data, components, chunks.length, -1);
+	const chunkSize = estimateJsonSize(chunk);
+
+	// 满足字节限制，或只有一个器件（无法再拆分）
+	if (chunkSize <= cfg.maxBytesPerChunk || components.length === 1) {
+		chunks.push(chunk);
+		return;
+	}
+
+	// 超过字节限制且有多个器件：反复pop直到满足限制
+	const overflowComponents: typeof components = [];
+	while (components.length > 1) {
+		const lastComponent = components.pop();
+		if (!lastComponent)
+			break;
+		overflowComponents.unshift(lastComponent);
+
+		const reducedChunk = buildChunk(data, components, chunks.length, -1);
+		const reducedSize = estimateJsonSize(reducedChunk);
+
+		if (reducedSize <= cfg.maxBytesPerChunk || components.length === 1) {
+			// 剩余部分满足限制，推送
+			chunks.push(reducedChunk);
+			// 递归处理溢出的器件
+			splitAndPushChunk(data, overflowComponents, chunks, cfg);
+			return;
+		}
+	}
 }
 
 /**
