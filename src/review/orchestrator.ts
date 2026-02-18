@@ -2,17 +2,18 @@
  * AI原理图审查 - 对话模式编排器
  *
  * 管理IFrame面板与AI对话的完整生命周期
+ * 按 sessionId 隔离对话会话，支持流式 thinking/text 推送
  */
-import type { CollectedData, UserMessage } from './types';
+import type { AIBlockResponse, CollectedData, MessageBlock, UserMessage } from './types';
 import { ChatSession } from './chat-adapter';
 import { collectSchematicData } from './collector';
 import { loadChatHistory, loadConfig, saveChatHistory, saveConfig, validateConfig } from './config';
-import { CHAT_TOPICS, ErrorCode, ReviewError } from './types';
+import { CHAT_TOPICS, ChunkType, ErrorCode, ReviewError } from './types';
 
 /**
- * 全局对话会话
+ * 按 sessionId 维护对话会话（替代单一全局 chatSession）
  */
-let chatSession: ChatSession | null = null;
+const chatSessions = new Map<string, ChatSession>();
 
 /**
  * 缓存的原理图数据
@@ -36,8 +37,8 @@ export async function startAIChat(): Promise<void> {
 		throw new ReviewError(ErrorCode.UI_IFRAME_FAILED, '无法打开对话面板');
 	}
 
-	// 初始化对话会话
-	chatSession = new ChatSession();
+	// 打开新面板时重置会话容器，避免旧面板状态串入
+	clearAllChatSessions();
 
 	// 设置MessageBus监听
 	setupChatListeners();
@@ -62,7 +63,11 @@ async function collectDataInBackground(): Promise<void> {
 		});
 
 		cachedSchematicData = await collectSchematicData();
-		chatSession?.setSchematicContext(cachedSchematicData);
+
+		// 将原理图数据注入所有已存在的会话
+		for (const session of chatSessions.values()) {
+			session.setSchematicContext(cachedSchematicData);
+		}
 
 		// 通知IFrame数据已就绪
 		publishToIFrame(CHAT_TOPICS.SCHEMATIC_DATA, {
@@ -79,7 +84,7 @@ async function collectDataInBackground(): Promise<void> {
 		// 数据采集失败不阻塞对话，用户仍可以上传截图
 		publishToIFrame(CHAT_TOPICS.SCHEMATIC_DATA, {
 			summary: {
-				components: -1, // 使用 -1 表示采集失败，与 REQUEST_DATA 保持一致
+				components: -1,
 				pins: -1,
 				nets: -1,
 			},
@@ -192,7 +197,6 @@ function setupChatListeners(): void {
 		const result = await saveConfig(data);
 
 		if (!result.success) {
-			// 保存失败，发送错误消息
 			publishToIFrame(CHAT_TOPICS.ERROR, {
 				message: `配置保存失败: ${result.error || '未知错误'}`,
 				code: 'CONFIG_SAVE_FAILED',
@@ -203,7 +207,7 @@ function setupChatListeners(): void {
 		// 保存成功后回传配置状态（安全考虑：不发送 apiKey 实际值）
 		publishToIFrame(CHAT_TOPICS.CONFIG_DATA, {
 			apiUrl: result.config.apiUrl,
-			apiKey: result.config.apiKey ? '***已配置***' : '', // 仅显示状态
+			apiKey: result.config.apiKey ? '***已配置***' : '',
 			model: result.config.model,
 		});
 	});
@@ -253,7 +257,6 @@ function setupChatListeners(): void {
 		const result = await saveChatHistory(data.messages);
 
 		if (!result.success) {
-			// 保存失败，发送错误消息
 			publishToIFrame(CHAT_TOPICS.ERROR, {
 				message: `历史记录保存失败: ${result.error || '未知错误'}`,
 				code: 'HISTORY_SAVE_FAILED',
@@ -261,11 +264,23 @@ function setupChatListeners(): void {
 		}
 	});
 
-	// 监听清空会话请求
-	subscribe(CHAT_TOPICS.CLEAR_SESSION, () => {
-		if (chatSession) {
-			chatSession.clear();
+	// 监听清空会话请求（支持按 sessionId 清空或全部清空）
+	subscribe(CHAT_TOPICS.CLEAR_SESSION, (data: any) => {
+		const sessionId = typeof data?.sessionId === 'string'
+			? data.sessionId
+			: '';
+
+		if (sessionId) {
+			const session = chatSessions.get(sessionId);
+			if (session) {
+				session.clear();
+				chatSessions.delete(sessionId);
+			}
+			return;
 		}
+
+		// 无 sessionId 时清空所有会话
+		clearAllChatSessions();
 	});
 }
 
@@ -319,15 +334,6 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		}
 	}
 
-	if (!chatSession) {
-		publishToIFrame(CHAT_TOPICS.ERROR, {
-			message: '会话未初始化',
-			requestId: msg.requestId,
-			sessionId: msg.sessionId,
-		});
-		return;
-	}
-
 	const config = loadConfig();
 	const configError = validateConfig(config);
 
@@ -342,7 +348,16 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 	}
 
 	try {
-		const reply = await chatSession.sendMessage(msg, config);
+		// 按 sessionId 获取或创建会话（核心隔离机制）
+		const session = getOrCreateChatSession(msg.sessionId);
+
+		const reply = await session.sendMessage(
+			msg,
+			config,
+			(block) => {
+				publishMessageBlock(msg.requestId, msg.sessionId, block);
+			},
+		);
 
 		publishToIFrame(CHAT_TOPICS.AI_RESPONSE, {
 			content: reply,
@@ -396,6 +411,70 @@ async function handleLocateRequest(reference: string): Promise<void> {
 		console.warn('定位失败:', error);
 	}
 }
+
+// ============ 会话管理（按 sessionId 隔离） ============
+
+/**
+ * 获取或创建指定 sessionId 的对话会话
+ */
+function getOrCreateChatSession(sessionId: string): ChatSession {
+	const existing = chatSessions.get(sessionId);
+	if (existing)
+		return existing;
+
+	const session = new ChatSession();
+	if (cachedSchematicData) {
+		session.setSchematicContext(cachedSchematicData);
+	}
+
+	chatSessions.set(sessionId, session);
+	return session;
+}
+
+/**
+ * 清空所有对话会话
+ */
+function clearAllChatSessions(): void {
+	for (const session of chatSessions.values()) {
+		session.clear();
+	}
+	chatSessions.clear();
+}
+
+// ============ 流式 Block 推送 ============
+
+/**
+ * 将 MessageBlock 推送到 IFrame
+ * thinking 类型使用 AI_THINKING topic，text 类型使用 AI_TEXT topic
+ */
+function publishMessageBlock(
+	requestId: string,
+	sessionId: string,
+	block: MessageBlock,
+): void {
+	const topic = isThinkingBlock(block.type)
+		? CHAT_TOPICS.AI_THINKING
+		: CHAT_TOPICS.AI_TEXT;
+
+	const payload: AIBlockResponse = {
+		...block,
+		requestId,
+		sessionId,
+	};
+
+	publishToIFrame(topic, payload);
+}
+
+/**
+ * 判断是否为 thinking 类型的 block
+ */
+function isThinkingBlock(type: ChunkType): boolean {
+	return type === ChunkType.THINKING_START
+		|| type === ChunkType.THINKING_DELTA
+		|| type === ChunkType.THINKING_COMPLETE;
+}
+
+// ============ MessageBus 通信 ============
 
 /**
  * 发布消息到IFrame

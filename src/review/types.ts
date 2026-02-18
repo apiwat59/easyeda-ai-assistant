@@ -172,6 +172,8 @@ export const CHAT_TOPICS = {
 	CONFIG_DATA: 'ai-chat/config-data',
 	HISTORY_DATA: 'ai-chat/history-data',
 	AI_RESPONSE: 'ai-chat/ai-response',
+	AI_THINKING: 'ai-chat/ai-thinking',
+	AI_TEXT: 'ai-chat/ai-text',
 	ERROR: 'ai-chat/error',
 } as const;
 
@@ -210,6 +212,36 @@ export interface AIResponse {
 	timestamp: number;
 	requestId: string; // 回传请求ID
 	sessionId: string; // 回传会话ID
+}
+
+/**
+ * 流式分块类型（参考 Cherry Studio ChunkType）
+ */
+export enum ChunkType {
+	THINKING_START = 'THINKING_START',
+	THINKING_DELTA = 'THINKING_DELTA',
+	THINKING_COMPLETE = 'THINKING_COMPLETE',
+	TEXT_START = 'TEXT_START',
+	TEXT_DELTA = 'TEXT_DELTA',
+	TEXT_COMPLETE = 'TEXT_COMPLETE',
+}
+
+/**
+ * AI流式消息分块（后端内部使用）
+ */
+export interface MessageBlock {
+	type: ChunkType;
+	content: string; // 当前增量内容
+	accumulatedContent: string; // 到当前为止的累计内容
+	timestamp: number;
+}
+
+/**
+ * AI流式消息分块（主扩展 -> IFrame）
+ */
+export interface AIBlockResponse extends MessageBlock {
+	requestId: string;
+	sessionId: string;
 }
 
 /**

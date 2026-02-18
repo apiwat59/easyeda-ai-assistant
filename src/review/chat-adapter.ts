@@ -2,11 +2,25 @@
  * AI原理图审查 - 对话式AI适配器
  *
  * 支持多轮对话历史、图片上传、原理图上下文注入
+ * 支持流式SSE响应，区分 thinking/text 两种 block 类型
  */
-import type { CollectedData, ConfigStore, UserMessage } from './types';
+import type { CollectedData, ConfigStore, MessageBlock, UserMessage } from './types';
 import { chunkData } from './chunker';
 import { buildChatSystemPrompt } from './prompt-builder';
-import { ErrorCode, ReviewError } from './types';
+import { ChunkType, ErrorCode, ReviewError } from './types';
+
+/**
+ * Chat Completion 结果（区分 reasoning 和 text）
+ */
+interface ChatCompletionResult {
+	textContent: string;
+	reasoningContent: string;
+}
+
+/**
+ * 流式分块回调
+ */
+type MessageBlockHandler = (block: MessageBlock) => void;
 
 /**
  * 对话历史条目
@@ -35,10 +49,13 @@ export class ChatSession {
 
 	/**
 	 * 发送用户消息并获取AI回复
+	 *
+	 * @param onBlock 可选的流式分块回调，接收 thinking/text 事件
 	 */
 	async sendMessage(
 		userMsg: UserMessage,
 		config: ConfigStore,
+		onBlock?: MessageBlockHandler,
 	): Promise<string> {
 		const systemPrompt = buildChatSystemPrompt(this.schematicContext);
 
@@ -55,7 +72,8 @@ export class ChatSession {
 		];
 
 		try {
-			const reply = await callOpenAICompatibleChat(messages, config);
+			const result = await callOpenAICompatibleChat(messages, config, onBlock);
+			const reply = result.textContent || result.reasoningContent;
 
 			// 将AI回复加入历史
 			this.history.push({ role: 'assistant', content: reply });
@@ -105,12 +123,13 @@ export class ChatSession {
 }
 
 /**
- * 调用OpenAI兼容格式的Chat API（多轮对话）
+ * 调用OpenAI兼容格式的Chat API（多轮对话，流式）
  */
 async function callOpenAICompatibleChat(
 	messages: ChatMessage[],
 	config: ConfigStore,
-): Promise<string> {
+	onBlock?: MessageBlockHandler,
+): Promise<ChatCompletionResult> {
 	const url = config.apiUrl || 'https://api.openai.com/v1/chat/completions';
 
 	const body = {
@@ -120,10 +139,10 @@ async function callOpenAICompatibleChat(
 			content: m.content,
 		})),
 		temperature: 0.4,
-		stream: false,
+		stream: true,
 	};
 
-	return await makeRequest(url, config, body);
+	return await makeRequest(url, config, body, onBlock);
 }
 
 /**
@@ -133,7 +152,8 @@ async function makeRequest(
 	url: string,
 	config: ConfigStore,
 	body: unknown,
-): Promise<string> {
+	onBlock?: MessageBlockHandler,
+): Promise<ChatCompletionResult> {
 	const timeout = (config.timeout || 120) * 1000;
 	let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
@@ -173,12 +193,17 @@ async function makeRequest(
 
 		// 如果是 SSE 格式或响应文本包含 SSE 标记，使用 SSE 解析
 		if (isSSE || responseText.startsWith('data:') || responseText.includes('\ndata:')) {
-			return parseSSEResponse(responseText);
+			return parseSSEResponse(responseText, onBlock);
 		}
 
-		// 标准 JSON 响应
+		// 标准 JSON 响应（非流式回退）
 		const data = JSON.parse(responseText);
-		return extractResponseText(data);
+		const textContent = extractResponseText(data);
+		const reasoningContent = extractReasoningText(data);
+
+		emitCompleteBlocks(textContent, reasoningContent, onBlock);
+
+		return { textContent, reasoningContent };
 	}
 	catch (error) {
 		// 捕获外部交互权限错误（支持中英文多种表述）
@@ -208,32 +233,111 @@ async function makeRequest(
 	}
 }
 
+// ============ SSE 解析（区分 thinking/text） ============
+
 /**
- * 解析 SSE 流式响应（支持多行 data 事件）
+ * 解析 SSE 流式响应，区分 reasoning_content 和 content
+ *
+ * 生命周期：
+ *   THINKING_START → THINKING_DELTA(n) → THINKING_COMPLETE
+ *   TEXT_START     → TEXT_DELTA(n)     → TEXT_COMPLETE
  */
-function parseSSEResponse(text: string): string {
+function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatCompletionResult {
 	const lines = text.split('\n');
-	let fullContent = '';
+	let textContent = '';
+	let reasoningContent = '';
 	let currentEventData: string[] = [];
+	let thinkingStarted = false;
+	let textStarted = false;
+	let thinkingCompleted = false;
+	let textCompleted = false;
+
+	const flushEvent = (): void => {
+		if (currentEventData.length === 0)
+			return;
+
+		const eventText = currentEventData.join('\n');
+		currentEventData = [];
+
+		try {
+			const chunk = JSON.parse(eventText);
+			const choice = chunk?.choices?.[0];
+			if (!choice)
+				return;
+
+			const delta = choice.delta || {};
+			const deltaReasoning = normalizeChunkText(delta.reasoning_content);
+			const deltaText = normalizeChunkText(delta.content);
+
+			// 处理 thinking 增量
+			if (deltaReasoning) {
+				if (!thinkingStarted) {
+					thinkingStarted = true;
+					emitBlock(onBlock, ChunkType.THINKING_START, '', reasoningContent);
+				}
+				reasoningContent += deltaReasoning;
+				emitBlock(onBlock, ChunkType.THINKING_DELTA, deltaReasoning, reasoningContent);
+			}
+
+			// 处理 text 增量
+			if (deltaText) {
+				// 如果 thinking 尚未结束，先结束它
+				if (thinkingStarted && !thinkingCompleted) {
+					thinkingCompleted = true;
+					emitBlock(onBlock, ChunkType.THINKING_COMPLETE, '', reasoningContent);
+				}
+				if (!textStarted) {
+					textStarted = true;
+					emitBlock(onBlock, ChunkType.TEXT_START, '', textContent);
+				}
+				textContent += deltaText;
+				emitBlock(onBlock, ChunkType.TEXT_DELTA, deltaText, textContent);
+			}
+
+			// 兼容某些提供方：SSE 事件中直接给完整 message 内容
+			if (!deltaReasoning && !reasoningContent) {
+				const messageReasoning = normalizeChunkText(choice.message?.reasoning_content);
+				if (messageReasoning) {
+					thinkingStarted = true;
+					reasoningContent = messageReasoning;
+					emitBlock(onBlock, ChunkType.THINKING_START, '', '');
+					emitBlock(onBlock, ChunkType.THINKING_DELTA, messageReasoning, reasoningContent);
+				}
+			}
+
+			if (!deltaText && !textContent) {
+				const messageText = normalizeChunkText(choice.message?.content);
+				if (messageText) {
+					textStarted = true;
+					textContent = messageText;
+					emitBlock(onBlock, ChunkType.TEXT_START, '', '');
+					emitBlock(onBlock, ChunkType.TEXT_DELTA, messageText, textContent);
+				}
+			}
+
+			// 检查 finish_reason 发送完成事件
+			if (choice.finish_reason !== null && choice.finish_reason !== undefined) {
+				if (thinkingStarted && !thinkingCompleted) {
+					thinkingCompleted = true;
+					emitBlock(onBlock, ChunkType.THINKING_COMPLETE, '', reasoningContent);
+				}
+				if (textStarted && !textCompleted) {
+					textCompleted = true;
+					emitBlock(onBlock, ChunkType.TEXT_COMPLETE, '', textContent);
+				}
+			}
+		}
+		catch {
+			// 忽略无法解析的事件
+		}
+	};
 
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i].trim();
 
 		// 空行表示事件结束
 		if (line === '') {
-			if (currentEventData.length > 0) {
-				// 处理当前事件的所有 data 行
-				const eventText = currentEventData.join('\n');
-				try {
-					const chunk = JSON.parse(eventText);
-					const content = chunk.choices?.[0]?.delta?.content || chunk.choices?.[0]?.message?.content || '';
-					fullContent += content;
-				}
-				catch {
-					// 忽略无法解析的事件
-				}
-				currentEventData = [];
-			}
+			flushEvent();
 			continue;
 		}
 
@@ -243,6 +347,7 @@ function parseSSEResponse(text: string): string {
 
 			// 跳过 [DONE] 标记
 			if (dataContent === '[DONE]') {
+				flushEvent();
 				continue;
 			}
 
@@ -252,23 +357,89 @@ function parseSSEResponse(text: string): string {
 	}
 
 	// 处理最后一个事件（如果没有以空行结尾）
-	if (currentEventData.length > 0) {
-		const eventText = currentEventData.join('\n');
-		try {
-			const chunk = JSON.parse(eventText);
-			const content = chunk.choices?.[0]?.delta?.content || chunk.choices?.[0]?.message?.content || '';
-			fullContent += content;
-		}
-		catch {
-			// 忽略无法解析的事件
-		}
+	flushEvent();
+
+	// 确保所有已开始的 block 都收到 COMPLETE 事件
+	if (thinkingStarted && !thinkingCompleted) {
+		emitBlock(onBlock, ChunkType.THINKING_COMPLETE, '', reasoningContent);
+	}
+	if (textStarted && !textCompleted) {
+		emitBlock(onBlock, ChunkType.TEXT_COMPLETE, '', textContent);
 	}
 
-	if (!fullContent) {
+	if (!textContent && !reasoningContent) {
 		throw new ReviewError(ErrorCode.AI_INVALID_RESPONSE, '无法从SSE响应中提取内容');
 	}
 
-	return fullContent;
+	return { textContent, reasoningContent };
+}
+
+// ============ 辅助函数 ============
+
+/**
+ * 发送一个 MessageBlock 事件
+ */
+function emitBlock(
+	onBlock: MessageBlockHandler | undefined,
+	type: ChunkType,
+	content: string,
+	accumulatedContent: string,
+): void {
+	if (!onBlock)
+		return;
+
+	onBlock({
+		type,
+		content,
+		accumulatedContent,
+		timestamp: Date.now(),
+	});
+}
+
+/**
+ * 对非流式 JSON 响应，补发完整的 block 生命周期事件
+ */
+function emitCompleteBlocks(
+	textContent: string,
+	reasoningContent: string,
+	onBlock?: MessageBlockHandler,
+): void {
+	if (!onBlock)
+		return;
+
+	if (reasoningContent) {
+		emitBlock(onBlock, ChunkType.THINKING_START, '', '');
+		emitBlock(onBlock, ChunkType.THINKING_DELTA, reasoningContent, reasoningContent);
+		emitBlock(onBlock, ChunkType.THINKING_COMPLETE, '', reasoningContent);
+	}
+
+	if (textContent) {
+		emitBlock(onBlock, ChunkType.TEXT_START, '', '');
+		emitBlock(onBlock, ChunkType.TEXT_DELTA, textContent, textContent);
+		emitBlock(onBlock, ChunkType.TEXT_COMPLETE, '', textContent);
+	}
+}
+
+/**
+ * 规范化 chunk 文本值（兼容 string / string[] / {text:string}[] 等格式）
+ */
+function normalizeChunkText(value: unknown): string {
+	if (typeof value === 'string')
+		return value;
+
+	if (Array.isArray(value)) {
+		return value.map((item) => {
+			if (typeof item === 'string')
+				return item;
+			if (item && typeof item === 'object') {
+				const text = (item as { text?: unknown }).text;
+				return typeof text === 'string' ? text : '';
+			}
+			return '';
+		}).join('');
+	}
+
+	return '';
 }
 
 /**
@@ -288,9 +459,19 @@ function handleHttpError(status: number, body: string): never {
  * 从AI响应中提取文本
  */
 function extractResponseText(data: any): string {
-	// OpenAI兼容格式
-	if (data.choices?.[0]?.message?.content) {
-		return data.choices[0].message.content;
-	}
+	const content = normalizeChunkText(data.choices?.[0]?.message?.content);
+	if (content)
+		return content;
 	throw new ReviewError(ErrorCode.AI_INVALID_RESPONSE, '无法解析AI响应格式');
+}
+
+/**
+ * 从AI响应中提取 reasoning 文本
+ */
+function extractReasoningText(data: any): string {
+	return normalizeChunkText(
+		data.choices?.[0]?.message?.reasoning_content
+		|| data.choices?.[0]?.message?.reasoning
+		|| data.choices?.[0]?.reasoning_content,
+	);
 }
