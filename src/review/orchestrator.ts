@@ -92,7 +92,9 @@ export function triggerBackgroundCollection(
 	if (backgroundCollectionInFlight) {
 		backgroundCollectionRerunPending = true;
 		backgroundCollectionRerunReason = reason;
-		backgroundCollectionRerunNotify = backgroundCollectionRerunNotify || notifyIFrame;
+		// 使用最后一次触发的 notifyIFrame 值，不再 OR 累积
+		// 避免定时器（notifyIFrame=false）的 rerun 继承 startAIChat 的 true 导致覆盖
+		backgroundCollectionRerunNotify = notifyIFrame;
 		return backgroundCollectionInFlight;
 	}
 
@@ -128,7 +130,8 @@ async function executeBackgroundCollection(
 	notifyIFrame: boolean,
 ): Promise<void> {
 	try {
-		if (notifyIFrame) {
+		// 仅在没有可用缓存时才发送"采集中"状态，避免覆盖已显示的数据
+		if (notifyIFrame && !cachedSchematicData) {
 			publishToIFrame(CHAT_TOPICS.SCHEMATIC_DATA, {
 				summary: {
 					components: -1, // -1 表示正在采集
@@ -161,6 +164,7 @@ async function executeBackgroundCollection(
 					nets: collected.nets.length,
 				},
 				timestamp: collected.timestamp,
+				meta: collected.meta,
 			});
 		}
 	}
@@ -201,6 +205,7 @@ function setupChatListeners(): void {
 					nets: cachedSchematicData.nets.length,
 				},
 				timestamp: cachedSchematicData.timestamp,
+				meta: cachedSchematicData.meta,
 			});
 		}
 		else {

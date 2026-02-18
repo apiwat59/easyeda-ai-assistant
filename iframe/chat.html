@@ -1255,12 +1255,29 @@
 
         // ============ MessageBus 处理器 ============
 
+        var lastSchematicReadyTimestamp = 0; // 上次就绪的采集时间戳，用于区分采集轮次
+
         function handleSchematicData(data) {
             if (!data || !data.summary) return;
-            schematicData = data;
             var c = data.summary.components;
             var p = data.summary.pins;
             var n = data.summary.nets;
+            var ts = data.timestamp || 0;
+
+            // 状态单调性保护：已有"就绪"数据时，忽略同一轮次的"采集中"消息
+            // 判断依据：如果 ts 早于或等于上次就绪的时间戳，说明是同一轮或旧轮次的"采集中"
+            if (c < 0 && schematicData && schematicData.summary && schematicData.summary.components >= 0) {
+                if (ts <= lastSchematicReadyTimestamp) {
+                    addDebugLog('info', '原理图数据重新采集中（UI 保留已有数据，同轮次忽略）');
+                    return;
+                }
+                // ts > lastSchematicReadyTimestamp 说明是新一轮采集，允许覆盖
+            }
+
+            schematicData = data;
+            if (c >= 0) {
+                lastSchematicReadyTimestamp = ts;
+            }
 
             if (c < 0) {
                 addDebugLog('info', '原理图数据采集中...');
@@ -1269,7 +1286,8 @@
                     components: c,
                     pins: p,
                     nets: n,
-                    timestamp: data.timestamp
+                    timestamp: ts,
+                    meta: data.meta || null
                 });
             }
 

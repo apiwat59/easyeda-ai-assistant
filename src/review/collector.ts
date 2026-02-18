@@ -58,6 +58,13 @@ async function promiseAllWithLimit<T>(
 }
 
 /**
+ * 延时辅助函数
+ */
+function delay(ms: number): Promise<void> {
+	return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
  * 采集原理图数据（支持多子图纸逐页采集）
  */
 export async function collectSchematicData(): Promise<CollectedData> {
@@ -93,6 +100,7 @@ export async function collectSchematicData(): Promise<CollectedData> {
 			// 获取当前原理图下的全部图页
 			const pages = await eda.dmt_Schematic.getCurrentSchematicAllSchematicPagesInfo();
 			meta.expectedPageCount = pages.length;
+			console.warn(`[采集开始] 检测到 ${pages.length} 个图页: [${pages.map(p => p.name).join(', ')}]`);
 
 			// 单页场景：直接按当前页采集，避免不必要切页
 			if (pages.length <= 1) {
@@ -134,6 +142,25 @@ export async function collectSchematicData(): Promise<CollectedData> {
 							continue;
 						}
 
+						// 等待焦点切换落稳（EDA 内部可能有异步渲染）
+						await delay(200);
+
+						// 校验焦点是否真正切换到目标页
+						const focusCheck = await eda.dmt_SelectControl.getCurrentDocumentInfo();
+						if (!focusCheck || focusCheck.uuid !== page.uuid) {
+							// 重试一次：再次激活并等待
+							console.warn(`焦点校验失败（期望 ${page.uuid}，实际 ${focusCheck?.uuid}），重试中...`);
+							await eda.dmt_EditorControl.activateDocument(pageTabId);
+							await delay(300);
+
+							const retryCheck = await eda.dmt_SelectControl.getCurrentDocumentInfo();
+							if (!retryCheck || retryCheck.uuid !== page.uuid) {
+								console.warn(`焦点校验重试仍失败，跳过图页: ${page.name} (${page.uuid})`);
+								meta.missingPageUuids.push(page.uuid);
+								continue;
+							}
+						}
+
 						const [pageComponents, pageWires, pageTexts, pageBuses] = await Promise.all([
 							collectComponents({
 								allSchematicPages: false,
@@ -144,6 +171,7 @@ export async function collectSchematicData(): Promise<CollectedData> {
 							collectBuses({ schematicPageUuid: page.uuid }),
 						]);
 
+						console.warn(`图页 ${page.name} (${page.uuid}) 采集完成: ${pageComponents.length} 器件, ${pageWires.length} 导线`);
 						components.push(...pageComponents);
 						wires.push(...pageWires);
 						texts.push(...pageTexts);
@@ -202,6 +230,12 @@ export async function collectSchematicData(): Promise<CollectedData> {
 
 		// 统计网络
 		const nets = buildNetStatistics(pins);
+
+		// 输出采集总结日志
+		console.warn(`[采集完成] mode=${meta.mode}, quality=${meta.quality}, `
+			+ `pages=${meta.collectedPageCount}/${meta.expectedPageCount}, `
+			+ `components=${components.length}, pins=${pins.length}, nets=${nets.length}, `
+			+ `missing=[${meta.missingPageUuids.join(',')}]`);
 
 		return {
 			components,
