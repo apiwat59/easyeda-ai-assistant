@@ -122,10 +122,7 @@
             margin-bottom: 6px;
             font-weight: 500;
         }
-        .history-list {
-            max-height: 200px;
-            overflow-y: auto;
-        }
+        .history-list { max-height: 200px; overflow-y: auto; }
         .history-item {
             padding: 6px 8px;
             margin-bottom: 4px;
@@ -140,21 +137,9 @@
             overflow: hidden;
             text-overflow: ellipsis;
         }
-        .history-item:hover {
-            background: var(--bg-hover);
-            border-color: var(--accent-color);
-        }
-        .history-item.active {
-            background: var(--accent-light);
-            border-color: var(--accent-color);
-            color: var(--accent-color);
-        }
-        .history-empty {
-            color: var(--text-placeholder);
-            font-size: 11px;
-            text-align: center;
-            padding: 10px;
-        }
+        .history-item:hover { background: var(--bg-hover); border-color: var(--accent-color); }
+        .history-item.active { background: var(--accent-light); border-color: var(--accent-color); color: var(--accent-color); }
+        .history-empty { color: var(--text-placeholder); font-size: 11px; text-align: center; padding: 10px; }
 
         #main {
             flex: 1;
@@ -184,18 +169,8 @@
         }
         .toggle-sidebar:hover { background: var(--bg-hover); color: var(--text-primary); }
 
-        .status-indicator {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 12px;
-            color: var(--text-secondary);
-        }
-        .status-dot {
-            width: 7px; height: 7px;
-            border-radius: 50%;
-            background: var(--text-secondary);
-        }
+        .status-indicator { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+        .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-secondary); }
         .status-dot.ready { background: var(--success-color); }
         .status-dot.thinking { background: var(--warning-color); animation: pulse 1.5s infinite; }
 
@@ -210,12 +185,7 @@
             gap: 10px;
         }
 
-        .message {
-            display: flex;
-            gap: 8px;
-            max-width: 85%;
-            animation: slideIn 0.2s ease;
-        }
+        .message { display: flex; gap: 8px; max-width: 85%; animation: slideIn 0.2s ease; }
         @keyframes slideIn { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:translateY(0)} }
         .message.user { align-self: flex-end; flex-direction: row-reverse; }
         .message.ai { align-self: flex-start; }
@@ -223,16 +193,14 @@
         .message-avatar {
             width: 26px; height: 26px;
             border-radius: var(--radius-sm);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-            font-size: 11px;
-            font-weight: 600;
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0; font-size: 11px; font-weight: 600;
             border: 1px solid var(--border-color);
         }
         .message.user .message-avatar { background: var(--accent-light); color: var(--accent-color); }
         .message.ai .message-avatar { background: var(--accent-color); color: #fff; }
+
+        .message-body { flex: 1; min-width: 0; }
 
         .message-content {
             padding: 8px 12px;
@@ -241,63 +209,96 @@
             line-height: 1.6;
             word-wrap: break-word;
         }
-        .message.user .message-content {
-            background: var(--msg-user-bg);
-            color: var(--msg-user-text);
-            border-top-right-radius: 0;
-        }
-        .message.ai .message-content {
-            background: var(--msg-ai-bg);
-            border: 1px solid var(--border-color);
-            border-top-left-radius: 0;
-        }
+        .message.user .message-content { background: var(--msg-user-bg); color: var(--msg-user-text); border-top-right-radius: 0; }
+        .message.ai .message-content { background: var(--msg-ai-bg); border: 1px solid var(--border-color); border-top-left-radius: 0; }
 
         .message-content p { margin-bottom: 6px; }
         .message-content p:last-child { margin-bottom: 0; }
         .message-content code {
-            background: rgba(0,0,0,0.06);
-            padding: 1px 4px;
-            border-radius: 2px;
-            font-family: Consolas, Monaco, monospace;
-            font-size: 12px;
-            color: #c7254e;
+            background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 2px;
+            font-family: Consolas, Monaco, monospace; font-size: 12px; color: #c7254e;
         }
         .message-content pre {
-            background: #f8f8f8;
-            border: 1px solid var(--border-color);
-            padding: 8px;
-            border-radius: var(--radius-sm);
-            overflow-x: auto;
-            margin: 6px 0;
+            background: #f8f8f8; border: 1px solid var(--border-color);
+            padding: 8px; border-radius: var(--radius-sm); overflow-x: auto; margin: 6px 0;
         }
         .message-content pre code { background: none; padding: 0; color: inherit; }
 
         .ref-tag {
-            display: inline-block;
-            background: var(--accent-light);
-            color: var(--accent-color);
-            padding: 0 5px;
-            border-radius: 2px;
-            font-family: Consolas, monospace;
-            font-size: 12px;
-            cursor: pointer;
-            border: 1px solid rgba(25,118,210,0.3);
-            transition: background 0.15s;
+            display: inline-block; background: var(--accent-light); color: var(--accent-color);
+            padding: 0 5px; border-radius: 2px; font-family: Consolas, monospace; font-size: 12px;
+            cursor: pointer; border: 1px solid rgba(25,118,210,0.3); transition: background 0.15s;
         }
         .ref-tag:hover { background: #bbdefb; }
 
         .message-images { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
         .message-image {
             max-width: 180px; max-height: 180px;
-            border-radius: var(--radius-sm);
-            cursor: pointer;
+            border-radius: var(--radius-sm); cursor: pointer;
             border: 1px solid var(--border-color);
         }
 
+        /* --- Thinking Block 样式 --- */
+        .thinking-container {
+            margin-bottom: 8px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background: rgba(0, 0, 0, 0.02);
+            overflow: hidden;
+        }
+        .thinking-header {
+            display: flex;
+            align-items: center;
+            padding: 6px 10px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.15s;
+        }
+        .thinking-header:hover { background: rgba(0, 0, 0, 0.04); }
+        .thinking-toggle-icon {
+            margin-right: 6px;
+            font-size: 10px;
+            transition: transform 0.2s ease;
+            display: inline-block;
+        }
+        .thinking-container.expanded .thinking-toggle-icon { transform: rotate(90deg); }
+        .thinking-status-text { flex: 1; }
+        .thinking-content {
+            display: none;
+            padding: 8px 12px;
+            border-top: 1px solid var(--border-color);
+            font-size: 12px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .thinking-container.expanded .thinking-content { display: block; }
+
+        /* 流式光标动画 */
+        .block-streaming::after {
+            content: '';
+            display: inline-block;
+            width: 6px;
+            height: 14px;
+            background: var(--accent-color);
+            margin-left: 2px;
+            vertical-align: middle;
+            animation: cursor-blink 1s infinite;
+        }
+        @keyframes cursor-blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+        /* 思考中脉冲动画 */
+        @keyframes thinking-pulse { 0%,100%{opacity:0.6} 50%{opacity:1} }
+        .thinking-container.streaming .thinking-status-text { animation: thinking-pulse 1.5s infinite; }
+
         .typing-indicator { display: flex; gap: 4px; padding: 8px 12px; }
         .typing-dot {
-            width: 6px; height: 6px;
-            border-radius: 50%;
+            width: 6px; height: 6px; border-radius: 50%;
             background: var(--text-secondary);
             animation: typing 1.4s infinite ease-in-out both;
         }
@@ -312,54 +313,37 @@
         }
         .file-previews { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
         .file-preview {
-            position: relative;
-            width: 48px; height: 48px;
-            border-radius: var(--radius-sm);
-            overflow: hidden;
+            position: relative; width: 48px; height: 48px;
+            border-radius: var(--radius-sm); overflow: hidden;
             border: 1px solid var(--border-color);
         }
         .file-preview img { width: 100%; height: 100%; object-fit: cover; }
         .file-preview-remove {
             position: absolute; top: 1px; right: 1px;
-            width: 14px; height: 14px;
-            border-radius: 50%;
-            background: rgba(0,0,0,0.5);
-            color: #fff; border: none;
+            width: 14px; height: 14px; border-radius: 50%;
+            background: rgba(0,0,0,0.5); color: #fff; border: none;
             cursor: pointer; font-size: 10px;
             display: flex; align-items: center; justify-content: center;
         }
 
         .input-wrapper { display: flex; gap: 6px; align-items: flex-end; }
         #message-input {
-            flex: 1;
-            background: var(--bg-input);
-            border: 1px solid var(--border-color);
-            color: var(--text-primary);
-            border-radius: var(--radius-sm);
-            padding: 7px 10px;
-            font-family: var(--font-family);
-            font-size: 13px;
-            resize: none;
-            min-height: 34px;
-            max-height: 100px;
-            outline: none;
-            line-height: 1.5;
+            flex: 1; background: var(--bg-input);
+            border: 1px solid var(--border-color); color: var(--text-primary);
+            border-radius: var(--radius-sm); padding: 7px 10px;
+            font-family: var(--font-family); font-size: 13px;
+            resize: none; min-height: 34px; max-height: 100px;
+            outline: none; line-height: 1.5;
         }
         #message-input:focus { border-color: var(--accent-color); }
         #message-input::placeholder { color: var(--text-placeholder); }
 
         .input-btn {
             width: 34px; height: 34px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: var(--bg-panel);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-sm);
-            color: var(--text-secondary);
-            cursor: pointer;
-            font-size: 15px;
-            transition: all 0.15s;
+            display: flex; align-items: center; justify-content: center;
+            background: var(--bg-panel); border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm); color: var(--text-secondary);
+            cursor: pointer; font-size: 15px; transition: all 0.15s;
         }
         .input-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
         #send-btn { background: var(--accent-color); color: #fff; border-color: var(--accent-color); }
@@ -369,46 +353,26 @@
         #config-modal {
             display: none;
             position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.3);
-            z-index: 1000;
-            align-items: center;
-            justify-content: center;
+            background: rgba(0,0,0,0.3); z-index: 1000;
+            align-items: center; justify-content: center;
         }
         #config-modal.active { display: flex; }
         .modal-content {
-            background: var(--bg-panel);
-            border: 1px solid var(--border-color);
-            width: 400px; max-width: 90%;
-            border-radius: var(--radius-md);
-            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-            padding: 16px;
+            background: var(--bg-panel); border: 1px solid var(--border-color);
+            width: 400px; max-width: 90%; border-radius: var(--radius-md);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15); padding: 16px;
         }
-        .modal-header {
-            font-size: 15px; font-weight: 600;
-            margin-bottom: 14px; padding-bottom: 10px;
-            border-bottom: 1px solid var(--border-color);
-        }
+        .modal-header { font-size: 15px; font-weight: 600; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--border-color); }
         .form-group { margin-bottom: 12px; }
         .form-label { display: block; margin-bottom: 4px; color: var(--text-secondary); font-size: 12px; }
         .form-control {
-            width: 100%;
-            padding: 6px 8px;
-            background: var(--bg-input);
-            border: 1px solid var(--border-color);
-            color: var(--text-primary);
-            border-radius: var(--radius-sm);
-            font-size: 13px;
-            font-family: inherit;
-            outline: none;
+            width: 100%; padding: 6px 8px; background: var(--bg-input);
+            border: 1px solid var(--border-color); color: var(--text-primary);
+            border-radius: var(--radius-sm); font-size: 13px; font-family: inherit; outline: none;
         }
         .form-control:focus { border-color: var(--accent-color); }
         .form-hint { font-size: 11px; color: var(--text-placeholder); margin-top: 3px; }
-        .modal-actions {
-            display: flex; gap: 8px;
-            justify-content: flex-end;
-            margin-top: 14px; padding-top: 10px;
-            border-top: 1px solid var(--border-color);
-        }
+        .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border-color); }
         .modal-actions .btn { width: auto; padding: 6px 20px; }
 
         .empty-state {
@@ -500,14 +464,16 @@
     </div>
 
     <script>
-        var messages = [];
-        var attachedFiles = [];
-        var schematicData = null;
-        var isThinking = false;
-        var currentConfig = {};
-        var historySessions = []; // 历史会话列表
-        var currentSessionId = null; // 当前会话ID
-        var pendingRequests = {}; // 待处理的请求 {requestId: {sessionId, timestamp}}
+        // ============ 状态管理 ============
+
+        var messages = [];           // 当前会话的消息列表
+        var attachedFiles = [];      // 待发送的附件
+        var schematicData = null;    // 原理图数据
+        var isThinking = false;      // AI 是否正在处理
+        var currentConfig = {};      // 当前 AI 配置
+        var historySessions = [];    // 历史会话列表
+        var currentSessionId = null; // 当前会话 ID
+        var pendingRequests = {};    // 待处理的请求 {requestId: {sessionId, timestamp}}
         var saveHistoryTimer = null; // 历史保存节流定时器
 
         // 不触发历史保存的系统错误（避免错误循环）
@@ -516,6 +482,8 @@
             CONFIG_SAVE_FAILED: true,
             CONFIG_APIKEY_FORBIDDEN: true
         };
+
+        // ============ DOM 引用 ============
 
         var sidebar = document.getElementById('sidebar');
         var messagesContainer = document.getElementById('messages');
@@ -529,7 +497,10 @@
         var configModal = document.getElementById('config-modal');
         var historyList = document.getElementById('history-list');
 
-        // 生成 UUID
+        // ============ 初始化 ============
+
+        init();
+
         function generateUUID() {
             return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
                 var r = Math.random() * 16 | 0;
@@ -538,23 +509,93 @@
             });
         }
 
-        init();
-
         function init() {
             setupEventListeners();
             setStatus('ready', '就绪');
-            // 向主扩展请求数据、配置和历史记录
             publishMessage('ai-chat/request-data', {});
             publishMessage('ai-chat/request-config', {});
             publishMessage('ai-chat/request-history', {});
         }
 
-        function saveHistory() {
-            // 使用节流机制，避免频繁保存（最多每500ms保存一次）
-            if (saveHistoryTimer) {
-                clearTimeout(saveHistoryTimer);
+        // ============ 流式更新管理器（参考 Cherry Studio StreamManager） ============
+
+        var StreamManager = (function() {
+            var pendingUpdates = {};
+            var rafId = null;
+
+            function applyUpdates() {
+                for (var id in pendingUpdates) {
+                    if (!pendingUpdates.hasOwnProperty(id)) continue;
+                    var update = pendingUpdates[id];
+                    var el = document.getElementById(id);
+                    if (!el) continue;
+
+                    if (update.blockType === 'thinking') {
+                        var contentEl = el.querySelector('.thinking-content');
+                        if (contentEl) contentEl.textContent = update.content;
+                        var statusEl = el.querySelector('.thinking-status-text');
+                        if (statusEl) {
+                            if (update.status === 'streaming') {
+                                var elapsed = ((Date.now() - update.startTime) / 1000).toFixed(1);
+                                statusEl.textContent = '思考中... ' + elapsed + 's';
+                            } else {
+                                var total = ((update.thinkingMs || 0) / 1000).toFixed(1);
+                                statusEl.textContent = '已深度思考 ' + total + ' 秒';
+                            }
+                        }
+                        // 流式状态下自动展开
+                        if (update.status === 'streaming') {
+                            if (el.className.indexOf('streaming') === -1) {
+                                el.className += ' streaming';
+                            }
+                            if (el.className.indexOf('expanded') === -1) {
+                                el.className += ' expanded';
+                            }
+                        } else {
+                            el.className = el.className.replace(' streaming', '');
+                        }
+                    } else {
+                        // text block 更新
+                        var html = escapeHtml(update.content);
+                        html = parseMarkdown(html);
+                        html = highlightReferences(html);
+                        el.innerHTML = html;
+                        if (update.status === 'streaming') {
+                            if (el.className.indexOf('block-streaming') === -1) {
+                                el.className += ' block-streaming';
+                            }
+                        } else {
+                            el.className = el.className.replace(' block-streaming', '');
+                        }
+                    }
+                }
+                pendingUpdates = {};
+                rafId = null;
+
+                // 自动滚动到底部
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
             }
 
+            return {
+                updateBlock: function(blockId, content, blockType, status, startTime, thinkingMs) {
+                    pendingUpdates[blockId] = {
+                        content: content,
+                        blockType: blockType,
+                        status: status,
+                        startTime: startTime || Date.now(),
+                        thinkingMs: thinkingMs || 0
+                    };
+                    if (!rafId) {
+                        rafId = requestAnimationFrame(applyUpdates);
+                    }
+                }
+            };
+        })();
+
+        // ============ 历史记录管理 ============
+
+        function saveHistory() {
+            if (saveHistoryTimer) clearTimeout(saveHistoryTimer);
             saveHistoryTimer = setTimeout(function() {
                 saveHistoryTimer = null;
                 doSaveHistory();
@@ -562,7 +603,6 @@
         }
 
         function flushHistory() {
-            // 立即落盘，取消待处理的定时器
             if (saveHistoryTimer) {
                 clearTimeout(saveHistoryTimer);
                 saveHistoryTimer = null;
@@ -573,13 +613,35 @@
         function doSaveHistory() {
             if (messages.length === 0) return;
 
-            // 更新当前会话到历史会话列表（过滤临时消息）
+            // 序列化消息：将 blocks 转为纯文本（thinking + text 合并）
             var lightweight = messages
-                .filter(function(msg) { return !msg.transient; }) // 过滤临时消息
+                .filter(function(msg) { return !msg.transient; })
                 .map(function(msg) {
-                    var copy = { role: msg.role, content: msg.content, timestamp: msg.timestamp };
+                    var content = '';
+                    if (msg.blocks && msg.blocks.length > 0) {
+                        // 从 blocks 中提取 text 内容
+                        for (var i = 0; i < msg.blocks.length; i++) {
+                            var block = msg.blocks[i];
+                            if (block.type === 'text' && block.content) {
+                                content += block.content;
+                            }
+                        }
+                    }
+                    if (!content) content = msg.content || '';
+
+                    var copy = { role: msg.role, content: content, timestamp: msg.timestamp };
                     if (msg.images && msg.images.length > 0) {
                         copy.imageCount = msg.images.length;
+                    }
+                    // 保存 thinking 摘要
+                    if (msg.blocks) {
+                        for (var j = 0; j < msg.blocks.length; j++) {
+                            if (msg.blocks[j].type === 'thinking' && msg.blocks[j].content) {
+                                copy.thinkingSummary = msg.blocks[j].content.substring(0, 200);
+                                copy.thinkingMs = msg.blocks[j].thinkingMs || 0;
+                                break;
+                            }
+                        }
                     }
                     return copy;
                 });
@@ -588,7 +650,6 @@
                 currentSessionId = 'session_' + Date.now();
             }
 
-            // 查找并更新当前会话
             var found = false;
             for (var i = 0; i < historySessions.length; i++) {
                 if (historySessions[i].id === currentSessionId) {
@@ -609,7 +670,6 @@
                 });
             }
 
-            // 最多保留20个会话
             if (historySessions.length > 20) {
                 historySessions = historySessions.slice(0, 20);
             }
@@ -640,45 +700,73 @@
                 item.className = 'history-item' + (session.id === currentSessionId ? ' active' : '');
                 item.textContent = session.title || '新对话';
                 item.title = session.title || '新对话';
-                item.addEventListener('click', function() {
-                    loadSession(session.id);
-                });
+                item.addEventListener('click', function() { loadSession(session.id); });
                 historyList.appendChild(item);
             });
         }
 
         function loadSession(sessionId) {
-            // 切换前先落盘当前会话，防止丢失
-            if (messages.length > 0) {
-                flushHistory();
-            }
+            if (messages.length > 0) flushHistory();
 
             for (var i = 0; i < historySessions.length; i++) {
                 if (historySessions[i].id === sessionId) {
                     currentSessionId = sessionId;
-                    messages = historySessions[i].messages.slice();
+                    // 从历史记录恢复消息（转为 block 架构）
+                    messages = historySessions[i].messages.slice().map(function(msg) {
+                        var blocks = [];
+                        // 恢复 thinking block（如果有摘要）
+                        if (msg.thinkingSummary) {
+                            blocks.push({
+                                id: generateUUID(),
+                                type: 'thinking',
+                                content: msg.thinkingSummary,
+                                thinkingMs: msg.thinkingMs || 0,
+                                status: 'success'
+                            });
+                        }
+                        // text block
+                        if (msg.content) {
+                            blocks.push({
+                                id: generateUUID(),
+                                type: 'text',
+                                content: msg.content,
+                                status: 'success'
+                            });
+                        }
+                        return {
+                            id: generateUUID(),
+                            role: msg.role,
+                            blocks: blocks,
+                            content: msg.content,
+                            images: null,
+                            imageCount: msg.imageCount || 0,
+                            timestamp: msg.timestamp
+                        };
+                    });
+
                     isThinking = false;
                     setStatus('ready', '就绪');
-                    // 清空待处理请求，防止旧会话响应串线
                     pendingRequests = {};
                     renderMessages();
                     renderHistoryList();
-                    // 通知后端清空会话，因为后端不存储历史
-                    publishMessage('ai-chat/clear-session', {});
+                    // 通知后端清空会话
+                    publishMessage('ai-chat/clear-session', { sessionId: sessionId });
 
-                    // 显示提示：历史会话是只读的，继续提问将开启新上下文
-                    var warningMsg = {
+                    // 添加提示
+                    messages.push({
+                        id: generateUUID(),
                         role: 'ai',
-                        content: '💡 提示：您正在查看历史会话。继续提问将基于新的上下文，不会延续此历史对话。',
+                        blocks: [{ id: generateUUID(), type: 'text', content: '提示：您正在查看历史会话。继续提问将基于新的上下文。', status: 'success' }],
                         timestamp: Date.now(),
-                        transient: true // 标记为临时消息，不持久化
-                    };
-                    messages.push(warningMsg);
+                        transient: true
+                    });
                     renderMessages();
                     return;
                 }
             }
         }
+
+        // ============ 事件监听 ============
 
         function setupEventListeners() {
             document.getElementById('toggle-sidebar').addEventListener('click', function() {
@@ -707,14 +795,17 @@
                 eda.sys_MessageBus.subscribePublic('ai-chat/config-data', handleConfigData);
                 eda.sys_MessageBus.subscribePublic('ai-chat/history-data', handleHistoryData);
                 eda.sys_MessageBus.subscribePublic('ai-chat/ai-response', handleAIResponse);
+                eda.sys_MessageBus.subscribePublic('ai-chat/ai-thinking', handleAIThinking);
+                eda.sys_MessageBus.subscribePublic('ai-chat/ai-text', handleAIText);
                 eda.sys_MessageBus.subscribePublic('ai-chat/error', handleError);
             }
         }
 
+        // ============ MessageBus 处理器 ============
+
         function handleSchematicData(data) {
             if (!data || !data.summary) return;
             schematicData = data;
-            // -1 表示正在采集中
             var c = data.summary.components;
             var p = data.summary.pins;
             var n = data.summary.nets;
@@ -726,14 +817,12 @@
         function handleConfigData(data) {
             if (!data) return;
             currentConfig = data;
-            // 如果配置弹窗正在打开，立即回填
             if (configModal.classList.contains('active')) {
                 document.getElementById('cfg-apiurl').value = data.apiUrl || 'https://api.openai.com/v1/chat/completions';
-                // 如果 apiKey 是掩码，显示占位符
                 var apiKeyInput = document.getElementById('cfg-apikey');
-                if (data.apiKey && data.apiKey.includes('***')) {
+                if (data.apiKey && data.apiKey.indexOf('***') !== -1) {
                     apiKeyInput.value = '';
-                    apiKeyInput.placeholder = data.apiKey; // 显示 "***已配置***"
+                    apiKeyInput.placeholder = data.apiKey;
                 } else {
                     apiKeyInput.value = data.apiKey || '';
                     apiKeyInput.placeholder = '输入你的 API Key';
@@ -744,74 +833,297 @@
 
         function handleHistoryData(data) {
             if (!data || !Array.isArray(data.messages)) return;
-            // 历史数据现在是会话列表
             historySessions = data.messages;
             renderHistoryList();
-            // 如果当前无消息且有历史会话，加载最新的会话
             if (messages.length === 0 && historySessions.length > 0) {
                 loadSession(historySessions[0].id);
             }
         }
 
-        function handleFileSelect(e) {
-            var files = Array.from(e.target.files);
-            files.forEach(function(file) {
-                if (file.type.startsWith('image/')) {
-                    var reader = new FileReader();
-                    reader.onload = function(event) {
-                        attachedFiles.push({ name: file.name, type: file.type, data: event.target.result });
-                        renderFilePreviews();
-                    };
-                    reader.readAsDataURL(file);
+        /**
+         * 处理 AI 完整响应（请求结束后的最终文本）
+         */
+        function handleAIResponse(data) {
+            if (!data || !data.content) return;
+            if (!data.requestId || !data.sessionId) return;
+
+            var pending = pendingRequests[data.requestId];
+            if (!pending) return;
+            if (pending.sessionId !== currentSessionId) {
+                delete pendingRequests[data.requestId];
+                return;
+            }
+            if (data.sessionId !== pending.sessionId) {
+                delete pendingRequests[data.requestId];
+                return;
+            }
+
+            delete pendingRequests[data.requestId];
+            isThinking = false;
+            setStatus('ready', '就绪');
+
+            // 查找流式创建的 AI 消息，更新其状态为 success
+            var streamMsg = findStreamingMessage(data.requestId);
+            if (streamMsg) {
+                // 确保 text block 有最终内容
+                var hasTextBlock = false;
+                for (var i = 0; i < streamMsg.blocks.length; i++) {
+                    if (streamMsg.blocks[i].type === 'text') {
+                        streamMsg.blocks[i].status = 'success';
+                        if (!streamMsg.blocks[i].content) {
+                            streamMsg.blocks[i].content = data.content;
+                        }
+                        hasTextBlock = true;
+                    }
+                    if (streamMsg.blocks[i].type === 'thinking') {
+                        streamMsg.blocks[i].status = 'success';
+                    }
                 }
-            });
-            fileInput.value = '';
-        }
-
-        function renderFilePreviews() {
-            filePreviews.innerHTML = '';
-            attachedFiles.forEach(function(file, index) {
-                var preview = document.createElement('div');
-                preview.className = 'file-preview';
-
-                // 安全地创建图片元素，防止 XSS
-                var img = document.createElement('img');
-                // 白名单校验：仅允许 data:image 格式
-                if (file.data && file.data.startsWith('data:image/')) {
-                    img.src = file.data;
+                if (!hasTextBlock) {
+                    streamMsg.blocks.push({
+                        id: generateUUID(),
+                        type: 'text',
+                        content: data.content,
+                        status: 'success'
+                    });
                 }
-                img.alt = file.name || '';
-
-                var btn = document.createElement('button');
-                btn.className = 'file-preview-remove';
-                btn.setAttribute('data-index', index);
-                btn.textContent = '×';
-
-                btn.addEventListener('click', function() {
-                    attachedFiles.splice(index, 1);
-                    renderFilePreviews();
+                streamMsg.status = 'success';
+            } else {
+                // 没有流式消息（可能是非流式响应），创建新消息
+                messages.push({
+                    id: generateUUID(),
+                    role: 'ai',
+                    blocks: [{
+                        id: generateUUID(),
+                        type: 'text',
+                        content: data.content,
+                        status: 'success'
+                    }],
+                    timestamp: Date.now(),
+                    requestId: data.requestId
                 });
+            }
 
-                preview.appendChild(img);
-                preview.appendChild(btn);
-                filePreviews.appendChild(preview);
-            });
+            saveHistory();
+            renderMessages();
         }
+
+        /**
+         * 处理 AI Thinking 流式块
+         */
+        function handleAIThinking(data) {
+            if (!data || !data.requestId || !data.sessionId) return;
+
+            var pending = pendingRequests[data.requestId];
+            if (!pending || pending.sessionId !== currentSessionId) return;
+            if (data.sessionId !== pending.sessionId) return;
+
+            var msg = getOrCreateStreamingMessage(data.requestId);
+            var thinkingBlock = findBlockByType(msg, 'thinking');
+
+            switch (data.type) {
+                case 'THINKING_START':
+                    if (!thinkingBlock) {
+                        thinkingBlock = {
+                            id: 'thinking-' + data.requestId,
+                            type: 'thinking',
+                            content: '',
+                            thinkingMs: 0,
+                            status: 'streaming',
+                            startTime: Date.now()
+                        };
+                        msg.blocks.push(thinkingBlock);
+                        renderMessages(); // 首次需要完整渲染以插入 DOM
+                    }
+                    break;
+
+                case 'THINKING_DELTA':
+                    if (thinkingBlock) {
+                        thinkingBlock.content = data.accumulatedContent || '';
+                        thinkingBlock.thinkingMs = Date.now() - (thinkingBlock.startTime || Date.now());
+                        StreamManager.updateBlock(
+                            thinkingBlock.id,
+                            thinkingBlock.content,
+                            'thinking',
+                            'streaming',
+                            thinkingBlock.startTime,
+                            thinkingBlock.thinkingMs
+                        );
+                    }
+                    break;
+
+                case 'THINKING_COMPLETE':
+                    if (thinkingBlock) {
+                        thinkingBlock.content = data.accumulatedContent || thinkingBlock.content;
+                        thinkingBlock.thinkingMs = Date.now() - (thinkingBlock.startTime || Date.now());
+                        thinkingBlock.status = 'success';
+                        StreamManager.updateBlock(
+                            thinkingBlock.id,
+                            thinkingBlock.content,
+                            'thinking',
+                            'success',
+                            thinkingBlock.startTime,
+                            thinkingBlock.thinkingMs
+                        );
+                    }
+                    break;
+            }
+        }
+
+        /**
+         * 处理 AI Text 流式块
+         */
+        function handleAIText(data) {
+            if (!data || !data.requestId || !data.sessionId) return;
+
+            var pending = pendingRequests[data.requestId];
+            if (!pending || pending.sessionId !== currentSessionId) return;
+            if (data.sessionId !== pending.sessionId) return;
+
+            var msg = getOrCreateStreamingMessage(data.requestId);
+            var textBlock = findBlockByType(msg, 'text');
+
+            switch (data.type) {
+                case 'TEXT_START':
+                    if (!textBlock) {
+                        textBlock = {
+                            id: 'text-' + data.requestId,
+                            type: 'text',
+                            content: '',
+                            status: 'streaming'
+                        };
+                        msg.blocks.push(textBlock);
+                        renderMessages(); // 首次需要完整渲染以插入 DOM
+                    }
+                    break;
+
+                case 'TEXT_DELTA':
+                    if (textBlock) {
+                        textBlock.content = data.accumulatedContent || '';
+                        StreamManager.updateBlock(
+                            textBlock.id,
+                            textBlock.content,
+                            'text',
+                            'streaming'
+                        );
+                    }
+                    break;
+
+                case 'TEXT_COMPLETE':
+                    if (textBlock) {
+                        textBlock.content = data.accumulatedContent || textBlock.content;
+                        textBlock.status = 'success';
+                        StreamManager.updateBlock(
+                            textBlock.id,
+                            textBlock.content,
+                            'text',
+                            'success'
+                        );
+                    }
+                    break;
+            }
+        }
+
+        /**
+         * 获取或创建流式消息
+         */
+        function getOrCreateStreamingMessage(requestId) {
+            for (var i = messages.length - 1; i >= 0; i--) {
+                if (messages[i].requestId === requestId && messages[i].role === 'ai') {
+                    return messages[i];
+                }
+            }
+            // 创建新的流式 AI 消息
+            var msg = {
+                id: generateUUID(),
+                role: 'ai',
+                blocks: [],
+                timestamp: Date.now(),
+                requestId: requestId,
+                status: 'streaming'
+            };
+            messages.push(msg);
+            return msg;
+        }
+
+        function findStreamingMessage(requestId) {
+            for (var i = messages.length - 1; i >= 0; i--) {
+                if (messages[i].requestId === requestId && messages[i].role === 'ai') {
+                    return messages[i];
+                }
+            }
+            return null;
+        }
+
+        function findBlockByType(msg, type) {
+            if (!msg.blocks) return null;
+            for (var i = 0; i < msg.blocks.length; i++) {
+                if (msg.blocks[i].type === type) return msg.blocks[i];
+            }
+            return null;
+        }
+
+        function handleError(data) {
+            if (data.requestId) {
+                if (!isThinking) return;
+                var pending = pendingRequests[data.requestId];
+                if (!pending) return;
+                if (data.sessionId !== pending.sessionId) {
+                    delete pendingRequests[data.requestId];
+                    return;
+                }
+                delete pendingRequests[data.requestId];
+                isThinking = false;
+                setStatus('ready', '就绪');
+                messages.push({
+                    id: generateUUID(),
+                    role: 'ai',
+                    blocks: [{ id: generateUUID(), type: 'text', content: '错误: ' + (data.message || '未知错误'), status: 'success' }],
+                    timestamp: Date.now()
+                });
+                saveHistory();
+                renderMessages();
+                return;
+            }
+
+            // 系统错误
+            messages.push({
+                id: generateUUID(),
+                role: 'ai',
+                blocks: [{ id: generateUUID(), type: 'text', content: '错误: ' + (data.message || '未知错误'), status: 'success' }],
+                timestamp: Date.now()
+            });
+            if (!NON_PERSIST_SYSTEM_ERROR[data.code]) saveHistory();
+            renderMessages();
+        }
+
+        // ============ 发送消息 ============
 
         function sendMessage() {
             var text = messageInput.value.trim();
             if (!text && attachedFiles.length === 0) return;
             if (isThinking) return;
 
-            // 确保有会话ID
             if (!currentSessionId) {
                 currentSessionId = 'session_' + Date.now();
             }
 
-            // 生成请求ID
             var requestId = generateUUID();
 
-            var userMsg = { role: 'user', content: text, images: attachedFiles.slice(), timestamp: Date.now() };
+            // 创建用户消息（Block 架构）
+            var userBlocks = [];
+            if (text) {
+                userBlocks.push({ id: generateUUID(), type: 'text', content: text, status: 'success' });
+            }
+
+            var userMsg = {
+                id: generateUUID(),
+                role: 'user',
+                blocks: userBlocks,
+                content: text,
+                images: attachedFiles.slice(),
+                timestamp: Date.now()
+            };
             messages.push(userMsg);
             saveHistory();
             renderMessages();
@@ -824,13 +1136,11 @@
             setStatus('thinking', 'AI 正在思考...');
             isThinking = true;
 
-            // 记录待处理请求
             pendingRequests[requestId] = {
                 sessionId: currentSessionId,
                 timestamp: Date.now()
             };
 
-            // 发送消息，包含 requestId 和 sessionId
             publishMessage('ai-chat/user-message', {
                 text: text,
                 images: userMsg.images,
@@ -840,82 +1150,7 @@
             });
         }
 
-        function handleAIResponse(data) {
-            if (!data || !data.content) return;
-
-            // 验证 requestId 和 sessionId
-            if (!data.requestId || !data.sessionId) {
-                console.warn('收到无效的 AI 响应（缺少 requestId 或 sessionId）');
-                return;
-            }
-
-            // 检查是否是待处理的请求
-            var pending = pendingRequests[data.requestId];
-            if (!pending) {
-                console.warn('收到未知请求的响应:', data.requestId);
-                return;
-            }
-
-            // 检查会话是否匹配（严格校验：pending 和 data 的 sessionId 都要匹配）
-            if (pending.sessionId !== currentSessionId) {
-                console.warn('收到旧会话的响应，已丢弃:', data.requestId, pending.sessionId, currentSessionId);
-                delete pendingRequests[data.requestId];
-                return;
-            }
-
-            // 严格校验：响应的 sessionId 必须与请求的 sessionId 一致
-            if (data.sessionId !== pending.sessionId) {
-                console.warn('响应 sessionId 与请求不匹配，丢弃:', data.requestId, data.sessionId, pending.sessionId);
-                delete pendingRequests[data.requestId];
-                return;
-            }
-
-            // 验证通过，处理响应
-            delete pendingRequests[data.requestId];
-            isThinking = false;
-            setStatus('ready', '就绪');
-            messages.push({ role: 'ai', content: data.content, timestamp: Date.now() });
-            saveHistory();
-            renderMessages();
-        }
-
-        function handleError(data) {
-            // 如果有 requestId，验证是否匹配（请求相关错误）
-            if (data.requestId) {
-                if (!isThinking) return; // 请求相关错误需要在 thinking 状态
-
-                var pending = pendingRequests[data.requestId];
-                if (!pending) {
-                    console.warn('收到未知请求的错误:', data.requestId);
-                    return;
-                }
-
-                // 严格校验：响应的 sessionId 必须与请求的 sessionId 一致
-                if (data.sessionId !== pending.sessionId) {
-                    console.warn('错误响应 sessionId 与请求不匹配，丢弃:', data.requestId);
-                    delete pendingRequests[data.requestId];
-                    return;
-                }
-
-                delete pendingRequests[data.requestId];
-                isThinking = false;
-                setStatus('ready', '就绪');
-                messages.push({ role: 'ai', content: '错误: ' + (data.message || '未知错误'), timestamp: Date.now() });
-                saveHistory(); // 请求错误可以保存
-                renderMessages();
-                return;
-            }
-
-            // 系统错误（无 requestId）：显示给用户，但不触发历史保存（避免循环）
-            messages.push({ role: 'ai', content: '错误: ' + (data.message || '未知错误'), timestamp: Date.now() });
-
-            // 只有非敏感系统错误才触发历史保存
-            if (!NON_PERSIST_SYSTEM_ERROR[data.code]) {
-                saveHistory();
-            }
-
-            renderMessages();
-        }
+        // ============ 渲染 ============
 
         function renderMessages() {
             var emptyState = messagesContainer.querySelector('.empty-state');
@@ -926,68 +1161,169 @@
                 messagesContainer.appendChild(createMessageElement(msg));
             });
 
-            if (isThinking) {
+            if (isThinking && !hasStreamingMessage()) {
                 var el = document.createElement('div');
                 el.className = 'message ai';
-                el.innerHTML =
-                    '<div class="message-avatar">AI</div>' +
-                    '<div class="message-content typing-indicator">' +
-                    '<div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>';
+                var avatarDiv = document.createElement('div');
+                avatarDiv.className = 'message-avatar';
+                avatarDiv.textContent = 'AI';
+                var contentDiv = document.createElement('div');
+                contentDiv.className = 'message-content typing-indicator';
+                contentDiv.innerHTML = '<div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>';
+                el.appendChild(avatarDiv);
+                el.appendChild(contentDiv);
                 messagesContainer.appendChild(el);
             }
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
         }
 
+        function hasStreamingMessage() {
+            for (var i = messages.length - 1; i >= 0; i--) {
+                if (messages[i].status === 'streaming') return true;
+            }
+            return false;
+        }
+
+        /**
+         * 创建消息 DOM 元素（支持 Block 架构）
+         */
         function createMessageElement(msg) {
             var el = document.createElement('div');
             el.className = 'message ' + msg.role;
-            var avatar = msg.role === 'user' ? 'U' : 'AI';
-            var html = escapeHtml(msg.content);
-            html = parseMarkdown(html);
-            html = highlightReferences(html);
+            el.id = msg.id;
 
-            // 安全地构建 DOM 元素，防止 XSS
             var avatarDiv = document.createElement('div');
             avatarDiv.className = 'message-avatar';
-            avatarDiv.textContent = avatar;
+            avatarDiv.textContent = msg.role === 'user' ? 'U' : 'AI';
 
-            var contentDiv = document.createElement('div');
-            contentDiv.className = 'message-content';
-            contentDiv.innerHTML = html; // html 已经过 escapeHtml 处理
+            var bodyDiv = document.createElement('div');
+            bodyDiv.className = 'message-body';
 
-            // 安全地添加图片
+            if (msg.blocks && msg.blocks.length > 0) {
+                for (var i = 0; i < msg.blocks.length; i++) {
+                    var block = msg.blocks[i];
+                    if (block.type === 'thinking') {
+                        bodyDiv.appendChild(createThinkingBlockElement(block));
+                    } else if (block.type === 'text') {
+                        bodyDiv.appendChild(createTextBlockElement(block, msg.role));
+                    }
+                }
+            } else if (msg.content) {
+                // 兼容旧格式
+                bodyDiv.appendChild(createTextBlockElement({
+                    id: msg.id + '-text',
+                    type: 'text',
+                    content: msg.content,
+                    status: 'success'
+                }, msg.role));
+            }
+
+            // 图片
             if (msg.images && msg.images.length > 0) {
                 var imagesDiv = document.createElement('div');
                 imagesDiv.className = 'message-images';
                 msg.images.forEach(function(img) {
                     var imgEl = document.createElement('img');
                     imgEl.className = 'message-image';
-                    // 白名单校验：仅允许 data:image 格式
-                    if (img.data && img.data.startsWith('data:image/')) {
+                    if (img.data && img.data.indexOf('data:image/') === 0) {
                         imgEl.src = img.data;
                     }
                     imgEl.alt = img.name || '';
                     imagesDiv.appendChild(imgEl);
                 });
-                contentDiv.appendChild(imagesDiv);
+                bodyDiv.appendChild(imagesDiv);
             } else if (msg.imageCount && msg.imageCount > 0) {
-                // 历史记录中的图片已被移除，显示占位符
                 var placeholderDiv = document.createElement('div');
                 placeholderDiv.className = 'message-images';
                 placeholderDiv.style.color = 'var(--text-secondary)';
                 placeholderDiv.style.fontStyle = 'italic';
                 placeholderDiv.textContent = '[' + msg.imageCount + ' 张图片]';
-                contentDiv.appendChild(placeholderDiv);
+                bodyDiv.appendChild(placeholderDiv);
             }
 
             el.appendChild(avatarDiv);
-            el.appendChild(contentDiv);
+            el.appendChild(bodyDiv);
 
+            // 绑定引用点击事件
             el.querySelectorAll('.ref-tag').forEach(function(tag) {
                 tag.addEventListener('click', function() { locateReference(tag.dataset.ref); });
             });
+
             return el;
         }
+
+        /**
+         * 创建 ThinkingBlock DOM 元素
+         */
+        function createThinkingBlockElement(block) {
+            var container = document.createElement('div');
+            container.className = 'thinking-container';
+            container.id = block.id;
+            if (block.status === 'streaming') {
+                container.className += ' streaming expanded';
+            }
+
+            var header = document.createElement('div');
+            header.className = 'thinking-header';
+
+            var icon = document.createElement('span');
+            icon.className = 'thinking-toggle-icon';
+            icon.textContent = '\u25B6';
+
+            var statusSpan = document.createElement('span');
+            statusSpan.className = 'thinking-status-text';
+            if (block.status === 'streaming') {
+                statusSpan.textContent = '思考中...';
+            } else {
+                var secs = ((block.thinkingMs || 0) / 1000).toFixed(1);
+                statusSpan.textContent = '已深度思考 ' + secs + ' 秒';
+            }
+
+            header.appendChild(icon);
+            header.appendChild(statusSpan);
+
+            header.addEventListener('click', function() {
+                var isExpanded = container.className.indexOf('expanded') !== -1;
+                if (isExpanded) {
+                    container.className = container.className.replace(' expanded', '');
+                } else {
+                    container.className += ' expanded';
+                }
+            });
+
+            var contentDiv = document.createElement('div');
+            contentDiv.className = 'thinking-content';
+            contentDiv.textContent = block.content || '';
+
+            container.appendChild(header);
+            container.appendChild(contentDiv);
+            return container;
+        }
+
+        /**
+         * 创建 TextBlock DOM 元素
+         */
+        function createTextBlockElement(block, role) {
+            var div = document.createElement('div');
+            div.id = block.id;
+            div.className = 'message-content';
+            if (role === 'user') {
+                div.style.background = 'var(--msg-user-bg)';
+                div.style.color = 'var(--msg-user-text)';
+            }
+            if (block.status === 'streaming') {
+                div.className += ' block-streaming';
+            }
+
+            var html = escapeHtml(block.content || '');
+            html = parseMarkdown(html);
+            html = highlightReferences(html);
+            div.innerHTML = html;
+
+            return div;
+        }
+
+        // ============ Markdown / 工具函数 ============
 
         function parseMarkdown(t) {
             t = t.replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
@@ -1005,17 +1341,62 @@
 
         function locateReference(ref) { publishMessage('ai-chat/locate', { reference: ref }); }
 
+        function escapeHtml(text) {
+            var d = document.createElement('div');
+            d.textContent = text;
+            return d.innerHTML;
+        }
+
+        // ============ 文件处理 ============
+
+        function handleFileSelect(e) {
+            var files = Array.from(e.target.files);
+            files.forEach(function(file) {
+                if (file.type.indexOf('image/') === 0) {
+                    var reader = new FileReader();
+                    reader.onload = function(event) {
+                        attachedFiles.push({ name: file.name, type: file.type, data: event.target.result });
+                        renderFilePreviews();
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+            fileInput.value = '';
+        }
+
+        function renderFilePreviews() {
+            filePreviews.innerHTML = '';
+            attachedFiles.forEach(function(file, index) {
+                var preview = document.createElement('div');
+                preview.className = 'file-preview';
+                var img = document.createElement('img');
+                if (file.data && file.data.indexOf('data:image/') === 0) {
+                    img.src = file.data;
+                }
+                img.alt = file.name || '';
+                var btn = document.createElement('button');
+                btn.className = 'file-preview-remove';
+                btn.textContent = '\u00D7';
+                btn.addEventListener('click', function() {
+                    attachedFiles.splice(index, 1);
+                    renderFilePreviews();
+                });
+                preview.appendChild(img);
+                preview.appendChild(btn);
+                filePreviews.appendChild(preview);
+            });
+        }
+
+        // ============ 配置管理 ============
+
         function openConfigModal() {
             configModal.classList.add('active');
-            // 向主扩展请求最新配置
             publishMessage('ai-chat/request-config', {});
-            // 填入当前缓存的配置
             document.getElementById('cfg-apiurl').value = currentConfig.apiUrl || 'https://api.openai.com/v1/chat/completions';
-            // 如果 apiKey 是掩码，显示占位符
             var apiKeyInput = document.getElementById('cfg-apikey');
-            if (currentConfig.apiKey && currentConfig.apiKey.includes('***')) {
+            if (currentConfig.apiKey && currentConfig.apiKey.indexOf('***') !== -1) {
                 apiKeyInput.value = '';
-                apiKeyInput.placeholder = currentConfig.apiKey; // 显示 "***已配置***"
+                apiKeyInput.placeholder = currentConfig.apiKey;
             } else {
                 apiKeyInput.value = currentConfig.apiKey || '';
                 apiKeyInput.placeholder = '输入你的 API Key';
@@ -1029,45 +1410,35 @@
             var apiKeyInput = document.getElementById('cfg-apikey');
             var newApiKey = apiKeyInput.value.trim();
 
-            // 安全限制：永不通过消息总线发送 apiKey
             if (newApiKey) {
                 messages.push({
+                    id: generateUUID(),
                     role: 'ai',
-                    content: '⚠️ 出于安全考虑，请使用扩展配置入口设置 API Key。当前聊天界面不支持修改 API Key。',
+                    blocks: [{ id: generateUUID(), type: 'text', content: '出于安全考虑，请使用扩展配置入口设置 API Key。', status: 'success' }],
                     timestamp: Date.now(),
                     transient: true
                 });
                 renderMessages();
-                // 不发送 config-update，避免误导用户
                 closeConfigModal();
                 return;
             }
 
-            // 只发送 apiUrl 和 model，不包含 apiKey
             var config = {
                 provider: 'openai_compatible',
                 apiUrl: document.getElementById('cfg-apiurl').value,
                 model: document.getElementById('cfg-model').value
             };
-
-            // 通过MessageBus发送给主扩展保存
             publishMessage('ai-chat/config-update', config);
             closeConfigModal();
         }
 
         function newChat() {
-            // 如果当前有消息，先强制落盘
-            if (messages.length > 0) {
-                flushHistory();
-            }
-            // 创建新会话
+            if (messages.length > 0) flushHistory();
             currentSessionId = null;
             messages = [];
             isThinking = false;
             setStatus('ready', '就绪');
-            // 清空待处理请求，防止旧会话响应串线
             pendingRequests = {};
-            // 通知后端清空对话会话
             publishMessage('ai-chat/clear-session', {});
             messagesContainer.innerHTML =
                 '<div class="empty-state">' +
@@ -1076,6 +1447,8 @@
                 '<div class="empty-state-hint">询问原理图问题、请求审查建议或上传截图</div></div>';
             renderHistoryList();
         }
+
+        // ============ 通用工具 ============
 
         function setStatus(type, text) {
             statusDot.className = 'status-dot ' + type;
@@ -1088,12 +1461,6 @@
             } else {
                 console.log('[Mock]', topic, data);
             }
-        }
-
-        function escapeHtml(text) {
-            var d = document.createElement('div');
-            d.textContent = text;
-            return d.innerHTML;
         }
     </script>
 </body>
