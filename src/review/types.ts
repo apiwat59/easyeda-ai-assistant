@@ -67,14 +67,64 @@ export interface RawNet {
 }
 
 /**
+ * 采集模式
+ */
+export type CollectionMode = 'per-page' | 'api-all-pages-fallback';
+
+/**
+ * 采集质量等级
+ * - full: 所有页面均已成功采集
+ * - partial: 部分页面采集成功，存在遗漏
+ * - stale: 使用旧快照或完全降级
+ */
+export type CollectionQuality = 'full' | 'partial' | 'stale';
+
+/**
+ * 采集元信息（用于数据完整性追踪和前端提示）
+ */
+export interface CollectionMeta {
+	mode: CollectionMode;
+	quality: CollectionQuality;
+	expectedPageCount: number;
+	collectedPageCount: number;
+	collectedPageUuids: string[];
+	missingPageUuids: string[];
+	errorMessage?: string;
+}
+
+/**
+ * 原始文本标注数据
+ */
+export interface RawText {
+	primitiveId: string;
+	content: string;
+	x: number;
+	y: number;
+	schematicPageUuid?: string;
+}
+
+/**
+ * 原始总线数据
+ */
+export interface RawBus {
+	primitiveId: string;
+	busName: string;
+	lines: number[][];
+	schematicPageUuid?: string;
+}
+
+/**
  * 采集的原始数据快照
  */
 export interface CollectedData {
 	components: RawComponent[];
 	pins: RawPin[];
 	nets: RawNet[];
+	texts?: RawText[];
+	buses?: RawBus[];
 	netlistRaw?: string; // 原始网表字符串
 	timestamp: number;
+	meta?: CollectionMeta;
 }
 
 // ============ 审查结果 ============

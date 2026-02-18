@@ -43,6 +43,22 @@ let cachedSchematicData: CollectedData | null = null;
 const subscriptions: Array<{ cancel: () => void }> = [];
 
 /**
+ * 后台采集 single-flight 调度状态
+ */
+let backgroundCollectionInFlight: Promise<void> | null = null;
+let backgroundCollectionRerunPending = false;
+let backgroundCollectionRerunReason = '';
+let backgroundCollectionRerunNotify = false;
+let backgroundCollectionEpoch = 0;
+
+/**
+ * 检查是否正在采集中（用于外部抑制逻辑）
+ */
+export function isCollectionInProgress(): boolean {
+	return backgroundCollectionInFlight !== null;
+}
+
+/**
  * 启动AI对话面板
  */
 export async function startAIChat(): Promise<void> {
@@ -60,53 +76,112 @@ export async function startAIChat(): Promise<void> {
 	// 设置MessageBus监听
 	setupChatListeners();
 
-	// 异步采集原理图数据（不阻塞UI）
-	collectDataInBackground();
+	// 异步触发后台采集（不阻塞UI）
+	void triggerBackgroundCollection('start-ai-chat', true);
 }
 
 /**
- * 后台采集原理图数据
+ * 对外暴露：触发后台采集
+ * - reason: 触发原因（便于日志追踪）
+ * - notifyIFrame: 是否向 IFrame 发布采集中/完成状态
  */
-async function collectDataInBackground(): Promise<void> {
-	try {
-		// 立即通知IFrame开始采集
-		publishToIFrame(CHAT_TOPICS.SCHEMATIC_DATA, {
-			summary: {
-				components: -1, // -1 表示正在采集
-				pins: -1,
-				nets: -1,
-			},
-			timestamp: Date.now(),
+export function triggerBackgroundCollection(
+	reason = 'external-trigger',
+	notifyIFrame = false,
+): Promise<void> {
+	if (backgroundCollectionInFlight) {
+		backgroundCollectionRerunPending = true;
+		backgroundCollectionRerunReason = reason;
+		backgroundCollectionRerunNotify = backgroundCollectionRerunNotify || notifyIFrame;
+		return backgroundCollectionInFlight;
+	}
+
+	const epoch = ++backgroundCollectionEpoch;
+	backgroundCollectionInFlight = executeBackgroundCollection(epoch, reason, notifyIFrame)
+		.finally(() => {
+			backgroundCollectionInFlight = null;
+
+			if (!backgroundCollectionRerunPending) {
+				return;
+			}
+
+			const rerunReason = backgroundCollectionRerunReason || 'rerun';
+			const rerunNotify = backgroundCollectionRerunNotify;
+			backgroundCollectionRerunPending = false;
+			backgroundCollectionRerunReason = '';
+			backgroundCollectionRerunNotify = false;
+
+			void triggerBackgroundCollection(`${rerunReason}:rerun`, rerunNotify);
 		});
 
-		cachedSchematicData = await collectSchematicData();
+	return backgroundCollectionInFlight;
+}
+
+/**
+ * 后台采集执行体
+ * - single-flight 由 triggerBackgroundCollection 保证
+ * - epoch/version 保证仅最新结果生效
+ */
+async function executeBackgroundCollection(
+	epoch: number,
+	reason: string,
+	notifyIFrame: boolean,
+): Promise<void> {
+	try {
+		if (notifyIFrame) {
+			publishToIFrame(CHAT_TOPICS.SCHEMATIC_DATA, {
+				summary: {
+					components: -1, // -1 表示正在采集
+					pins: -1,
+					nets: -1,
+				},
+				timestamp: Date.now(),
+			});
+		}
+
+		const collected = await collectSchematicData();
+
+		// epoch/version：只接纳最新采集结果，过期结果直接丢弃
+		if (epoch !== backgroundCollectionEpoch) {
+			return;
+		}
+
+		cachedSchematicData = collected;
 
 		// 将原理图数据注入所有已存在的会话
 		for (const session of chatSessions.values()) {
-			session.setSchematicContext(cachedSchematicData);
+			session.setSchematicContext(collected);
 		}
 
-		// 通知IFrame数据已就绪
-		publishToIFrame(CHAT_TOPICS.SCHEMATIC_DATA, {
-			summary: {
-				components: cachedSchematicData.components.length,
-				pins: cachedSchematicData.pins.length,
-				nets: cachedSchematicData.nets.length,
-			},
-			timestamp: cachedSchematicData.timestamp,
-		});
+		if (notifyIFrame) {
+			publishToIFrame(CHAT_TOPICS.SCHEMATIC_DATA, {
+				summary: {
+					components: collected.components.length,
+					pins: collected.pins.length,
+					nets: collected.nets.length,
+				},
+				timestamp: collected.timestamp,
+			});
+		}
 	}
 	catch (error) {
-		console.warn('后台采集数据失败:', error);
-		// 数据采集失败不阻塞对话，用户仍可以上传截图
-		publishToIFrame(CHAT_TOPICS.SCHEMATIC_DATA, {
-			summary: {
-				components: -1,
-				pins: -1,
-				nets: -1,
-			},
-			timestamp: Date.now(),
-		});
+		// 过期任务失败不需要覆盖新任务状态
+		if (epoch !== backgroundCollectionEpoch) {
+			return;
+		}
+
+		console.warn(`后台采集数据失败(${reason}):`, error);
+		if (notifyIFrame) {
+			// 采集失败不阻塞 UI，对话仍可继续
+			publishToIFrame(CHAT_TOPICS.SCHEMATIC_DATA, {
+				summary: {
+					components: -1,
+					pins: -1,
+					nets: -1,
+				},
+				timestamp: Date.now(),
+			});
+		}
 	}
 }
 

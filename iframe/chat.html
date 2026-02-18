@@ -545,7 +545,27 @@
             padding-top: 10px;
             border-top: 1px solid var(--border-color);
         }
+
+        /* Markdown 样式 */
+        .message-content h1 { font-size: 1.5em; font-weight: 600; margin: 0.8em 0 0.5em 0; border-bottom: 1px solid var(--border-color); padding-bottom: 0.3em; }
+        .message-content h2 { font-size: 1.3em; font-weight: 600; margin: 0.7em 0 0.4em 0; }
+        .message-content h3 { font-size: 1.1em; font-weight: 600; margin: 0.6em 0 0.3em 0; }
+        .message-content ul, .message-content ol { margin: 0.5em 0; padding-left: 2em; }
+        .message-content li { margin: 0.3em 0; }
+        .message-content blockquote { border-left: 3px solid var(--accent-color); padding-left: 1em; margin: 0.8em 0; color: var(--text-secondary); font-style: italic; }
+        .message-content table { border-collapse: collapse; margin: 0.8em 0; width: 100%; }
+        .message-content th, .message-content td { border: 1px solid var(--border-color); padding: 0.5em 0.8em; text-align: left; }
+        .message-content th { background: var(--bg-hover); font-weight: 600; }
+        .message-content pre { background: #1e1e1e; color: #d4d4d4; padding: 1em; border-radius: var(--radius-md); overflow-x: auto; margin: 0.8em 0; }
+        .message-content code { background: #2a2a2a; color: #d4d4d4; padding: 0.2em 0.4em; border-radius: var(--radius-sm); font-family: 'Consolas', 'Monaco', 'Courier New', monospace; font-size: 0.9em; }
+        .message-content pre code { background: transparent; padding: 0; }
+        .message-content p { margin: 0.5em 0; }
+        .message-content a { color: var(--accent-color); text-decoration: none; }
+        .message-content a:hover { text-decoration: underline; }
     </style>
+    <!-- Markdown 渲染库 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.0.0/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
 </head>
 <body>
     <div id="sidebar">
@@ -735,17 +755,23 @@
                         }
                     } else {
                         // text block 更新
-                        var html = escapeHtml(update.content);
-                        html = parseMarkdown(html);
-                        html = highlightReferences(html);
-                        el.innerHTML = html;
+                        var el = document.getElementById(id);
+                        if (!el) continue;
+
                         if (update.status === 'streaming') {
+                            // 流式阶段：轻渲染（仅 textContent，避免 O(n²) 解析）
+                            el.textContent = update.content;
                             if (el.className.indexOf('block-streaming') === -1) {
                                 el.className += ' block-streaming';
                             }
                         } else {
+                            // 完成阶段：全量渲染（Markdown + 高亮）
+                            var html = parseMarkdown(update.content);
+                            el.innerHTML = html;
+                            highlightReferencesDOM(el);
                             el.className = el.className.replace(' block-streaming', '');
-                            // paused 状态添加标记（避免重复追加）
+
+                            // paused 状态添加标记
                             if (update.status === 'paused' && !el.querySelector('.status-paused')) {
                                 var pausedMark = document.createElement('div');
                                 pausedMark.className = 'status-paused';
@@ -1682,10 +1708,15 @@
                 div.className += ' block-streaming';
             }
 
-            var html = escapeHtml(block.content || '');
-            html = parseMarkdown(html);
-            html = highlightReferences(html);
-            div.innerHTML = html;
+            if (block.status === 'streaming') {
+                // 流式阶段：轻渲染
+                div.textContent = block.content || '';
+            } else {
+                // 完成阶段：全量渲染
+                var html = parseMarkdown(block.content || '');
+                div.innerHTML = html;
+                highlightReferencesDOM(div);
+            }
 
             return div;
         }
@@ -1724,7 +1755,22 @@
 
         // ============ Markdown / 工具函数 ============
 
-        function parseMarkdown(t) {
+        /**
+         * 解析 Markdown 文本为安全 HTML
+         * 使用 marked.js 解析 + DOMPurify 净化 XSS
+         * 降级：如果 CDN 库未加载，使用简单正则替换
+         */
+        function parseMarkdown(text) {
+            if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
+                try {
+                    var rawHtml = marked.parse(text, { breaks: true });
+                    return DOMPurify.sanitize(rawHtml);
+                } catch (e) {
+                    console.warn('Markdown 解析失败，使用降级渲染:', e);
+                }
+            }
+            // 降级渲染
+            var t = escapeHtml(text);
             t = t.replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
             t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
             t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
@@ -1732,6 +1778,76 @@
             return t;
         }
 
+        /**
+         * 在 DOM 容器中高亮器件位号和网络名引用
+         * 使用 TreeWalker 遍历文本节点，跳过 pre/code/a 标签内的内容
+         */
+        function highlightReferencesDOM(containerElement) {
+            if (!containerElement) return;
+
+            var walker = document.createTreeWalker(
+                containerElement,
+                NodeFilter.SHOW_TEXT,
+                {
+                    acceptNode: function(node) {
+                        var parent = node.parentElement;
+                        while (parent && parent !== containerElement) {
+                            var tag = parent.tagName;
+                            if (tag === 'CODE' || tag === 'PRE' || tag === 'A' || tag === 'SPAN') {
+                                return NodeFilter.FILTER_REJECT;
+                            }
+                            parent = parent.parentElement;
+                        }
+                        return NodeFilter.FILTER_ACCEPT;
+                    }
+                }
+            );
+
+            var textNodes = [];
+            while (walker.nextNode()) {
+                textNodes.push(walker.currentNode);
+            }
+
+            var refPattern = /\b([URCLDQJK]\d+|VCC[_\w]*|GND|NET_[\w]+|V\d+V\d*)\b/g;
+
+            textNodes.forEach(function(node) {
+                var text = node.textContent;
+                if (!refPattern.test(text)) return;
+                refPattern.lastIndex = 0; // 重置正则状态
+
+                var fragment = document.createDocumentFragment();
+                var lastIndex = 0;
+                var match;
+
+                while ((match = refPattern.exec(text)) !== null) {
+                    // 添加匹配之前的文本
+                    if (match.index > lastIndex) {
+                        fragment.appendChild(document.createTextNode(text.substring(lastIndex, match.index)));
+                    }
+
+                    // 创建高亮 span
+                    var span = document.createElement('span');
+                    span.className = 'ref-tag';
+                    span.dataset.ref = match[1];
+                    span.dataset.type = /^[URCLDQJK]\d+$/.test(match[1]) ? 'component' : 'net';
+                    span.textContent = match[1];
+                    fragment.appendChild(span);
+
+                    lastIndex = refPattern.lastIndex;
+                }
+
+                // 添加剩余文本
+                if (lastIndex < text.length) {
+                    fragment.appendChild(document.createTextNode(text.substring(lastIndex)));
+                }
+
+                node.parentNode.replaceChild(fragment, node);
+            });
+        }
+
+        /**
+         * 字符串级别的引用高亮（仅用于降级场景）
+         */
         function highlightReferences(t) {
             t = t.replace(/\b([URCLDQJK]\d+)\b/g, '<span class="ref-tag" data-ref="$1" data-type="component">$1</span>');
             t = t.replace(/\b(VCC[_\w]*|GND|NET_[\w]+|V\d+V\d*)\b/g, '<span class="ref-tag" data-ref="$1" data-type="net">$1</span>');

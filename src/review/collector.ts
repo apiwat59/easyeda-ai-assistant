@@ -3,8 +3,26 @@
  *
  * 从EDA API采集器件、引脚、导线、网络标记等数据
  */
-import type { CollectedData, RawComponent, RawNet, RawPin } from './types';
+import type { CollectedData, CollectionMeta, RawBus, RawComponent, RawNet, RawPin, RawText } from './types';
 import { ErrorCode, ReviewError } from './types';
+
+/**
+ * 器件采集选项
+ */
+interface CollectComponentsOptions {
+	/** 是否使用 API 的 allSchematicPages 参数（仅降级时使用） */
+	allSchematicPages?: boolean;
+	/** 当前采集页 UUID（逐页采集时填充） */
+	schematicPageUuid?: string;
+}
+
+/**
+ * 文本/总线采集选项
+ */
+interface CollectTextAndBusOptions {
+	/** 当前采集页 UUID（逐页采集时填充） */
+	schematicPageUuid?: string;
+}
 
 /**
  * 并发控制：限制同时执行的Promise数量
@@ -40,7 +58,7 @@ async function promiseAllWithLimit<T>(
 }
 
 /**
- * 采集原理图数据
+ * 采集原理图数据（支持多子图纸逐页采集）
  */
 export async function collectSchematicData(): Promise<CollectedData> {
 	// 检查是否有打开的原理图文档
@@ -52,13 +70,132 @@ export async function collectSchematicData(): Promise<CollectedData> {
 		);
 	}
 
+	const originalTabId = docInfo.tabId;
+	const meta: CollectionMeta = {
+		mode: 'per-page',
+		quality: 'full',
+		expectedPageCount: 0,
+		collectedPageCount: 0,
+		collectedPageUuids: [],
+		missingPageUuids: [],
+	};
+
 	try {
-		// 并行采集基础数据
-		const [components, netlistRaw, wires] = await Promise.all([
-			collectComponents(),
-			collectNetlist(),
-			collectWires(),
-		]);
+		// 网表可跨页使用，优先独立采集
+		const netlistRaw = await collectNetlist();
+
+		let components: RawComponent[] = [];
+		let wires: Array<{ net: string; lines: number[][] }> = [];
+		let texts: RawText[] = [];
+		let buses: RawBus[] = [];
+
+		try {
+			// 获取当前原理图下的全部图页
+			const pages = await eda.dmt_Schematic.getCurrentSchematicAllSchematicPagesInfo();
+			meta.expectedPageCount = pages.length;
+
+			// 单页场景：直接按当前页采集，避免不必要切页
+			if (pages.length <= 1) {
+				const currentPageUuid = docInfo.uuid;
+				const [singlePageComponents, singlePageWires, singlePageTexts, singlePageBuses] = await Promise.all([
+					collectComponents({
+						allSchematicPages: false,
+						schematicPageUuid: currentPageUuid,
+					}),
+					collectWires(),
+					collectTexts({ schematicPageUuid: currentPageUuid }),
+					collectBuses({ schematicPageUuid: currentPageUuid }),
+				]);
+
+				components = singlePageComponents;
+				wires = singlePageWires;
+				texts = singlePageTexts;
+				buses = singlePageBuses;
+				if (currentPageUuid) {
+					meta.collectedPageUuids.push(currentPageUuid);
+				}
+				meta.collectedPageCount = meta.collectedPageUuids.length;
+			}
+			else {
+				// 多页场景：逐页打开并激活后采集
+				for (const page of pages) {
+					try {
+						const pageTabId = await eda.dmt_EditorControl.openDocument(page.uuid);
+						if (!pageTabId) {
+							console.warn(`无法打开图页: ${page.name} (${page.uuid})`);
+							meta.missingPageUuids.push(page.uuid);
+							continue;
+						}
+
+						const activated = await eda.dmt_EditorControl.activateDocument(pageTabId);
+						if (!activated) {
+							console.warn(`无法激活图页: ${page.name} (${page.uuid})`);
+							meta.missingPageUuids.push(page.uuid);
+							continue;
+						}
+
+						const [pageComponents, pageWires, pageTexts, pageBuses] = await Promise.all([
+							collectComponents({
+								allSchematicPages: false,
+								schematicPageUuid: page.uuid,
+							}),
+							collectWires(),
+							collectTexts({ schematicPageUuid: page.uuid }),
+							collectBuses({ schematicPageUuid: page.uuid }),
+						]);
+
+						components.push(...pageComponents);
+						wires.push(...pageWires);
+						texts.push(...pageTexts);
+						buses.push(...pageBuses);
+						meta.collectedPageUuids.push(page.uuid);
+					}
+					catch (pageError) {
+						console.warn(`逐页采集失败，图页: ${page.name} (${page.uuid})`, pageError);
+						meta.missingPageUuids.push(page.uuid);
+					}
+				}
+
+				meta.collectedPageCount = meta.collectedPageUuids.length;
+				if (meta.collectedPageCount === pages.length) {
+					meta.quality = 'full';
+				}
+				else if (meta.collectedPageCount > 0) {
+					meta.quality = 'partial';
+				}
+				else {
+					// 触发降级：逐页路径完全不可用
+					throw new Error('逐页采集未成功获取任何图页数据');
+				}
+			}
+		}
+		catch (perPageError) {
+			// 降级策略：逐页采集失败后回退到 allSchematicPages=true
+			console.warn('逐页采集失败，回退到 getAll(undefined, true):', perPageError);
+			meta.mode = 'api-all-pages-fallback';
+			meta.quality = 'partial';
+			meta.errorMessage = perPageError instanceof Error ? perPageError.message : String(perPageError);
+
+			const [fallbackComponents, fallbackWires, fallbackTexts, fallbackBuses] = await Promise.all([
+				collectComponents({ allSchematicPages: true }),
+				collectWires(),
+				collectTexts(),
+				collectBuses(),
+			]);
+			components = fallbackComponents;
+			wires = fallbackWires;
+			texts = fallbackTexts;
+			buses = fallbackBuses;
+		}
+		finally {
+			// 无论成功/失败，确保恢复用户原始焦点页
+			try {
+				await eda.dmt_EditorControl.activateDocument(originalTabId);
+			}
+			catch (restoreError) {
+				console.warn('恢复原始文档焦点失败:', restoreError);
+			}
+		}
 
 		// 采集引脚并绑定网络
 		const pins = await collectPinsWithNetBinding(components, netlistRaw, wires);
@@ -70,8 +207,11 @@ export async function collectSchematicData(): Promise<CollectedData> {
 			components,
 			pins,
 			nets,
+			texts,
+			buses,
 			netlistRaw,
 			timestamp: Date.now(),
+			meta,
 		};
 	}
 	catch (error) {
@@ -84,10 +224,14 @@ export async function collectSchematicData(): Promise<CollectedData> {
 }
 
 /**
- * 采集所有器件
+ * 采集器件（支持逐页和降级两种模式）
  */
-async function collectComponents(): Promise<RawComponent[]> {
-	const primitives = await eda.sch_PrimitiveComponent.getAll(undefined, true);
+async function collectComponents(
+	options: CollectComponentsOptions = {},
+): Promise<RawComponent[]> {
+	const { allSchematicPages = false, schematicPageUuid } = options;
+
+	const primitives = await eda.sch_PrimitiveComponent.getAll(undefined, allSchematicPages);
 
 	// 第一阶段：仅获取 componentType 进行过滤（减少不必要的 API 调用）
 	const filterTasks = primitives.map(primitive => async () => ({
@@ -145,7 +289,7 @@ async function collectComponents(): Promise<RawComponent[]> {
 			x,
 			y,
 			rotation: rotation || 0,
-			schematicPageUuid: undefined, // 需要从其他API获取
+			schematicPageUuid,
 		};
 	});
 
@@ -194,6 +338,101 @@ async function collectWires(): Promise<Array<{ net: string; lines: number[][] }>
 	const results = await promiseAllWithLimit(wireTasks, 50);
 	// 过滤掉null值
 	return results.filter((w): w is { net: string; lines: number[][] } => w !== null);
+}
+
+/**
+ * 采集文本标注
+ * 失败时降级为空数组，不阻塞主流程
+ */
+async function collectTexts(
+	options: CollectTextAndBusOptions = {},
+): Promise<RawText[]> {
+	const { schematicPageUuid } = options;
+
+	try {
+		const textPrimitives = await eda.sch_PrimitiveText.getAll();
+
+		const textTasks = textPrimitives.map(textPrimitive => async () => {
+			try {
+				const [primitiveId, content, x, y] = await Promise.all([
+					textPrimitive.getState_PrimitiveId(),
+					textPrimitive.getState_Content(),
+					textPrimitive.getState_X(),
+					textPrimitive.getState_Y(),
+				]);
+
+				return {
+					primitiveId,
+					content: content || '',
+					x,
+					y,
+					schematicPageUuid,
+				} as RawText;
+			}
+			catch (textError) {
+				console.warn('采集单个文本图元失败:', textError);
+				return null;
+			}
+		});
+
+		const results = await promiseAllWithLimit(textTasks, 50);
+		return results.filter((item): item is RawText => item !== null);
+	}
+	catch (error) {
+		console.warn('采集文本标注失败，已降级为空数组:', error);
+		return [];
+	}
+}
+
+/**
+ * 采集总线
+ * 失败时降级为空数组，不阻塞主流程
+ */
+async function collectBuses(
+	options: CollectTextAndBusOptions = {},
+): Promise<RawBus[]> {
+	const { schematicPageUuid } = options;
+
+	try {
+		const busPrimitives = await eda.sch_PrimitiveBus.getAll();
+
+		const busTasks = busPrimitives.map(busPrimitive => async () => {
+			try {
+				const [primitiveId, busName, line] = await Promise.all([
+					busPrimitive.getState_PrimitiveId(),
+					busPrimitive.getState_BusName(),
+					busPrimitive.getState_Line(),
+				]);
+
+				if (!line) {
+					return null;
+				}
+
+				// 规范化 line 为二维数组
+				const lines = Array.isArray(line[0])
+					? line as number[][]
+					: [line as number[]];
+
+				return {
+					primitiveId,
+					busName: busName || '',
+					lines,
+					schematicPageUuid,
+				} as RawBus;
+			}
+			catch (busError) {
+				console.warn('采集单个总线图元失败:', busError);
+				return null;
+			}
+		});
+
+		const results = await promiseAllWithLimit(busTasks, 50);
+		return results.filter((item): item is RawBus => item !== null);
+	}
+	catch (error) {
+		console.warn('采集总线失败，已降级为空数组:', error);
+		return [];
+	}
 }
 
 /**
