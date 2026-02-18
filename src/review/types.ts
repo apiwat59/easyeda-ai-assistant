@@ -136,8 +136,7 @@ export interface ReviewResult {
  * AI Provider类型
  */
 export enum AIProvider {
-	OPENAI = 'openai',
-	CLAUDE = 'claude',
+	OPENAI_COMPATIBLE = 'openai_compatible',
 }
 
 /**
@@ -160,12 +159,18 @@ export interface ConfigStore {
 export const CHAT_TOPICS = {
 	// IFrame -> 主扩展
 	REQUEST_DATA: 'ai-chat/request-data',
+	REQUEST_CONFIG: 'ai-chat/request-config',
+	REQUEST_HISTORY: 'ai-chat/request-history',
 	USER_MESSAGE: 'ai-chat/user-message',
 	LOCATE: 'ai-chat/locate',
 	CONFIG_UPDATE: 'ai-chat/config-update',
+	HISTORY_UPDATE: 'ai-chat/history-update',
+	CLEAR_SESSION: 'ai-chat/clear-session',
 
 	// 主扩展 -> IFrame
 	SCHEMATIC_DATA: 'ai-chat/schematic-data',
+	CONFIG_DATA: 'ai-chat/config-data',
+	HISTORY_DATA: 'ai-chat/history-data',
 	AI_RESPONSE: 'ai-chat/ai-response',
 	ERROR: 'ai-chat/error',
 } as const;

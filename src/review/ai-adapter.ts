@@ -1,11 +1,11 @@
 /**
  * AI原理图审查 - AI通信适配器
  *
- * 封装OpenAI/Claude API通信，处理CORS、超时、重试
+ * 封装OpenAI兼容格式API通信，处理CORS、超时、重试
  */
 import type { ConfigStore, SchReviewChunk } from './types';
 import { buildSystemPrompt, buildUserPrompt } from './prompt-builder';
-import { AIProvider, ErrorCode, ReviewError } from './types';
+import { ErrorCode, ReviewError } from './types';
 
 /**
  * AI响应接口
@@ -49,24 +49,13 @@ export async function reviewChunkWithAI(
 	const systemPrompt = buildSystemPrompt();
 	const userPrompt = buildUserPrompt(chunk);
 
-	if (config.provider === AIProvider.OPENAI) {
-		return await callOpenAI(systemPrompt, userPrompt, config);
-	}
-	else if (config.provider === AIProvider.CLAUDE) {
-		return await callClaude(systemPrompt, userPrompt, config);
-	}
-	else {
-		throw new ReviewError(
-			ErrorCode.AI_NO_CONFIG,
-			`不支持的AI Provider: ${config.provider}`,
-		);
-	}
+	return await callOpenAICompatible(systemPrompt, userPrompt, config);
 }
 
 /**
- * 调用OpenAI API
+ * 调用OpenAI兼容格式API
  */
-async function callOpenAI(
+async function callOpenAICompatible(
 	systemPrompt: string,
 	userPrompt: string,
 	config: ConfigStore,
@@ -87,34 +76,6 @@ async function callOpenAI(
 }
 
 /**
- * 调用Claude API
- */
-async function callClaude(
-	systemPrompt: string,
-	userPrompt: string,
-	config: ConfigStore,
-): Promise<AIResponse> {
-	const url = config.apiUrl || 'https://api.anthropic.com/v1/messages';
-
-	const body = {
-		model: config.model,
-		max_tokens: 4096,
-		system: systemPrompt,
-		messages: [
-			{ role: 'user', content: userPrompt },
-		],
-		temperature: 0.3,
-	};
-
-	const headers = {
-		'x-api-key': config.apiKey, // Claude使用x-api-key而非Bearer
-		'anthropic-version': '2023-06-01',
-	};
-
-	return await makeRequest(url, '', body, config.timeout || 120, headers, true);
-}
-
-/**
  * 发送HTTP请求（带重试）
  */
 async function makeRequest(
@@ -122,15 +83,12 @@ async function makeRequest(
 	apiKey: string,
 	body: unknown,
 	timeout: number,
-	extraHeaders: Record<string, string> = {},
-	skipAuth: boolean = false,
 ): Promise<AIResponse> {
 	const maxRetries = 3;
 	let lastError: Error | null = null;
 
 	for (let attempt = 1; attempt <= maxRetries; attempt++) {
 		try {
-			// P2: 使用Promise.race实现超时控制，并正确清理timeout
 			let timeoutId: ReturnType<typeof setTimeout> | undefined;
 			const timeoutPromise = new Promise<never>((_, reject) => {
 				timeoutId = setTimeout(() => reject(new Error('Request timeout')), timeout * 1000);
@@ -143,8 +101,7 @@ async function makeRequest(
 				{
 					headers: {
 						'Content-Type': 'application/json',
-						...(skipAuth ? {} : { Authorization: `Bearer ${apiKey}` }),
-						...extraHeaders,
+						'Authorization': `Bearer ${apiKey}`,
 					},
 				},
 			);
@@ -239,13 +196,9 @@ function parseAIResponse(data: any): AIResponse {
 	try {
 		let contentText = '';
 
-		// OpenAI格式
+		// OpenAI兼容格式
 		if (data.choices && data.choices[0]?.message?.content) {
 			contentText = data.choices[0].message.content;
-		}
-		// Claude格式
-		else if (data.content && data.content[0]?.text) {
-			contentText = data.content[0].text;
 		}
 		else {
 			throw new Error('无法解析AI响应格式');

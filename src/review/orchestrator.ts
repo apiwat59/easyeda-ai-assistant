@@ -6,7 +6,7 @@
 import type { CollectedData, UserMessage } from './types';
 import { ChatSession } from './chat-adapter';
 import { collectSchematicData } from './collector';
-import { loadConfig, saveConfig, validateConfig } from './config';
+import { loadChatHistory, loadConfig, saveChatHistory, saveConfig, validateConfig } from './config';
 import { CHAT_TOPICS, ErrorCode, ReviewError } from './types';
 
 /**
@@ -51,6 +51,16 @@ export async function startAIChat(): Promise<void> {
  */
 async function collectDataInBackground(): Promise<void> {
 	try {
+		// 立即通知IFrame开始采集
+		publishToIFrame(CHAT_TOPICS.SCHEMATIC_DATA, {
+			summary: {
+				components: -1, // -1 表示正在采集
+				pins: -1,
+				nets: -1,
+			},
+			timestamp: Date.now(),
+		});
+
 		cachedSchematicData = await collectSchematicData();
 		chatSession?.setSchematicContext(cachedSchematicData);
 
@@ -69,9 +79,9 @@ async function collectDataInBackground(): Promise<void> {
 		// 数据采集失败不阻塞对话，用户仍可以上传截图
 		publishToIFrame(CHAT_TOPICS.SCHEMATIC_DATA, {
 			summary: {
-				components: 0,
-				pins: 0,
-				nets: 0,
+				components: -1, // 使用 -1 表示采集失败，与 REQUEST_DATA 保持一致
+				pins: -1,
+				nets: -1,
 			},
 			timestamp: Date.now(),
 		});
@@ -96,6 +106,33 @@ function setupChatListeners(): void {
 				timestamp: cachedSchematicData.timestamp,
 			});
 		}
+		else {
+			// 如果数据尚未采集或采集失败，返回采集中状态
+			publishToIFrame(CHAT_TOPICS.SCHEMATIC_DATA, {
+				summary: {
+					components: -1,
+					pins: -1,
+					nets: -1,
+				},
+				timestamp: Date.now(),
+			});
+		}
+	});
+
+	// 监听IFrame请求配置数据
+	subscribe(CHAT_TOPICS.REQUEST_CONFIG, () => {
+		const config = loadConfig();
+		publishToIFrame(CHAT_TOPICS.CONFIG_DATA, {
+			apiUrl: config.apiUrl,
+			apiKey: config.apiKey,
+			model: config.model,
+		});
+	});
+
+	// 监听IFrame请求历史记录
+	subscribe(CHAT_TOPICS.REQUEST_HISTORY, () => {
+		const history = loadChatHistory();
+		publishToIFrame(CHAT_TOPICS.HISTORY_DATA, { messages: history });
 	});
 
 	// 监听用户消息
@@ -113,10 +150,30 @@ function setupChatListeners(): void {
 	});
 
 	// 监听配置更新
-	subscribe(CHAT_TOPICS.CONFIG_UPDATE, (data: any) => {
+	subscribe(CHAT_TOPICS.CONFIG_UPDATE, async (data: any) => {
 		if (!data || typeof data !== 'object')
 			return;
-		saveConfig(data);
+		await saveConfig(data);
+		// 保存成功后回传确认
+		publishToIFrame(CHAT_TOPICS.CONFIG_DATA, {
+			apiUrl: data.apiUrl,
+			apiKey: data.apiKey,
+			model: data.model,
+		});
+	});
+
+	// 监听历史记录更新
+	subscribe(CHAT_TOPICS.HISTORY_UPDATE, async (data: any) => {
+		if (!data || !Array.isArray(data.messages))
+			return;
+		await saveChatHistory(data.messages);
+	});
+
+	// 监听清空会话请求
+	subscribe(CHAT_TOPICS.CLEAR_SESSION, () => {
+		if (chatSession) {
+			chatSession.clear();
+		}
 	});
 }
 

@@ -2,34 +2,37 @@ import type { ConfigStore } from './types';
 /**
  * AI原理图审查 - 配置管理
  *
- * 使用localStorage持久化存储AI审查配置
+ * 使用 eda.sys_Storage 持久化存储AI审查配置
+ * 注意：扩展主上下文中 localStorage 不可用，必须使用 EDA 提供的存储 API
  */
 import { AIProvider } from './types';
 
-const STORAGE_KEY = 'ai-sch-review-config';
+const CONFIG_KEY = 'ai-sch-review-config';
+const HISTORY_KEY = 'ai-sch-chat-history';
 
 /**
  * 默认配置
  */
 const DEFAULT_CONFIG: ConfigStore = {
-	provider: AIProvider.OPENAI,
+	provider: AIProvider.OPENAI_COMPATIBLE,
 	apiKey: '',
 	model: 'gpt-4o',
-	apiUrl: undefined,
+	apiUrl: 'https://api.openai.com/v1/chat/completions',
 	maxPinsPerChunk: 1200,
 	timeout: 120,
 };
 
 /**
- * 从localStorage加载配置
+ * 从 eda.sys_Storage 加载配置
  */
 export function loadConfig(): ConfigStore {
 	try {
-		const raw = localStorage.getItem(STORAGE_KEY);
+		const raw = eda.sys_Storage.getExtensionUserConfig(CONFIG_KEY);
 		if (!raw) {
 			return { ...DEFAULT_CONFIG };
 		}
-		const parsed = JSON.parse(raw) as Partial<ConfigStore>;
+		// raw 可能是对象或字符串
+		const parsed = typeof raw === 'string' ? JSON.parse(raw) as Partial<ConfigStore> : raw as Partial<ConfigStore>;
 		return { ...DEFAULT_CONFIG, ...parsed };
 	}
 	catch {
@@ -38,16 +41,16 @@ export function loadConfig(): ConfigStore {
 }
 
 /**
- * 保存配置到localStorage
+ * 保存配置到 eda.sys_Storage
  */
-export function saveConfig(config: Partial<ConfigStore>): ConfigStore {
+export async function saveConfig(config: Partial<ConfigStore>): Promise<ConfigStore> {
 	const current = loadConfig();
 	const merged: ConfigStore = { ...current, ...config };
 	try {
-		localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+		await eda.sys_Storage.setExtensionUserConfig(CONFIG_KEY, merged);
 	}
-	catch {
-		// localStorage可能不可用，静默失败
+	catch (e) {
+		console.warn('保存配置失败:', e);
 	}
 	return merged;
 }
@@ -62,10 +65,39 @@ export function validateConfig(config: ConfigStore): string | null {
 	if (!config.model || config.model.trim().length === 0) {
 		return 'Model未配置';
 	}
-	if (config.provider === AIProvider.OPENAI && !config.apiKey.startsWith('sk-')) {
-		return 'OpenAI API Key格式可能不正确（应以sk-开头）';
+	if (!config.apiUrl || config.apiUrl.trim().length === 0) {
+		return 'API URL未配置';
 	}
 	return null;
+}
+
+/**
+ * 加载对话历史记录
+ */
+export function loadChatHistory(): unknown[] {
+	try {
+		const raw = eda.sys_Storage.getExtensionUserConfig(HISTORY_KEY);
+		if (!raw) {
+			return [];
+		}
+		const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+		return Array.isArray(parsed) ? parsed : [];
+	}
+	catch {
+		return [];
+	}
+}
+
+/**
+ * 保存对话历史记录
+ */
+export async function saveChatHistory(messages: unknown[]): Promise<void> {
+	try {
+		await eda.sys_Storage.setExtensionUserConfig(HISTORY_KEY, messages);
+	}
+	catch (e) {
+		console.warn('保存历史记录失败:', e);
+	}
 }
 
 /**

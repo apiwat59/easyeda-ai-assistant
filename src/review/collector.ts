@@ -7,6 +7,31 @@ import type { CollectedData, RawComponent, RawNet, RawPin } from './types';
 import { ErrorCode, ReviewError } from './types';
 
 /**
+ * 并发控制：限制同时执行的Promise数量
+ */
+async function promiseAllWithLimit<T>(
+	tasks: Array<() => Promise<T>>,
+	limit: number,
+): Promise<T[]> {
+	const results: T[] = Array.from({ length: tasks.length });
+	let index = 0;
+
+	async function worker(): Promise<void> {
+		while (index < tasks.length) {
+			const currentIndex = index++;
+			results[currentIndex] = await tasks[currentIndex]();
+		}
+	}
+
+	const workers = Array.from(
+		{ length: Math.min(limit, tasks.length) },
+		() => worker(),
+	);
+	await Promise.all(workers);
+	return results;
+}
+
+/**
  * 采集原理图数据
  */
 export async function collectSchematicData(): Promise<CollectedData> {
@@ -55,31 +80,41 @@ export async function collectSchematicData(): Promise<CollectedData> {
  */
 async function collectComponents(): Promise<RawComponent[]> {
 	const primitives = await eda.sch_PrimitiveComponent.getAll(undefined, true);
-	const components: RawComponent[] = [];
 
-	for (const primitive of primitives) {
-		// 使用getState_*系列API
-		const componentType = await primitive.getState_ComponentType();
+	// 使用并发控制，限制同时处理50个器件
+	const componentTasks = primitives.map(primitive => async () => {
+		// 将所有API调用都并行化，包括componentType
+		const [
+			componentType,
+			primitiveId,
+			designator,
+			name,
+			x,
+			y,
+			rotation,
+		] = await Promise.all([
+			primitive.getState_ComponentType(),
+			primitive.getState_PrimitiveId(),
+			primitive.getState_Designator(),
+			primitive.getState_Name(),
+			primitive.getState_X(),
+			primitive.getState_Y(),
+			primitive.getState_Rotation(),
+		]);
 
 		// 过滤掉网络标记类器件（NET_FLAG/NET_PORT）
 		if (componentType === 'netflag' || componentType === 'netport') {
-			continue;
+			return null;
 		}
 
-		const primitiveId = await primitive.getState_PrimitiveId();
-		const designator = await primitive.getState_Designator();
-		const name = await primitive.getState_Name();
-		const x = await primitive.getState_X();
-		const y = await primitive.getState_Y();
-		const rotation = await primitive.getState_Rotation();
-
-		// 获取制造商信息（可能不存在）
+		// 并行获取制造商信息（可能不存在）
 		let manufacturer = '';
 		let manufacturerPartNumber = '';
 		try {
-			const mfr = await primitive.getState_Manufacturer();
-			// P2: 正确的API是getState_ManufacturerId，非getState_ManufacturerPartNumber
-			const mpn = await primitive.getState_ManufacturerId();
+			const [mfr, mpn] = await Promise.all([
+				primitive.getState_Manufacturer(),
+				primitive.getState_ManufacturerId(),
+			]);
 			manufacturer = mfr || '';
 			manufacturerPartNumber = mpn || '';
 		}
@@ -87,7 +122,7 @@ async function collectComponents(): Promise<RawComponent[]> {
 			// 某些器件可能没有这些属性
 		}
 
-		components.push({
+		return {
 			primitiveId,
 			designator: designator || '',
 			name: name || '',
@@ -96,11 +131,13 @@ async function collectComponents(): Promise<RawComponent[]> {
 			x,
 			y,
 			rotation: rotation || 0,
-			schematicPageUuid: undefined, // 需要从其他API获取
-		});
-	}
+			schematicPageUuid: undefined as string | undefined, // 需要从其他API获取
+		};
+	});
 
-	return components;
+	const results = await promiseAllWithLimit(componentTasks, 20);
+	// 过滤掉null值（网络标记类器件）
+	return results.filter((c): c is RawComponent => c !== null);
 }
 
 /**
@@ -122,24 +159,28 @@ async function collectNetlist(): Promise<string | undefined> {
  */
 async function collectWires(): Promise<Array<{ net: string; lines: number[][] }>> {
 	const wirePrimitives = await eda.sch_PrimitiveWire.getAll();
-	const wires: Array<{ net: string; lines: number[][] }> = [];
 
-	for (const wire of wirePrimitives) {
-		// getState_Net返回string，getState_Line返回Array<number> | Array<Array<number>>
-		const net = await wire.getState_Net();
-		const line = await wire.getState_Line();
+	// 使用并发控制，限制同时处理100条导线
+	const wireTasks = wirePrimitives.map(wire => async () => {
+		const [net, line] = await Promise.all([
+			wire.getState_Net(),
+			wire.getState_Line(),
+		]);
 
 		if (net && line) {
 			// 规范化line为二维数组
 			const lines = Array.isArray(line[0]) ? line as number[][] : [line as number[]];
-			wires.push({
+			return {
 				net: net || '',
 				lines,
-			});
+			};
 		}
-	}
+		return null;
+	});
 
-	return wires;
+	const results = await promiseAllWithLimit(wireTasks, 50);
+	// 过滤掉null值
+	return results.filter((w): w is { net: string; lines: number[][] } => w !== null);
 }
 
 /**
@@ -150,60 +191,80 @@ async function collectPinsWithNetBinding(
 	netlistRaw: string | undefined,
 	wires: Array<{ net: string; lines: number[][] }>,
 ): Promise<RawPin[]> {
-	const pins: RawPin[] = [];
-
 	// L1: 解析网表构建pin-net映射
 	const netlistMap = parseNetlist(netlistRaw);
 
-	for (const component of components) {
-		const pinPrimitives = await eda.sch_PrimitiveComponent.getAllPinsByPrimitiveId(
+	// 使用并发控制获取所有器件的引脚，限制同时处理30个器件
+	// 使用并发控制获取所有器件的引脚，限制同时处理20个器件
+	const componentTasks = components.map(component => async () => ({
+		component,
+		pinPrimitives: await eda.sch_PrimitiveComponent.getAllPinsByPrimitiveId(
 			component.primitiveId,
-		);
+		),
+	}));
 
+	const pinPrimitivesByComponent = await promiseAllWithLimit(componentTasks, 20);
+
+	// 收集所有引脚处理任务
+	const allPinTasks: Array<() => Promise<RawPin>> = [];
+
+	for (const { component, pinPrimitives } of pinPrimitivesByComponent) {
 		if (!pinPrimitives)
 			continue;
 
 		for (const pinPrimitive of pinPrimitives) {
-			// 使用getState_*系列API
-			const primitiveId = await pinPrimitive.getState_PrimitiveId();
-			const pinNumber = pinPrimitive.getState_PinNumber();
-			const pinName = pinPrimitive.getState_PinName();
-			const electricalType = pinPrimitive.getState_pinType();
-			const x = await pinPrimitive.getState_X();
-			const y = await pinPrimitive.getState_Y();
+			// 为每个引脚创建一个任务
+			allPinTasks.push(async () => {
+				const [
+					primitiveId,
+					pinNumber,
+					pinName,
+					electricalType,
+					x,
+					y,
+				] = await Promise.all([
+					pinPrimitive.getState_PrimitiveId(),
+					pinPrimitive.getState_PinNumber(),
+					pinPrimitive.getState_PinName(),
+					pinPrimitive.getState_pinType(),
+					pinPrimitive.getState_X(),
+					pinPrimitive.getState_Y(),
+				]);
 
-			const pinKey = `${component.designator}_${pinNumber}`;
+				const pinKey = `${component.designator}_${pinNumber}`;
 
-			// L1: 优先使用网表映射
-			let netName: string | null = netlistMap.get(pinKey) || null;
-			let confidence = netName ? 1.0 : 0;
-			let reason = netName ? 'netlist' : 'unresolved';
+				// L1: 优先使用网表映射
+				let netName: string | null = netlistMap.get(pinKey) || null;
+				let confidence = netName ? 1.0 : 0;
+				let reason = netName ? 'netlist' : 'unresolved';
 
-			// L2: 如果网表未解析，尝试通过导线坐标匹配
-			if (!netName) {
-				const wireNet = findNetByWireProximity(x, y, wires);
-				if (wireNet) {
-					netName = wireNet;
-					confidence = 0.8;
-					reason = 'wire';
+				// L2: 如果网表未解析，尝试通过导线坐标匹配
+				if (!netName) {
+					const wireNet = findNetByWireProximity(x, y, wires);
+					if (wireNet) {
+						netName = wireNet;
+						confidence = 0.8;
+						reason = 'wire';
+					}
 				}
-			}
 
-			pins.push({
-				primitiveId,
-				componentPrimitiveId: component.primitiveId,
-				componentDesignator: component.designator,
-				pinNumber: pinNumber || '',
-				pinName: pinName || '',
-				pinType: electricalType || 'Passive',
-				netName,
-				netBindingConfidence: confidence,
-				netBindingReason: reason,
+				return {
+					primitiveId,
+					componentPrimitiveId: component.primitiveId,
+					componentDesignator: component.designator,
+					pinNumber: pinNumber || '',
+					pinName: pinName || '',
+					pinType: electricalType || 'Passive',
+					netName,
+					netBindingConfidence: confidence,
+					netBindingReason: reason,
+				};
 			});
 		}
 	}
 
-	return pins;
+	// 使用并发控制处理所有引脚，限制同时处理30个引脚
+	return await promiseAllWithLimit(allPinTasks, 30);
 }
 
 /**

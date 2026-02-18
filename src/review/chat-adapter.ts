@@ -6,7 +6,7 @@
 import type { CollectedData, ConfigStore, UserMessage } from './types';
 import { chunkData } from './chunker';
 import { buildChatSystemPrompt } from './prompt-builder';
-import { AIProvider, ErrorCode, ReviewError } from './types';
+import { ErrorCode, ReviewError } from './types';
 
 /**
  * 对话历史条目
@@ -55,9 +55,7 @@ export class ChatSession {
 		];
 
 		try {
-			const reply = config.provider === AIProvider.CLAUDE
-				? await callClaudeChat(messages, config)
-				: await callOpenAIChat(messages, config);
+			const reply = await callOpenAICompatibleChat(messages, config);
 
 			// 将AI回复加入历史
 			this.history.push({ role: 'assistant', content: reply });
@@ -107,9 +105,9 @@ export class ChatSession {
 }
 
 /**
- * 调用OpenAI Chat API（多轮对话）
+ * 调用OpenAI兼容格式的Chat API（多轮对话）
  */
-async function callOpenAIChat(
+async function callOpenAICompatibleChat(
 	messages: ChatMessage[],
 	config: ConfigStore,
 ): Promise<string> {
@@ -118,75 +116,14 @@ async function callOpenAIChat(
 	const body = {
 		model: config.model,
 		messages: messages.map(m => ({
-			role: m.role === 'system' ? 'developer' : m.role,
+			role: m.role,
 			content: m.content,
 		})),
 		temperature: 0.4,
+		stream: false,
 	};
 
 	return await makeRequest(url, config, body);
-}
-
-/**
- * 调用Claude Chat API（多轮对话）
- */
-async function callClaudeChat(
-	messages: ChatMessage[],
-	config: ConfigStore,
-): Promise<string> {
-	const url = config.apiUrl || 'https://api.anthropic.com/v1/messages';
-
-	// Claude要求system单独传，且图片格式不同
-	const systemMsg = messages.find(m => m.role === 'system');
-	const chatMessages = messages.filter(m => m.role !== 'system');
-
-	const body = {
-		model: config.model,
-		max_tokens: 8192,
-		system: typeof systemMsg?.content === 'string' ? systemMsg.content : '',
-		messages: chatMessages.map(m => ({
-			role: m.role,
-			content: convertContentForClaude(m.content),
-		})),
-		temperature: 0.4,
-	};
-
-	const headers = {
-		'x-api-key': config.apiKey,
-		'anthropic-version': '2023-06-01',
-	};
-
-	return await makeRequest(url, config, body, headers, true);
-}
-
-/**
- * 转换图片格式为Claude API格式
- */
-function convertContentForClaude(content: ChatMessage['content']): unknown {
-	if (typeof content === 'string')
-		return content;
-
-	return (content as Array<{ type: string; [key: string]: any }>).map((part) => {
-		if (part.type === 'image_url' && part.image_url) {
-			// Claude使用source.type=base64
-			const url = (part.image_url as { url: string }).url;
-			const match = url.match(/^data:([^;]+);base64,(.+)$/);
-			if (match) {
-				return {
-					type: 'image',
-					source: {
-						type: 'base64',
-						media_type: match[1],
-						data: match[2],
-					},
-				};
-			}
-		}
-		if (part.type === 'text') {
-			return { type: 'text', text: (part as { text: string }).text };
-		}
-		return part;
-	});
 }
 
 /**
@@ -196,8 +133,6 @@ async function makeRequest(
 	url: string,
 	config: ConfigStore,
 	body: unknown,
-	extraHeaders: Record<string, string> = {},
-	skipBearer: boolean = false,
 ): Promise<string> {
 	const timeout = (config.timeout || 120) * 1000;
 	let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -218,8 +153,7 @@ async function makeRequest(
 				{
 					headers: {
 						'Content-Type': 'application/json',
-						...(skipBearer ? {} : { Authorization: `Bearer ${config.apiKey}` }),
-						...extraHeaders,
+						'Authorization': `Bearer ${config.apiKey}`,
 					},
 				},
 			),
@@ -231,13 +165,65 @@ async function makeRequest(
 			handleHttpError(response.status, errorText);
 		}
 
-		const data = await response.json();
+		const responseText = await response.text();
+
+		// 检测是否是 SSE 流式响应格式
+		if (responseText.startsWith('data:') || responseText.includes('\ndata:')) {
+			return parseSSEResponse(responseText);
+		}
+
+		// 标准 JSON 响应
+		const data = JSON.parse(responseText);
 		return extractResponseText(data);
+	}
+	catch (error) {
+		// 捕获外部交互权限错误
+		if (error instanceof Error && error.message.includes('外部交互权限')) {
+			throw new ReviewError(
+				ErrorCode.AI_NETWORK_ERROR,
+				'未启用扩展的外部交互权限。请在扩展管理器中找到本扩展，勾选"允许外部交互"选项。',
+			);
+		}
+		throw error;
 	}
 	finally {
 		if (timeoutId !== undefined)
 			clearTimeout(timeoutId);
 	}
+}
+
+/**
+ * 解析 SSE 流式响应
+ */
+function parseSSEResponse(text: string): string {
+	const lines = text.split('\n');
+	let fullContent = '';
+
+	for (const line of lines) {
+		if (line.startsWith('data:')) {
+			const jsonStr = line.substring(5).trim();
+
+			// 跳过 [DONE] 标记
+			if (jsonStr === '[DONE]') {
+				continue;
+			}
+
+			try {
+				const chunk = JSON.parse(jsonStr);
+				const content = chunk.choices?.[0]?.delta?.content || chunk.choices?.[0]?.message?.content || '';
+				fullContent += content;
+			}
+			catch {
+				// 忽略无法解析的行
+			}
+		}
+	}
+
+	if (!fullContent) {
+		throw new ReviewError(ErrorCode.AI_INVALID_RESPONSE, '无法从SSE响应中提取内容');
+	}
+
+	return fullContent;
 }
 
 /**
@@ -257,13 +243,9 @@ function handleHttpError(status: number, body: string): never {
  * 从AI响应中提取文本
  */
 function extractResponseText(data: any): string {
-	// OpenAI格式
+	// OpenAI兼容格式
 	if (data.choices?.[0]?.message?.content) {
 		return data.choices[0].message.content;
-	}
-	// Claude格式
-	if (data.content?.[0]?.text) {
-		return data.content[0].text;
 	}
 	throw new ReviewError(ErrorCode.AI_INVALID_RESPONSE, '无法解析AI响应格式');
 }
