@@ -1,0 +1,232 @@
+/**
+ * AI原理图审查 - 类型定义
+ */
+
+// ============ 数据序列化格式 ============
+
+/**
+ * SCH-REVIEW-COMPACT v1 格式
+ * 使用tuple数组节省Token
+ */
+export interface SchReviewChunk {
+	schema: 'sch-review-compact-v1';
+	summary: {
+		totalComponents: number;
+		totalPins: number;
+		totalNets: number;
+		chunkId: string;
+		chunkCount: number;
+	};
+	// [位号, 名称, 制造商, 制造商编号, X, Y, 旋转]
+	components: Array<[string, string, string, string, number, number, number]>;
+	// [位号, 引脚编号, 引脚名称, 引脚类型, 网络名称]
+	pins: Array<[string, string, string, string, string | null]>;
+	// [网络名称, 连接引脚数]
+	nets: Array<[string, number]>;
+}
+
+// ============ 原始数据结构 ============
+
+/**
+ * 原始器件数据
+ */
+export interface RawComponent {
+	primitiveId: string;
+	designator: string;
+	name: string;
+	manufacturer: string;
+	manufacturerPartNumber: string;
+	x: number;
+	y: number;
+	rotation: number;
+	schematicPageUuid?: string;
+}
+
+/**
+ * 原始引脚数据
+ */
+export interface RawPin {
+	primitiveId: string;
+	componentPrimitiveId: string;
+	componentDesignator: string;
+	pinNumber: string;
+	pinName: string;
+	pinType: string;
+	netName: string | null;
+	netBindingConfidence?: number; // 0-1，网络绑定置信度
+	netBindingReason?: string; // 绑定来源：netlist/wire/netlabel/unresolved
+}
+
+/**
+ * 原始网络数据
+ */
+export interface RawNet {
+	netName: string;
+	pinCount: number;
+	pins: string[]; // pin primitive IDs
+}
+
+/**
+ * 采集的原始数据快照
+ */
+export interface CollectedData {
+	components: RawComponent[];
+	pins: RawPin[];
+	nets: RawNet[];
+	netlistRaw?: string; // 原始网表字符串
+	timestamp: number;
+}
+
+// ============ 审查结果 ============
+
+/**
+ * 问题严重程度
+ */
+export enum IssueSeverity {
+	MUST_FIX = 'must_fix',
+	SUGGESTION = 'suggestion',
+}
+
+/**
+ * 问题证据
+ */
+export interface IssueEvidence {
+	components?: string[]; // 器件位号
+	pins?: string[]; // 引脚标识（格式：U1.32 或 U1_32）
+	nets?: string[]; // 网络名称
+	datasheet_urls?: string[]; // 数据手册链接
+}
+
+/**
+ * 审查问题
+ */
+export interface ReviewIssue {
+	id: string; // 唯一标识
+	severity: IssueSeverity;
+	title: string;
+	reason: string;
+	impact: string;
+	confidence: number; // 0-1
+	fix: string;
+	evidence: IssueEvidence;
+	source: 'rule-engine' | 'ai'; // 问题来源
+	ruleId?: string; // 规则ID（如果来自规则引擎）
+}
+
+/**
+ * 审查结果
+ */
+export interface ReviewResult {
+	must_fix: ReviewIssue[];
+	suggestions: ReviewIssue[];
+	metadata: {
+		timestamp: number;
+		totalComponents: number;
+		totalPins: number;
+		totalNets: number;
+		chunksProcessed: number;
+		aiProvider?: string;
+		aiModel?: string;
+	};
+}
+
+// ============ 配置 ============
+
+/**
+ * AI Provider类型
+ */
+export enum AIProvider {
+	OPENAI = 'openai',
+	CLAUDE = 'claude',
+}
+
+/**
+ * 配置存储
+ */
+export interface ConfigStore {
+	provider: AIProvider;
+	apiKey: string;
+	model: string;
+	apiUrl?: string; // 自定义API地址
+	maxPinsPerChunk?: number; // 默认1200
+	timeout?: number; // 请求超时（秒），默认120
+}
+
+// ============ 通信协议 ============
+
+/**
+ * MessageBus主题
+ */
+export const MESSAGE_TOPICS = {
+	// 主扩展 -> IFrame
+	DATA: 'ai-review/data',
+	STATUS: 'ai-review/status',
+
+	// IFrame -> 主扩展
+	LOCATE: 'ai-review/locate',
+	CONFIG_UPDATE: 'ai-review/config-update',
+	OPEN_URL: 'ai-review/open-url',
+} as const;
+
+/**
+ * 状态消息
+ */
+export interface StatusMessage {
+	status: 'idle' | 'collecting' | 'analyzing' | 'complete' | 'error';
+	message?: string;
+	progress?: number; // 0-100
+}
+
+/**
+ * 数据消息
+ */
+export interface DataMessage {
+	result: ReviewResult;
+}
+
+/**
+ * 定位请求
+ */
+export interface LocateRequest {
+	components: string[];
+	pins: string[];
+	nets: string[];
+}
+
+// ============ 错误码 ============
+
+export enum ErrorCode {
+	// 采集错误
+	COLLECT_NO_DOCUMENT = 'COLLECT_NO_DOCUMENT',
+	COLLECT_API_FAILED = 'COLLECT_API_FAILED',
+
+	// 序列化错误
+	SERIALIZE_INVALID_DATA = 'SERIALIZE_INVALID_DATA',
+
+	// AI通信错误
+	AI_NO_CONFIG = 'AI_NO_CONFIG',
+	AI_NETWORK_ERROR = 'AI_NETWORK_ERROR',
+	AI_CORS_ERROR = 'AI_CORS_ERROR',
+	AI_AUTH_ERROR = 'AI_AUTH_ERROR',
+	AI_RATE_LIMIT = 'AI_RATE_LIMIT',
+	AI_TIMEOUT = 'AI_TIMEOUT',
+	AI_INVALID_RESPONSE = 'AI_INVALID_RESPONSE',
+
+	// UI错误
+	UI_IFRAME_FAILED = 'UI_IFRAME_FAILED',
+	UI_MESSAGEBUS_FAILED = 'UI_MESSAGEBUS_FAILED',
+}
+
+/**
+ * 审查错误
+ */
+export class ReviewError extends Error {
+	constructor(
+		public code: ErrorCode,
+		message: string,
+		public details?: unknown,
+	) {
+		super(message);
+		this.name = 'ReviewError';
+	}
+}

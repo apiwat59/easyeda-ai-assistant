@@ -11,6 +11,8 @@
  * https://prodocs.lceda.cn/cn/api/guide/
  */
 import * as extensionConfig from '../extension.json';
+import { showConfigDialog } from './review/config';
+import { runSchematicReview } from './review/orchestrator';
 
 // eslint-disable-next-line unused-imports/no-unused-vars
 export function activate(status?: 'onStartupFinished', arg?: string): void {}
@@ -20,4 +22,18 @@ export function about(): void {
 		eda.sys_I18n.text('EasyEDA extension SDK v', undefined, undefined, extensionConfig.version),
 		eda.sys_I18n.text('About'),
 	);
+}
+
+/**
+ * AI原理图审查入口
+ */
+export function aiSchematicReview(): void {
+	runSchematicReview();
+}
+
+/**
+ * AI审查配置入口
+ */
+export function aiReviewConfig(): void {
+	showConfigDialog();
 }
