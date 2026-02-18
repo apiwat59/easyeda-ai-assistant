@@ -158,6 +158,22 @@
             background: var(--bg-panel);
             border-bottom: 1px solid var(--border-color);
         }
+        .header-debug-btn {
+            background: none;
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+            line-height: 1;
+            transition: all 0.2s;
+        }
+        .header-debug-btn:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+            border-color: var(--text-secondary);
+        }
         .toggle-sidebar {
             background: none;
             border: 1px solid var(--border-color);
@@ -706,6 +722,7 @@
                 <span class="status-dot" id="status-dot"></span>
                 <span id="status-text">就绪</span>
             </div>
+            <button class="header-debug-btn" id="header-debug-btn" title="打开调试日志 (Ctrl+D)">🐛</button>
         </div>
 
         <div id="messages">
@@ -1199,6 +1216,7 @@
             document.getElementById('btn-new-chat').addEventListener('click', newChat);
             document.getElementById('btn-close-error-modal').addEventListener('click', closeErrorModal);
             document.getElementById('btn-debug-log').addEventListener('click', openDebugModal);
+            document.getElementById('header-debug-btn').addEventListener('click', openDebugModal);
             document.getElementById('btn-close-debug-modal').addEventListener('click', closeDebugModal);
             document.getElementById('btn-copy-debug-log').addEventListener('click', copyDebugLogs);
             document.getElementById('btn-clear-debug-log').addEventListener('click', clearDebugLogs);
@@ -1214,6 +1232,14 @@
             messageInput.addEventListener('input', function() {
                 messageInput.style.height = 'auto';
                 messageInput.style.height = messageInput.scrollHeight + 'px';
+            });
+
+            // 键盘快捷键：Ctrl+D 打开调试日志
+            document.addEventListener('keydown', function(e) {
+                if (e.ctrlKey && e.key === 'd') {
+                    e.preventDefault();
+                    openDebugModal();
+                }
             });
 
             if (typeof eda !== 'undefined' && eda.sys_MessageBus) {
