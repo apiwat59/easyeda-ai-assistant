@@ -130,9 +130,10 @@ async function makeRequest(
 
 	for (let attempt = 1; attempt <= maxRetries; attempt++) {
 		try {
-			// 使用Promise.race实现超时控制
+			// P2: 使用Promise.race实现超时控制，并正确清理timeout
+			let timeoutId: ReturnType<typeof setTimeout> | undefined;
 			const timeoutPromise = new Promise<never>((_, reject) => {
-				setTimeout(() => reject(new Error('Request timeout')), timeout * 1000);
+				timeoutId = setTimeout(() => reject(new Error('Request timeout')), timeout * 1000);
 			});
 
 			const requestPromise = eda.sys_ClientUrl.request(
@@ -148,15 +149,22 @@ async function makeRequest(
 				},
 			);
 
-			const response = await Promise.race([requestPromise, timeoutPromise]);
+			try {
+				const response = await Promise.race([requestPromise, timeoutPromise]);
 
-			if (!response.ok) {
-				const errorText = await response.text();
-				throw new Error(`HTTP ${response.status}: ${errorText}`);
+				if (!response.ok) {
+					const errorText = await response.text();
+					throw new Error(`HTTP ${response.status}: ${errorText}`);
+				}
+
+				const data = await response.json();
+				return parseAIResponse(data);
 			}
-
-			const data = await response.json();
-			return parseAIResponse(data);
+			finally {
+				if (timeoutId !== undefined) {
+					clearTimeout(timeoutId);
+				}
+			}
 		}
 		catch (error) {
 			lastError = error instanceof Error ? error : new Error(String(error));

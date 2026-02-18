@@ -65,7 +65,7 @@ export async function runSchematicReview(): Promise<void> {
 			publishStatus({ status: 'analyzing', message: '正在发送给AI分析...', progress: 40 });
 			eda.sys_LoadingAndProgressBar.showProgressBar(5, eda.sys_I18n.text('Sending to AI for analysis...'));
 
-			const progressPerChunk = 50 / chunks.length;
+			const progressPerChunk = chunks.length > 0 ? 50 / chunks.length : 50;
 
 			for (let i = 0; i < chunks.length; i++) {
 				try {
@@ -144,10 +144,15 @@ function setupMessageBusListeners(): void {
 	const locateTask = eda.sys_MessageBus.subscribePublic(
 		MESSAGE_TOPICS.LOCATE,
 		(data: any) => {
+			// P1: 验证MessageBus数据结构
+			if (!data || typeof data !== 'object') {
+				console.warn('Invalid locate data:', data);
+				return;
+			}
 			locateItems({
-				components: data.components || [],
-				pins: data.pins || [],
-				nets: data.nets || [],
+				components: Array.isArray(data.components) ? data.components : [],
+				pins: Array.isArray(data.pins) ? data.pins : [],
+				nets: Array.isArray(data.nets) ? data.nets : [],
 			});
 		},
 	);
@@ -157,6 +162,11 @@ function setupMessageBusListeners(): void {
 	const configTask = eda.sys_MessageBus.subscribePublic(
 		MESSAGE_TOPICS.CONFIG_UPDATE,
 		async (data: any) => {
+			// P1: 验证配置数据
+			if (!data || typeof data !== 'object') {
+				console.warn('Invalid config data:', data);
+				return;
+			}
 			const { saveConfig } = await import('./config');
 			saveConfig(data);
 		},
@@ -167,9 +177,20 @@ function setupMessageBusListeners(): void {
 	const urlTask = eda.sys_MessageBus.subscribePublic(
 		MESSAGE_TOPICS.OPEN_URL,
 		(data: any) => {
-			if (data.url) {
-				// 通过系统浏览器打开URL
-				window.open(data.url, '_blank');
+			if (data.url && typeof data.url === 'string') {
+				// P0: 验证URL协议，仅允许http/https
+				try {
+					const parsed = new URL(data.url);
+					if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+						window.open(data.url, '_blank');
+					}
+					else {
+						console.warn('Blocked non-HTTP URL:', data.url);
+					}
+				}
+				catch {
+					console.warn('Invalid URL:', data.url);
+				}
 			}
 		},
 	);

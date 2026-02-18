@@ -28,7 +28,9 @@ export function about(): void {
  * AI原理图审查入口
  */
 export function aiSchematicReview(): void {
-	runSchematicReview();
+	runSchematicReview().catch((error) => {
+		console.error('Schematic review failed:', error);
+	});
 }
 
 /**

@@ -291,9 +291,9 @@
 
                 let evidenceHtml = '';
                 if (item.evidence) {
-                    if (item.evidence.components?.length) evidenceHtml += item.evidence.components.map(c => `<span class="tag">Ref:${c}</span>`).join('');
-                    if (item.evidence.nets?.length) evidenceHtml += item.evidence.nets.map(n => `<span class="tag">Net:${n}</span>`).join('');
-                    if (item.evidence.pins?.length) evidenceHtml += item.evidence.pins.map(p => `<span class="tag">Pin:${p}</span>`).join('');
+                    if (item.evidence.components?.length) evidenceHtml += item.evidence.components.map(c => `<span class="tag">Ref:${escapeHtml(c)}</span>`).join('');
+                    if (item.evidence.nets?.length) evidenceHtml += item.evidence.nets.map(n => `<span class="tag">Net:${escapeHtml(n)}</span>`).join('');
+                    if (item.evidence.pins?.length) evidenceHtml += item.evidence.pins.map(p => `<span class="tag">Pin:${escapeHtml(p)}</span>`).join('');
                 }
 
                 card.innerHTML = `
@@ -320,11 +320,30 @@
                     </div>
                     ${evidenceHtml ? `<div class="evidence-tags">${evidenceHtml}</div>` : ''}
                     <div class="actions">
-                        ${item.evidence?.datasheet_urls?.length ? `<button class="btn btn-sm" onclick="openDatasheet('${item.evidence.datasheet_urls[0]}')">Datasheet</button>` : ''}
-                        <button class="btn btn-sm" onclick='locateItem(${JSON.stringify(item.evidence)})'>🔍 定位</button>
+                        ${item.evidence?.datasheet_urls?.length ? `<button class="btn btn-sm" data-action="datasheet" data-url="${escapeHtml(item.evidence.datasheet_urls[0])}">Datasheet</button>` : ''}
+                        <button class="btn btn-sm" data-action="locate" data-evidence='${escapeHtml(JSON.stringify(item.evidence))}'>🔍 定位</button>
                     </div>
                 `;
                 contentArea.appendChild(card);
+
+                // Attach event listeners to buttons
+                card.querySelectorAll('[data-action]').forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        const action = this.getAttribute('data-action');
+                        if (action === 'datasheet') {
+                            const url = this.getAttribute('data-url');
+                            openDatasheet(url);
+                        } else if (action === 'locate') {
+                            const evidenceJson = this.getAttribute('data-evidence');
+                            try {
+                                const evidence = JSON.parse(evidenceJson);
+                                locateItem(evidence);
+                            } catch (e) {
+                                console.error('Failed to parse evidence:', e);
+                            }
+                        }
+                    });
+                });
             });
         }
 
@@ -334,18 +353,30 @@
         }
 
         // Actions
-        window.locateItem = function(evidence) {
+        function locateItem(evidence) {
             if (!evidence) return;
             safePublish('ai-review/locate', {
                 components: evidence.components || [],
                 nets: evidence.nets || [],
                 pins: evidence.pins || []
             });
-        };
+        }
 
-        window.openDatasheet = function(url) {
+        function openDatasheet(url) {
+            if (!url) return;
+            // P0: 验证URL协议，防止XSS
+            try {
+                const parsed = new URL(url);
+                if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+                    console.warn('Blocked non-HTTP URL:', url);
+                    return;
+                }
+            } catch (e) {
+                console.warn('Invalid URL:', url);
+                return;
+            }
             safePublish('ai-review/open-url', { url });
-        };
+        }
 
         // Communication Helpers
         function safePublish(topic, data) {

@@ -78,7 +78,8 @@ async function collectComponents(): Promise<RawComponent[]> {
 		let manufacturerPartNumber = '';
 		try {
 			const mfr = await primitive.getState_Manufacturer();
-			const mpn = await primitive.getState_ManufacturerPartNumber();
+			// P2: 正确的API是getState_ManufacturerId，非getState_ManufacturerPartNumber
+			const mpn = await primitive.getState_ManufacturerId();
 			manufacturer = mfr || '';
 			manufacturerPartNumber = mpn || '';
 		}
@@ -107,8 +108,9 @@ async function collectComponents(): Promise<RawComponent[]> {
  */
 async function collectNetlist(): Promise<string | undefined> {
 	try {
-		// 使用JLCEDA_PRO格式（枚举值为"JLCEDA"）
-		const netlist = await eda.sch_Netlist.getNetlist('JLCEDA' as any);
+		// P2: 使用正确的枚举类型，避免 as any 绕过类型系统
+		// ESYS_NetlistType.JLCEDA_PRO 的值为 "JLCEDA"
+		const netlist = await eda.sch_Netlist.getNetlist('JLCEDA');
 		return netlist;
 	}
 	catch {
@@ -165,9 +167,9 @@ async function collectPinsWithNetBinding(
 		for (const pinPrimitive of pinPrimitives) {
 			// 使用getState_*系列API
 			const primitiveId = await pinPrimitive.getState_PrimitiveId();
-			const pinNumber = await pinPrimitive.getState_Number();
-			const pinName = await pinPrimitive.getState_Name();
-			const electricalType = await pinPrimitive.getState_ElectricalType();
+			const pinNumber = pinPrimitive.getState_PinNumber();
+			const pinName = pinPrimitive.getState_PinName();
+			const electricalType = pinPrimitive.getState_pinType();
 			const x = await pinPrimitive.getState_X();
 			const y = await pinPrimitive.getState_Y();
 

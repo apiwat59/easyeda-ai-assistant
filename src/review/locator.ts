@@ -41,10 +41,11 @@ export async function locateItems(request: LocateRequest): Promise<boolean> {
 async function addVisualMarkers(_request: LocateRequest): Promise<void> {
 	try {
 		// 构建标记数据
+		// P1: 使用正确的IDMT_IndicatorMarkerShape格式
 		const markers: Array<{
+			type: 'point';
 			x: number;
 			y: number;
-			text?: string;
 		}> = [];
 
 		// 注意：这里需要获取器件/引脚的坐标
@@ -52,11 +53,12 @@ async function addVisualMarkers(_request: LocateRequest): Promise<void> {
 		// 实际实现中可能需要从CollectedData中获取坐标
 
 		if (markers.length > 0) {
+			// P1: color参数使用 { r, g, b, alpha } 对象，非十六进制字符串
 			await eda.dmt_EditorControl.generateIndicatorMarkers(
 				markers,
-				'#ff0000', // 红色标记
+				{ r: 255, g: 0, b: 0, alpha: 1 },
 				2, // 线宽
-				true, // autoRemove
+				true, // zoom: 定位并缩放
 			);
 		}
 	}
