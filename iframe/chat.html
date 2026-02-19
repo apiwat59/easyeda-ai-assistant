@@ -1450,7 +1450,7 @@
                             status: 'streaming',
                             startTime: Date.now()
                         };
-                        msg.blocks.push(thinkingBlock);
+                        msg.blocks.unshift(thinkingBlock); // 添加到开头，显示在正文上面
                         renderMessages(); // 首次需要完整渲染以插入 DOM
                     }
                     break;
