@@ -364,19 +364,26 @@ async function collectComponentsAndPins(options: {
 
 				const pinKey = `${component.designator}_${pinNumber}`;
 
-				// L1: 优先使用网表映射
-				let netName: string | null = netlistMap.get(pinKey) || null;
-				let confidence = netName ? 1.0 : 0;
-				let reason = netName ? 'netlist' : 'unresolved';
+				// L1: 只使用网表映射（保守模式）
+				// 禁用 L2/L3/L4 策略以避免假阳性（将 NC 引脚错误绑定到附近的导线）
+				const netName: string | null = netlistMap.get(pinKey) || null;
+				const confidence = netName ? 1.0 : 0;
+				const reason = netName ? 'netlist' : 'unresolved';
 				const debugInfo: any = {
 					pin: pinKey,
 					coord: `(${pinX}, ${pinY})`,
 					L1_netlist: netName || 'miss',
 				};
 
+				// L2/L3/L4 策略已禁用（保守模式）
+				// 原因：避免将 NC（悬空）引脚错误绑定到物理上接近但实际未连接的导线
+				// 如果引脚不在网表中，则标记为未绑定（netName = null）
+				//
+				// 如需启用混合模式，取消以下注释：
+				/*
 				// L2: 如果网表未解析，尝试通过导线坐标匹配
 				if (!netName) {
-					const wireNet = findNetByWireProximity(pinX, pinY, wireData.validWires);
+					const wireNet = _findNetByWireProximity(pinX, pinY, wireData.validWires);
 					debugInfo.L2_wire = wireNet || 'miss';
 					if (wireNet) {
 						netName = wireNet;
@@ -387,7 +394,7 @@ async function collectComponentsAndPins(options: {
 
 				// L3: 如果导线也没匹配到，尝试通过网络标记坐标匹配
 				if (!netName) {
-					const labelNet = findNetByLabelProximity(pinX, pinY, netLabels);
+					const labelNet = _findNetByLabelProximity(pinX, pinY, netLabels);
 					debugInfo.L3_netlabel = labelNet || 'miss';
 					if (labelNet) {
 						netName = labelNet;
@@ -398,7 +405,7 @@ async function collectComponentsAndPins(options: {
 
 				// L4: 如果前三层都失败，尝试通过导线拓扑推断
 				if (!netName) {
-					const topologyResult = findNetByWireTopology(pinX, pinY, wireClusters);
+					const topologyResult = _findNetByWireTopology(pinX, pinY, wireClusters);
 					debugInfo.L4_topology = topologyResult?.netName || 'miss';
 					if (topologyResult) {
 						netName = topologyResult.netName;
@@ -406,6 +413,7 @@ async function collectComponentsAndPins(options: {
 						reason = 'topology';
 					}
 				}
+				*/
 
 				// 输出未绑定引脚的调试信息（附带最近邻距离以诊断容差问题）
 				if (!netName) {
@@ -1053,7 +1061,7 @@ function parseNetlistGeneric(netlistRaw: string, map: Map<string, string>): void
 /**
  * 通过导线坐标邻近性查找网络
  */
-function findNetByWireProximity(
+function _findNetByWireProximity(
 	pinX: number,
 	pinY: number,
 	wires: Array<{ net: string; lines: number[][] }>,
@@ -1167,7 +1175,7 @@ function findNearestTopoDistance(
  * 通过网络标记坐标邻近性查找网络
  * 用于 pin-net 绑定的第三层策略（L3）
  */
-function findNetByLabelProximity(
+function _findNetByLabelProximity(
 	pinX: number,
 	pinY: number,
 	netLabels: RawNetLabel[],
@@ -1379,7 +1387,7 @@ function buildWireTopology(
 /**
  * L4: 通过导线拓扑查找网络
  */
-function findNetByWireTopology(
+function _findNetByWireTopology(
 	pinX: number,
 	pinY: number,
 	wireClusters: WireCluster[],
