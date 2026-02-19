@@ -16,3 +16,9 @@
 /tsconfig.json
 .eslintcache
 debug.log
+LICENSE
+CHANGELOG.md
+*.md
+!README.md
+Gemini_Generated_Image_i1n771i1n771i1n7.png
+/.ace-tool/
