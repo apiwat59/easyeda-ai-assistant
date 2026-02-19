@@ -10,6 +10,14 @@
 
 本插件将原理图的器件、引脚、网络等信息转换为文字格式，AI 可以精确理解每个器件的连接关系，提供专业的电路分析和建议。
 
+## 功能展示
+
+![功能截图1](screenshots/screenshot-1.png)
+
+![功能截图2](screenshots/screenshot-2.png)
+
+![功能截图3](screenshots/screenshot-3.png)
+
 ## 功能特性
 
 - 文字形式获取原理图 - 器件、引脚、网络信息完整提取
@@ -28,7 +36,7 @@
 ## 使用
 
 1. 打开原理图
-2. 点击菜单 AI Review → AI 原理图助手
+2. 点击菜单 AI 检查 → AI 原理图检查助手
 3. 配置 AI API（API URL 和 API Key）
 4. 开始与 AI 对话
 
