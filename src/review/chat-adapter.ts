@@ -521,6 +521,8 @@ function emitBlock(
 
 /**
  * 对非流式 JSON 响应，补发完整的 block 生命周期事件
+ *
+ * 注意：非流式响应一次性返回完整内容，所以 DELTA 事件的 content 和 accumulatedContent 相同
  */
 function emitCompleteBlocks(
 	textContent: string,
@@ -532,12 +534,14 @@ function emitCompleteBlocks(
 
 	if (reasoningContent) {
 		emitBlock(onBlock, ChunkType.THINKING_START, '', '');
+		// 非流式：content=完整内容, accumulatedContent=完整内容
 		emitBlock(onBlock, ChunkType.THINKING_DELTA, reasoningContent, reasoningContent);
 		emitBlock(onBlock, ChunkType.THINKING_COMPLETE, '', reasoningContent);
 	}
 
 	if (textContent) {
 		emitBlock(onBlock, ChunkType.TEXT_START, '', '');
+		// 非流式：content=完整内容, accumulatedContent=完整内容
 		emitBlock(onBlock, ChunkType.TEXT_DELTA, textContent, textContent);
 		emitBlock(onBlock, ChunkType.TEXT_COMPLETE, '', textContent);
 	}
