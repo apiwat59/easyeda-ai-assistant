@@ -645,14 +645,17 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		return;
 	}
 
+	console.warn(`[handleUserMessage] 收到消息: requestId=${msg.requestId}, sessionId=${msg.sessionId}, text=${msg.text?.substring(0, 50)}`);
+
 	// 防重复提交：使用 Set 实现同步锁，防止并发重复处理
 	if (processingRequests.has(msg.requestId)) {
-		console.warn(`[Orchestrator] 忽略重复的请求 requestId: ${msg.requestId}`);
+		console.warn(`[handleUserMessage] 忽略重复的请求 requestId: ${msg.requestId}`);
 		return;
 	}
 
 	// 立即标记为处理中（同步操作，防止竞态条件）
 	processingRequests.add(msg.requestId);
+	console.warn(`[handleUserMessage] 开始处理 requestId=${msg.requestId}, 当前处理中队列大小: ${processingRequests.size}`);
 
 	// 验证文本长度
 	if (msg.text && msg.text.length > 50000) {
@@ -717,6 +720,8 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		// 按 sessionId 获取或创建会话（核心隔离机制）
 		const session = getOrCreateChatSession(msg.sessionId);
 
+		console.warn(`[handleUserMessage] 调用 session.sendMessage, requestId=${msg.requestId}`);
+
 		const reply = await session.sendMessage(
 			msg,
 			config,
@@ -738,8 +743,12 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 			abortController.signal,
 		);
 
-		if (abortController.signal.aborted)
+		if (abortController.signal.aborted) {
+			console.warn(`[handleUserMessage] 请求已中止, requestId=${msg.requestId}`);
 			return;
+		}
+
+		console.warn(`[handleUserMessage] session.sendMessage 完成, requestId=${msg.requestId}, replyLength=${reply.length}`);
 
 		// 保存最后一条用户消息（用于重新生成）
 		lastUserMessageBySession.set(msg.sessionId, cloneUserMessage(msg));
@@ -750,11 +759,17 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 			requestId: msg.requestId,
 			sessionId: msg.sessionId,
 		});
+
+		console.warn(`[handleUserMessage] AI_RESPONSE 已发送, requestId=${msg.requestId}`);
 	}
 	catch (error) {
+		console.error(`[handleUserMessage] 处理失败, requestId=${msg.requestId}:`, error);
+
 		// 如果是中止错误，静默处理
-		if (isAbortError(error))
+		if (isAbortError(error)) {
+			console.warn(`[handleUserMessage] 中止错误，静默处理, requestId=${msg.requestId}`);
 			return;
+		}
 
 		const payload = buildErrorPayload(error);
 		publishToIFrame(CHAT_TOPICS.ERROR, {
@@ -765,8 +780,10 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 	}
 	finally {
 		// 清理状态
+		console.warn(`[handleUserMessage] 清理状态, requestId=${msg.requestId}, 清理前队列大小: ${processingRequests.size}`);
 		pendingRequests.delete(msg.requestId);
 		processingRequests.delete(msg.requestId);
+		console.warn(`[handleUserMessage] 清理完成, requestId=${msg.requestId}, 清理后队列大小: ${processingRequests.size}`);
 	}
 }
 

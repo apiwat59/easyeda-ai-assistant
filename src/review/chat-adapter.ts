@@ -272,7 +272,24 @@ async function makeRequest(
 		}
 
 		// 等待完整响应（EDA API 不支持真正的流式传输）
-		const responseText = await response.text();
+		let responseText: string;
+		try {
+			responseText = await response.text();
+			console.warn('[makeRequest] response.text() 成功:', {
+				url,
+				textLength: responseText?.length || 0,
+				textType: typeof responseText,
+				textPreview: responseText ? responseText.substring(0, 200) : 'N/A',
+			});
+		}
+		catch (error) {
+			console.error('[makeRequest] response.text() 失败:', error);
+			throw new ReviewError(
+				ErrorCode.AI_INVALID_RESPONSE,
+				`读取响应内容失败: ${error instanceof Error ? error.message : String(error)}`,
+				{ url, originalError: serializeUnknownError(error) },
+			);
+		}
 
 		if (signal?.aborted) {
 			throw createAbortReviewError('请求已取消', url, signal.reason);
@@ -387,6 +404,21 @@ async function makeRequest(
  * 3. 最后按正确顺序发送事件：THINKING → TEXT
  */
 function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatCompletionResult {
+	// 防御性检查
+	if (!text || typeof text !== 'string') {
+		console.error('[parseSSEResponse] 输入参数无效:', {
+			textType: typeof text,
+			textValue: text,
+			textLength: text ? String(text).length : 'N/A',
+		});
+		throw new ReviewError(ErrorCode.AI_INVALID_RESPONSE, 'SSE响应为空或格式错误');
+	}
+
+	console.warn('[parseSSEResponse] 开始解析 SSE 响应:', {
+		textLength: text.length,
+		textPreview: text.substring(0, 200),
+	});
+
 	const lines = text.split(/\r?\n/);
 
 	let textContent = '';
@@ -491,6 +523,13 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 
 	// 第三阶段：按正确顺序发送事件
 	if (onBlock) {
+		console.warn('[parseSSEResponse] 发送事件:', {
+			hasReasoning: !!reasoningContent,
+			hasText: !!textContent,
+			reasoningLength: reasoningContent.length,
+			textLength: textContent.length,
+		});
+
 		// 先发送 THINKING 事件（如果有）
 		if (reasoningContent) {
 			onBlock({ type: ChunkType.THINKING_START, content: '', accumulatedContent: '' });
@@ -507,8 +546,14 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 	}
 
 	if (!textContent && !reasoningContent) {
+		console.error('[parseSSEResponse] 无法提取内容');
 		throw new ReviewError(ErrorCode.AI_INVALID_RESPONSE, '无法从SSE响应中提取内容');
 	}
+
+	console.warn('[parseSSEResponse] 解析完成:', {
+		textLength: textContent.length,
+		reasoningLength: reasoningContent.length,
+	});
 
 	return { textContent, reasoningContent };
 }
