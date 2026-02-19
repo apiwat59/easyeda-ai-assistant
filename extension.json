@@ -1,8 +1,8 @@
 {
 	"name": "easyeda-ai-assistant",
 	"uuid": "1756b096fd414831bfa7a0c3556f129f",
-	"displayName": "AI Schematic Assistant",
-	"description": "AI-powered schematic review and chat assistant for EasyEDA Pro",
+	"displayName": "AI 原理图检查助手",
+	"description": "以文字形式获取原理图信息，让 AI 真正理解你的电路设计",
 	"version": "1.1.0",
 	"publisher": "jifengshandian",
 	"engines": {
@@ -16,10 +16,10 @@
 	"categories": "Other",
 	"keywords": [
 		"AI",
-		"Schematic",
-		"Review",
-		"Assistant",
-		"Chat"
+		"原理图",
+		"检查",
+		"助手",
+		"对话"
 	],
 	"images": {
 		"logo": "./images/logo.png"
@@ -33,16 +33,16 @@
 		"sch": [
 			{
 				"id": "AI Review",
-				"title": "AI Review",
+				"title": "AI 检查",
 				"menuItems": [
 					{
 						"id": "SchematicReview",
-						"title": "AI 原理图助手...",
+						"title": "AI 原理图检查助手...",
 						"registerFn": "aiSchematicReview"
 					},
 					{
 						"id": "ReviewConfig",
-						"title": "Review Settings...",
+						"title": "设置...",
 						"registerFn": "aiReviewConfig"
 					}
 				]
