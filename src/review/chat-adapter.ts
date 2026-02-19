@@ -85,10 +85,14 @@ export class ChatSession {
 		const result = await callOpenAICompatibleChat(messages, config, onBlock, signal);
 
 		// 将 AI 回复加入历史
-		const assistantContent = result.reasoningContent
+		const assistantContent = result.reasoningContent && result.textContent
 			? `${result.reasoningContent}\n\n${result.textContent}`
-			: result.textContent;
-		this.history.push({ role: 'assistant', content: assistantContent });
+			: result.reasoningContent || result.textContent;
+
+		// 只有在有内容时才加入历史
+		if (assistantContent) {
+			this.history.push({ role: 'assistant', content: assistantContent });
+		}
 
 		return result.textContent;
 	}
