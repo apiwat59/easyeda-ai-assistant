@@ -394,50 +394,37 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 			);
 			let content = normalizeChunkText(delta.content);
 
-			// 支持 Grok 的多种中间过程格式
-			// Grok 会输出：[Agent X][AgentThink]、[Agent X][WebSearch]、[Grok][WebSearch]、browse_page {...} 等
+			// 支持 Grok 的行前缀标记格式
+			// Grok 输出格式：[Agent X][AgentThink]、[Agent X][WebSearch]、[Grok][WebSearch]、browse_page {...}
 			// 这些都是 AI 的内部操作过程，应该归类为 thinking
+			// 正式回答通常以 ** 开头（Markdown 粗体）或者是普通文本
 			if (!reasoning && content) {
-				// 检测 Grok 的中间过程标记
-				const grokProcessPattern = /\[(?:Agent\s+\d+|Grok)\]\[(?:AgentThink|WebSearch)\]|browse_page\s*\{[^}]*\}/g;
-				const hasGrokProcess = grokProcessPattern.test(content);
+				// 检测是否包含 Grok 的中间过程标记
+				const hasGrokMarkers = /^\[(?:Agent\s+\d+|Grok)\]\[/.test(content) || /^browse_page\s*\{/.test(content);
 
-				if (hasGrokProcess) {
-					// 重置正则（test 会移动 lastIndex）
-					grokProcessPattern.lastIndex = 0;
-
-					// 查找第一个不是 Grok 中间过程的内容（通常以 ** 或正常文本开头）
-					// 策略：把所有 [Agent X][xxx] 和 browse_page 开头的行都归为 thinking
+				if (hasGrokMarkers) {
+					// 按行分类：中间过程标记开头的行归为 thinking，其他归为 content
 					const lines = content.split('\n');
 					const thinkingLines: string[] = [];
 					const contentLines: string[] = [];
-					let inThinkingMode = true;
 
 					for (const line of lines) {
-						const trimmedLine = line.trim();
-						// 如果是 Grok 中间过程标记，归为 thinking
-						if (trimmedLine.match(/^\[(Agent\s+\d+|Grok)\]\[/) || trimmedLine.startsWith('browse_page')) {
-							thinkingLines.push(line);
-							inThinkingMode = true;
-						}
-						// 如果遇到 Markdown 粗体开头（通常是正式回答），切换到 content 模式
-						else if (trimmedLine.startsWith('**') && inThinkingMode) {
-							contentLines.push(line);
-							inThinkingMode = false;
-						}
-						// 其他情况根据当前模式分类
-						else if (inThinkingMode && trimmedLine.length > 0) {
+						const trimmed = line.trim();
+						// Grok 中间过程标记：[Agent X][xxx]、[Grok][xxx]、browse_page
+						if (trimmed.match(/^\[(?:Agent\s+\d+|Grok)\]\[/) || trimmed.startsWith('browse_page')) {
 							thinkingLines.push(line);
 						}
-						else if (!inThinkingMode) {
+						// 正式回答通常以 ** 开头或者是普通段落
+						else if (trimmed.length > 0) {
 							contentLines.push(line);
 						}
 					}
 
+					// 如果有 thinking 内容，分离出来
 					if (thinkingLines.length > 0) {
 						reasoning = thinkingLines.join('\n').trim();
 						content = contentLines.join('\n').trim();
-						console.warn('[SSE Parser] 检测到 Grok 中间过程格式, reasoning 行数:', thinkingLines.length, 'content 行数:', contentLines.length);
+						console.warn('[SSE Parser] 检测到 Grok 中间过程格式, thinking 行数:', thinkingLines.length, 'content 行数:', contentLines.length);
 					}
 				}
 			}
