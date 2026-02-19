@@ -960,11 +960,10 @@
                                 var elapsed = ((Date.now() - update.startTime) / 1000).toFixed(1);
                                 statusEl.textContent = '思考中... ' + elapsed + 's';
                             } else if (update.status === 'paused') {
-                                var pausedTotal = ((update.thinkingMs || 0) / 1000).toFixed(1);
-                                statusEl.innerHTML = '<span class="status-paused">已停止思考（' + pausedTotal + ' 秒）</span>';
+                                statusEl.innerHTML = '<span class="status-paused">已停止思考</span>';
                             } else {
-                                var total = ((update.thinkingMs || 0) / 1000).toFixed(1);
-                                statusEl.textContent = '已深度思考 ' + total + ' 秒';
+                                // 由于后端一次性发送所有事件，时间计算不准确，改为固定文案
+                                statusEl.textContent = 'AI已深度思考';
                             }
                         }
                         // 流式状态下自动展开，完成/暂停后自动折叠（参考 Cherry Studio）
