@@ -33,6 +33,11 @@ interface PendingRequestState {
 const pendingRequests = new Map<string, PendingRequestState>();
 
 /**
+ * 正在处理中的 requestId 集合（用于防止并发重复处理）
+ */
+const processingRequests = new Set<string>();
+
+/**
  * 记录每个会话最后一条用户消息（用于重新生成）
  */
 const lastUserMessageBySession = new Map<string, UserMessage>();
@@ -640,15 +645,18 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		return;
 	}
 
-	// 防重复提交：如果该 requestId 已经在处理中，直接忽略
-	const existingPending = pendingRequests.get(msg.requestId);
-	if (existingPending) {
+	// 防重复提交：使用 Set 实现同步锁，防止并发重复处理
+	if (processingRequests.has(msg.requestId)) {
 		console.warn(`[Orchestrator] 忽略重复的请求 requestId: ${msg.requestId}`);
 		return;
 	}
 
+	// 立即标记为处理中（同步操作，防止竞态条件）
+	processingRequests.add(msg.requestId);
+
 	// 验证文本长度
 	if (msg.text && msg.text.length > 50000) {
+		processingRequests.delete(msg.requestId);
 		publishToIFrame(CHAT_TOPICS.ERROR, {
 			message: '消息过长（最大 50000 字符）',
 			requestId: msg.requestId,
@@ -660,6 +668,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 	// 验证图片数量和大小
 	if (msg.images) {
 		if (msg.images.length > 10) {
+			processingRequests.delete(msg.requestId);
 			publishToIFrame(CHAT_TOPICS.ERROR, {
 				message: '图片数量过多（最大 10 张）',
 				requestId: msg.requestId,
@@ -670,6 +679,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 
 		for (const img of msg.images) {
 			if (img.data && img.data.length > 10 * 1024 * 1024) {
+				processingRequests.delete(msg.requestId);
 				publishToIFrame(CHAT_TOPICS.ERROR, {
 					message: '图片过大（单张最大 10MB）',
 					requestId: msg.requestId,
@@ -684,6 +694,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 	const configError = validateConfig(config);
 
 	if (configError) {
+		processingRequests.delete(msg.requestId);
 		publishToIFrame(CHAT_TOPICS.ERROR, {
 			message: `请先配置AI: ${configError}`,
 			code: ErrorCode.AI_NO_CONFIG,
@@ -753,7 +764,9 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		});
 	}
 	finally {
+		// 清理状态
 		pendingRequests.delete(msg.requestId);
+		processingRequests.delete(msg.requestId);
 	}
 }
 
