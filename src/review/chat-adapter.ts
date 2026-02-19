@@ -345,113 +345,125 @@ async function makeRequest(
 /**
  * 解析 SSE 流式响应，区分 reasoning_content 和 content
  *
+ * 参考 NextChat 的实现：
+ * - 简化的状态管理：只用 isThinking 标志
+ * - 每个 chunk 返回累积内容，不是增量
+ * - 前端根据 accumulatedContent 渲染
+ *
  * 生命周期：
  *   THINKING_START → THINKING_DELTA(n) → THINKING_COMPLETE
  *   TEXT_START     → TEXT_DELTA(n)     → TEXT_COMPLETE
  */
 function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatCompletionResult {
-	// 使用正则支持 \r\n 和 \n 两种换行符（参考 Cherry Studio）
+	// 使用正则支持 \r\n 和 \n 两种换行符
 	const lines = text.split(/\r?\n/);
 	let textContent = '';
 	let reasoningContent = '';
 	let currentEventData: string[] = [];
-	let thinkingStarted = false;
-	let textStarted = false;
-	let thinkingCompleted = false;
-	let textCompleted = false;
+	let isInThinkingMode = false;
+	let hasStartedThinking = false;
+	let hasStartedText = false;
+
+	const parseChunk = (eventText: string): { isThinking: boolean; content: string } | null => {
+		try {
+			const chunk = JSON.parse(eventText);
+			const choice = chunk?.choices?.[0];
+			if (!choice)
+				return null;
+
+			const delta = choice.delta || {};
+
+			// 参考 NextChat：优先检查 reasoning_content
+			const reasoning = normalizeChunkText(
+				delta.reasoning_content || delta.reasoning,
+			);
+			const content = normalizeChunkText(delta.content);
+
+			// 检查 finish_reason
+			if (choice.finish_reason !== null && choice.finish_reason !== undefined) {
+				return { isThinking: false, content: '' }; // 标记结束
+			}
+
+			// 参考 NextChat：优先返回 reasoning
+			if (reasoning && reasoning.length > 0) {
+				return {
+					isThinking: true,
+					content: reasoning,
+				};
+			}
+			else if (content && content.length > 0) {
+				return {
+					isThinking: false,
+					content,
+				};
+			}
+
+			return null; // 空 chunk
+		}
+		catch (error) {
+			console.warn('SSE chunk parse failed:', eventText.substring(0, 100), error);
+			return null;
+		}
+	};
 
 	const flushEvent = (): void => {
 		if (currentEventData.length === 0)
 			return;
 
-		// 合并多行 data（某些提供商可能分多行发送 JSON）
+		// 合并多行 data
 		const eventText = currentEventData.join('');
 		currentEventData = [];
 
-		try {
-			const chunk = JSON.parse(eventText);
-			const choice = chunk?.choices?.[0];
-			if (!choice)
-				return;
+		const parsed = parseChunk(eventText);
+		if (!parsed)
+			return;
 
-			const delta = choice.delta || {};
-
-			// 支持多种 reasoning 字段格式（参考 Cherry Studio）
-			const deltaReasoning = normalizeChunkText(
-				delta.reasoning_content || delta.reasoning,
-			);
-			const deltaText = normalizeChunkText(delta.content);
-
-			// 处理 thinking 增量
-			if (deltaReasoning) {
-				if (!thinkingStarted) {
-					thinkingStarted = true;
-					emitBlock(onBlock, ChunkType.THINKING_START, '', '');
-				}
-				reasoningContent += deltaReasoning;
-				// content=增量, accumulatedContent=累积（参考 Cherry Studio）
-				emitBlock(onBlock, ChunkType.THINKING_DELTA, deltaReasoning, reasoningContent);
+		// 检查是否是结束标记
+		if (parsed.content === '') {
+			// finish_reason 触发，发送完成事件
+			if (isInThinkingMode && hasStartedThinking) {
+				emitBlock(onBlock, ChunkType.THINKING_COMPLETE, '', reasoningContent);
 			}
-
-			// 处理 text 增量
-			if (deltaText) {
-				// 如果 thinking 尚未结束，先结束它（参考 Cherry Studio 的 emitThinkingCompleteIfNeeded）
-				if (thinkingStarted && !thinkingCompleted) {
-					thinkingCompleted = true;
-					emitBlock(onBlock, ChunkType.THINKING_COMPLETE, '', reasoningContent);
-				}
-				if (!textStarted) {
-					textStarted = true;
-					emitBlock(onBlock, ChunkType.TEXT_START, '', '');
-				}
-				textContent += deltaText;
-				// content=增量, accumulatedContent=累积（参考 Cherry Studio）
-				emitBlock(onBlock, ChunkType.TEXT_DELTA, deltaText, textContent);
+			if (!isInThinkingMode && hasStartedText) {
+				emitBlock(onBlock, ChunkType.TEXT_COMPLETE, '', textContent);
 			}
+			return;
+		}
 
-			// 兼容某些提供方：SSE 事件中直接给完整 message 内容
-			if (!deltaReasoning && !reasoningContent && choice.message) {
-				const messageReasoning = normalizeChunkText(
-					choice.message.reasoning_content || choice.message.reasoning,
-				);
-				if (messageReasoning) {
-					thinkingStarted = true;
-					reasoningContent = messageReasoning;
-					emitBlock(onBlock, ChunkType.THINKING_START, '', '');
-					emitBlock(onBlock, ChunkType.THINKING_DELTA, messageReasoning, reasoningContent);
-				}
-			}
-
-			if (!deltaText && !textContent && choice.message) {
-				const messageText = normalizeChunkText(choice.message.content);
-				if (messageText) {
-					// 如果有 reasoning 但还没结束，先结束它
-					if (thinkingStarted && !thinkingCompleted) {
-						thinkingCompleted = true;
-						emitBlock(onBlock, ChunkType.THINKING_COMPLETE, '', reasoningContent);
-					}
-					textStarted = true;
-					textContent = messageText;
-					emitBlock(onBlock, ChunkType.TEXT_START, '', '');
-					emitBlock(onBlock, ChunkType.TEXT_DELTA, messageText, textContent);
-				}
-			}
-
-			// 检查 finish_reason 发送完成事件
-			if (choice.finish_reason !== null && choice.finish_reason !== undefined) {
-				if (thinkingStarted && !thinkingCompleted) {
-					thinkingCompleted = true;
-					emitBlock(onBlock, ChunkType.THINKING_COMPLETE, '', reasoningContent);
-				}
-				if (textStarted && !textCompleted) {
-					textCompleted = true;
+		// 参考 NextChat：根据 isThinking 状态处理
+		if (parsed.isThinking) {
+			// Thinking 模式
+			if (!isInThinkingMode) {
+				// 切换到 thinking 模式
+				if (hasStartedText) {
+					// 先完成 text
 					emitBlock(onBlock, ChunkType.TEXT_COMPLETE, '', textContent);
 				}
+				isInThinkingMode = true;
+				hasStartedThinking = true;
+				emitBlock(onBlock, ChunkType.THINKING_START, '', '');
 			}
+			reasoningContent += parsed.content;
+			// 发送累积内容（参考 NextChat）
+			emitBlock(onBlock, ChunkType.THINKING_DELTA, parsed.content, reasoningContent);
 		}
-		catch (error) {
-			// 忽略无法解析的事件，但记录日志便于调试
-			console.warn('SSE chunk parse failed:', eventText.substring(0, 100), error);
+		else {
+			// Text 模式
+			if (isInThinkingMode) {
+				// 切换到 text 模式
+				if (hasStartedThinking) {
+					// 先完成 thinking
+					emitBlock(onBlock, ChunkType.THINKING_COMPLETE, '', reasoningContent);
+				}
+				isInThinkingMode = false;
+			}
+			if (!hasStartedText) {
+				hasStartedText = true;
+				emitBlock(onBlock, ChunkType.TEXT_START, '', '');
+			}
+			textContent += parsed.content;
+			// 发送累积内容（参考 NextChat）
+			emitBlock(onBlock, ChunkType.TEXT_DELTA, parsed.content, textContent);
 		}
 	};
 
@@ -479,14 +491,14 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 		}
 	}
 
-	// 处理最后一个事件（如果没有以空行结尾）
+	// 处理最后一个事件
 	flushEvent();
 
 	// 确保所有已开始的 block 都收到 COMPLETE 事件
-	if (thinkingStarted && !thinkingCompleted) {
+	if (hasStartedThinking && isInThinkingMode) {
 		emitBlock(onBlock, ChunkType.THINKING_COMPLETE, '', reasoningContent);
 	}
-	if (textStarted && !textCompleted) {
+	if (hasStartedText && !isInThinkingMode) {
 		emitBlock(onBlock, ChunkType.TEXT_COMPLETE, '', textContent);
 	}
 
