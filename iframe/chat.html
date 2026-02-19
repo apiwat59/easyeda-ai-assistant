@@ -1401,13 +1401,16 @@
         function handleAIThinking(data) {
             console.warn('[前端] handleAIThinking 收到事件:', data.type, 'requestId:', data.requestId, 'sessionId:', data.sessionId);
 
-            addDebugLog('info', 'Thinking 事件: ' + (data.type || 'unknown'), {
-                type: data.type,
-                requestId: data.requestId,
-                sessionId: data.sessionId,
-                currentSessionId: currentSessionId,
-                contentLength: data.accumulatedContent ? data.accumulatedContent.length : 0
-            });
+            // 只记录 START 和 COMPLETE 事件，不记录每个 DELTA
+            if (data.type === 'THINKING_START' || data.type === 'THINKING_COMPLETE') {
+                addDebugLog('info', 'Thinking 事件: ' + (data.type || 'unknown'), {
+                    type: data.type,
+                    requestId: data.requestId,
+                    sessionId: data.sessionId,
+                    currentSessionId: currentSessionId,
+                    contentLength: data.accumulatedContent ? data.accumulatedContent.length : 0
+                });
+            }
 
             if (!data || !data.requestId || !data.sessionId) {
                 console.warn('[前端] handleAIThinking 缺少必要字段，跳过');
@@ -1500,13 +1503,16 @@
         function handleAIText(data) {
             console.warn('[前端] handleAIText 收到事件:', data.type, 'requestId:', data.requestId, 'sessionId:', data.sessionId);
 
-            addDebugLog('info', 'Text 事件: ' + (data.type || 'unknown'), {
-                type: data.type,
-                requestId: data.requestId,
-                sessionId: data.sessionId,
-                currentSessionId: currentSessionId,
-                contentLength: data.accumulatedContent ? data.accumulatedContent.length : 0
-            });
+            // 只记录 START 和 COMPLETE 事件，不记录每个 DELTA
+            if (data.type === 'TEXT_START' || data.type === 'TEXT_COMPLETE') {
+                addDebugLog('info', 'Text 事件: ' + (data.type || 'unknown'), {
+                    type: data.type,
+                    requestId: data.requestId,
+                    sessionId: data.sessionId,
+                    currentSessionId: currentSessionId,
+                    contentLength: data.accumulatedContent ? data.accumulatedContent.length : 0
+                });
+            }
 
             if (!data || !data.requestId || !data.sessionId) {
                 console.warn('[前端] handleAIText 缺少必要字段，跳过');
