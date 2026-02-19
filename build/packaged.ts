@@ -84,7 +84,19 @@ function main() {
 
 	const zip = new JSZip();
 	for (const file of fileList) {
+		// 排除原始的 README.md 和 CHANGELOG.md，使用简化版本
+		if (file === 'README.md' || file === 'CHANGELOG.md') {
+			continue;
+		}
 		zip.file(file, fs.createReadStream(path.join(__dirname, '../', file)));
+	}
+
+	// 添加简化版的 README.md 和 CHANGELOG.md（用于立创平台）
+	if (fs.existsSync(path.join(__dirname, '../README.eext.md'))) {
+		zip.file('README.md', fs.createReadStream(path.join(__dirname, '../README.eext.md')));
+	}
+	if (fs.existsSync(path.join(__dirname, '../CHANGELOG.eext.md'))) {
+		zip.file('CHANGELOG.md', fs.createReadStream(path.join(__dirname, '../CHANGELOG.eext.md')));
 	}
 
 	zip.generateNodeStream({ type: 'nodebuffer', streamFiles: true, compression: 'DEFLATE', compressionOptions: { level: 9 } }).pipe(
