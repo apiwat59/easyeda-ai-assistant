@@ -248,6 +248,10 @@ async function scheduleNetlistBackfill(
 
 	// 如果没有后台网表任务，或者已经完成，直接返回
 	if (!netlistState || netlistState.completed) {
+		publishToIFrame('ai-chat/debug-log', {
+			level: 'info',
+			message: `网表回填检查: ${!netlistState ? '无后台网表任务' : '网表已完成（无需回填）'}`,
+		});
 		return;
 	}
 
@@ -259,13 +263,14 @@ async function scheduleNetlistBackfill(
 	let pollCount = 0;
 	const MAX_POLL_COUNT = 30; // 最多轮询 30 次（60 秒）
 	const POLL_INTERVAL_MS = 2000; // 每 2 秒检查一次
+	const TIMER_ID = `netlist-backfill-epoch-${epoch}`;
 
-	const pollTimer = eda.sys_Timer.setIntervalTimer(async () => {
+	eda.sys_Timer.setIntervalTimer(TIMER_ID, POLL_INTERVAL_MS, async () => {
 		pollCount++;
 
 		// 检查是否超过最大轮询次数
 		if (pollCount > MAX_POLL_COUNT) {
-			pollTimer.cancel();
+			eda.sys_Timer.clearIntervalTimer(TIMER_ID);
 			publishToIFrame('ai-chat/debug-log', {
 				level: 'warn',
 				message: '网表后台获取超时（60秒），放弃回填',
@@ -276,7 +281,7 @@ async function scheduleNetlistBackfill(
 
 		// 检查 epoch 是否过期
 		if (epoch !== backgroundCollectionEpoch) {
-			pollTimer.cancel();
+			eda.sys_Timer.clearIntervalTimer(TIMER_ID);
 			publishToIFrame('ai-chat/debug-log', {
 				level: 'warn',
 				message: `网表回填任务被取消（epoch ${epoch} 已过期）`,
@@ -291,7 +296,7 @@ async function scheduleNetlistBackfill(
 		}
 
 		// 网表已完成，停止轮询
-		pollTimer.cancel();
+		eda.sys_Timer.clearIntervalTimer(TIMER_ID);
 
 		// 如果网表获取失败，直接返回
 		if (!currentState.result) {

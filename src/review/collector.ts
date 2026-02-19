@@ -407,12 +407,23 @@ async function collectComponentsAndPins(options: {
 					}
 				}
 
-				// 输出未绑定引脚的调试信息
-				if (!netName && (electricalType === 'Power' || electricalType === 'Ground')) {
-					log('warn', `[Pin-Net] 电源/地引脚未绑定`, debugInfo);
-				}
-				else if (!netName) {
-					log('debug', `[Pin-Net] 引脚未绑定`, debugInfo);
+				// 输出未绑定引脚的调试信息（附带最近邻距离以诊断容差问题）
+				if (!netName) {
+					const nearestWire = findNearestWireDistance(pinX, pinY, wireData.validWires, wireData.emptyWires);
+					const nearestLabel = findNearestLabelDistance(pinX, pinY, netLabels);
+					const nearestTopo = findNearestTopoDistance(pinX, pinY, wireClusters);
+					debugInfo.nearest = {
+						wire: nearestWire ? `${nearestWire.distance.toFixed(1)}(${nearestWire.net || 'empty'})` : 'none',
+						label: nearestLabel ? `${nearestLabel.distance.toFixed(1)}(${nearestLabel.net})` : 'none',
+						topo: nearestTopo ? `${nearestTopo.distance.toFixed(1)}` : 'none',
+					};
+
+					if (electricalType === 'Power' || electricalType === 'Ground') {
+						log('warn', `[Pin-Net] 电源/地引脚未绑定`, debugInfo);
+					}
+					else {
+						log('debug', `[Pin-Net] 引脚未绑定`, debugInfo);
+					}
 				}
 
 				return {
@@ -470,6 +481,7 @@ async function collectNetlist(): Promise<string | undefined> {
 	try {
 		const NETLIST_TIMEOUT_MS = 10000; // 10秒超时（主流程）
 		const startTime = Date.now();
+		log('info', `[采集] 开始获取网表...`);
 
 		// 启动网表获取（不取消，让它在后台继续）
 		const netlistPromise = eda.sch_Netlist.getNetlist(ESYS_NetlistType.PROTEL2);
@@ -519,7 +531,8 @@ async function collectNetlist(): Promise<string | undefined> {
 		return result;
 	}
 	catch (error) {
-		log('warn', `[采集] 网表获取失败: ${error instanceof Error ? error.message : String(error)}`);
+		log('error', `[采集] 网表获取异常: ${error instanceof Error ? error.message : String(error)}`);
+		console.error('[采集] 网表获取异常详情:', error);
 		return undefined;
 	}
 }
@@ -837,7 +850,7 @@ function findNetByWireProximity(
 	pinY: number,
 	wires: Array<{ net: string; lines: number[][] }>,
 ): string | null {
-	const TOLERANCE = 10; // 0.1 inch (10 * 0.01inch)
+	const TOLERANCE = 50; // 增大容差以匹配引脚偏移（50 * 0.01inch = 0.5 inch）
 
 	for (const wire of wires) {
 		if (!wire.net)
@@ -852,7 +865,7 @@ function findNetByWireProximity(
 					continue;
 
 				const distance = Math.sqrt((pinX - wx) ** 2 + (pinY - wy) ** 2);
-				if (distance < TOLERANCE) {
+				if (distance <= TOLERANCE) {
 					return wire.net;
 				}
 			}
@@ -860,6 +873,86 @@ function findNetByWireProximity(
 	}
 
 	return null;
+}
+
+/**
+ * 诊断辅助：查找最近导线端点的距离（用于判断容差是否合适）
+ */
+function findNearestWireDistance(
+	pinX: number,
+	pinY: number,
+	validWires: Array<{ net: string; lines: number[][] }>,
+	emptyWires: Array<{ lines: number[][] }>,
+): { distance: number; net: string | null } | null {
+	let nearest: { distance: number; net: string | null } | null = null;
+
+	const allWires: Array<{ net: string | null; lines: number[][] }> = [
+		...validWires.map(w => ({ net: w.net as string | null, lines: w.lines })),
+		...emptyWires.map(w => ({ net: null as string | null, lines: w.lines })),
+	];
+
+	for (const wire of allWires) {
+		for (const line of wire.lines) {
+			for (let i = 0; i < line.length; i += 2) {
+				const wx = line[i];
+				const wy = line[i + 1];
+				if (wx === undefined || wy === undefined)
+					continue;
+
+				const distance = Math.sqrt((pinX - wx) ** 2 + (pinY - wy) ** 2);
+				if (!nearest || distance < nearest.distance) {
+					nearest = { distance, net: wire.net };
+				}
+			}
+		}
+	}
+
+	return nearest;
+}
+
+/**
+ * 诊断辅助：查找最近网络标记的距离
+ */
+function findNearestLabelDistance(
+	pinX: number,
+	pinY: number,
+	netLabels: RawNetLabel[],
+): { distance: number; net: string } | null {
+	let nearest: { distance: number; net: string } | null = null;
+
+	for (const label of netLabels) {
+		if (!label.netName)
+			continue;
+
+		const distance = Math.sqrt((pinX - label.x) ** 2 + (pinY - label.y) ** 2);
+		if (!nearest || distance < nearest.distance) {
+			nearest = { distance, net: label.netName };
+		}
+	}
+
+	return nearest;
+}
+
+/**
+ * 诊断辅助：查找最近导线拓扑点的距离
+ */
+function findNearestTopoDistance(
+	pinX: number,
+	pinY: number,
+	wireClusters: WireCluster[],
+): { distance: number } | null {
+	let nearest: { distance: number } | null = null;
+
+	for (const cluster of wireClusters) {
+		for (const point of cluster.points) {
+			const dist = Math.sqrt((pinX - point.x) ** 2 + (pinY - point.y) ** 2);
+			if (!nearest || dist < nearest.distance) {
+				nearest = { distance: dist };
+			}
+		}
+	}
+
+	return nearest;
 }
 
 /**
@@ -871,7 +964,7 @@ function findNetByLabelProximity(
 	pinY: number,
 	netLabels: RawNetLabel[],
 ): string | null {
-	const TOLERANCE = 50; // 更宽松的容差（网络标记可能与引脚有一定距离）
+	const TOLERANCE = 100; // 增大容差以覆盖导线中间连接的场景
 	let bestNet: string | null = null;
 	let bestDistance = TOLERANCE;
 
@@ -880,7 +973,7 @@ function findNetByLabelProximity(
 			continue;
 
 		const distance = Math.sqrt((pinX - label.x) ** 2 + (pinY - label.y) ** 2);
-		if (distance < bestDistance) {
+		if (distance <= bestDistance) {
 			bestDistance = distance;
 			bestNet = label.netName;
 		}
@@ -908,7 +1001,7 @@ function buildWireTopology(
 	emptyWires: Array<{ lines: number[][] }>,
 	netLabels: RawNetLabel[],
 ): WireCluster[] {
-	const CONNECT_TOLERANCE = 5; // 导线端点连接容差
+	const CONNECT_TOLERANCE = 15; // 导线端点连接容差（增大以匹配栅格偏移）
 
 	// 1. 收集所有导线段
 	interface WireSegment {
@@ -1039,7 +1132,7 @@ function buildWireTopology(
 
 		// 如果导线没有 net，尝试从网络标记推断
 		if (!netName) {
-			const LABEL_TOLERANCE = 50;
+			const LABEL_TOLERANCE = 100;
 			for (const label of netLabels) {
 				for (const point of allPoints) {
 					const dist = Math.sqrt((point.x - label.x) ** 2 + (point.y - label.y) ** 2);
@@ -1083,12 +1176,12 @@ function findNetByWireTopology(
 	pinY: number,
 	wireClusters: WireCluster[],
 ): { netName: string; confidence: number } | null {
-	const TOLERANCE = 10;
+	const TOLERANCE = 50; // 增大容差以匹配引脚偏移
 
 	for (const cluster of wireClusters) {
 		for (const point of cluster.points) {
 			const dist = Math.sqrt((pinX - point.x) ** 2 + (pinY - point.y) ** 2);
-			if (dist < TOLERANCE) {
+			if (dist <= TOLERANCE) {
 				return {
 					netName: cluster.netName!,
 					confidence: cluster.confidence,
