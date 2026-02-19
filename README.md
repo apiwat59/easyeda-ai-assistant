@@ -35,6 +35,25 @@
 - 🧠 深度思考模式，显示完整推理过程
 - 🚀 后续将加入 MCP 功能（grok-search mcp），搭配更强大的模型体验更佳
 
+### 🤖 支持的 Reasoning 模型
+
+本插件支持 **10+ 种主流 AI 模型**的 reasoning/thinking 功能：
+
+| 模型系列 | 示例模型 | Reasoning 支持 |
+|---------|---------|---------------|
+| **OpenAI o1/o3** | o1-mini, o1-pro, o3-mini | ✅ 完整支持 |
+| **Grok** | grok-2, grok-beta, grok-2-1212 | ✅ 完整支持 |
+| **DeepSeek** | deepseek-reasoner, deepseek-r1 | ✅ 完整支持 |
+| **Claude 3.7** | claude-3-7-sonnet | ✅ 完整支持 |
+| **Gemini** | gemini-2.0-flash, gemini-3.0 | ✅ 完整支持 |
+| **Qwen (通义千问)** | qwen-max, qwen-plus | ✅ 完整支持 |
+| **Doubao (豆包)** | doubao-pro | ✅ 完整支持 |
+| **Zhipu (智谱)** | glm-4-plus | ✅ 完整支持 |
+| **Kimi** | kimi-k1 | ✅ 完整支持 |
+| **Hunyuan (混元)** | hunyuan-turbo | ✅ 完整支持 |
+
+**自动检测**：插件会自动识别模型类型，无需手动配置 reasoning 参数。
+
 ---
 
 ## ✨ 功能特性
@@ -42,7 +61,7 @@
 ### 🆕 v1.1.0 新特性
 
 - 🧠 **Thinking Block 完美显示** - AI 思考过程清晰可见，显示在正文上方
-- 🤖 **支持更多 AI 模型** - Grok、DeepSeek、OpenAI o1 等思考类模型
+- 🤖 **支持 10+ AI 模型** - OpenAI o1/o3、Grok、DeepSeek、Claude 3.7、Gemini、Qwen、Doubao、Zhipu、Kimi、Hunyuan 等思考类模型
 - 📜 **历史会话增强** - 从历史对话无缝继续，保持完整上下文
 - 🛡️ **稳定性大幅提升** - 修复多个 Bug，添加类型安全防护
 - 🐛 **调试日志优化** - 详细的 SSE 解析和 reasoning 提取日志

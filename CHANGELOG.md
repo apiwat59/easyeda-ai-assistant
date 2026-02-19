@@ -15,10 +15,18 @@
 - ✅ **完整提取思考过程内容** - 支持 Grok 等模型的 reasoning 内容提取
 
 #### 支持更多 AI 模型
+- ✅ **OpenAI o1/o3** - 完美支持 `reasoningEffort` 参数
 - ✅ **Grok** - 完美支持通过 `<think>` 标签提取 reasoning
 - ✅ **DeepSeek** - 支持通过 SSE `delta.reasoning_content` 提取
-- ✅ **OpenAI o1** - 支持 `<think>` 标签格式
+- ✅ **Claude 3.7 Sonnet** - 支持 `thinking` 参数和 `delta.thinking` 字段
+- ✅ **Gemini 2.0/3.0** - 支持 `thinking_config` 参数和 `delta.thoughts` 字段
+- ✅ **Qwen (通义千问)** - 支持 `enable_thinking` 参数
+- ✅ **Doubao (豆包)** - 支持 `thinking.type` 参数
+- ✅ **Zhipu (智谱)** - 支持 `enable_thinking` 参数
+- ✅ **Kimi** - 支持 `enable_thinking` 参数
+- ✅ **Hunyuan (混元)** - 支持 `enable_thinking` 参数
 - ✅ **自动检测响应格式** - 智能适配 SSE/JSON 格式
+- ✅ **统一 reasoning 提取** - 支持所有模型的不同字段名（reasoning_content, reasoning, thinking, thoughts）
 
 #### 历史会话功能增强
 - ✅ **支持从历史会话继续对话** - 保持完整上下文

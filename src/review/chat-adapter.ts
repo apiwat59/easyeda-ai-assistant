@@ -10,6 +10,7 @@
 
 import type { CollectedData, ConfigStore, UserMessage } from './types';
 import { chunkData } from './chunker';
+import { extractReasoningFromDelta, getReasoningParams } from './reasoning-config';
 import { ChunkType, ErrorCode, ReviewError } from './types';
 
 /**
@@ -220,6 +221,7 @@ async function callOpenAICompatibleChat(
 		})),
 		temperature: 0.4,
 		stream: true, // 需要流式模式才能获取 reasoning_content（Grok 等模型）
+		...getReasoningParams(config.model, 'medium'), // 🆕 添加模型特定的 reasoning 参数
 	};
 
 	return await makeRequest(url, config, body, onBlock, signal);
@@ -518,8 +520,8 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 			if (!delta)
 				return;
 
-			// 提取 reasoning 和 content
-			const reasoning = normalizeChunkText(delta.reasoning_content || delta.reasoning);
+			// 🆕 使用统一的 reasoning 提取函数（支持所有模型）
+			const reasoning = normalizeChunkText(extractReasoningFromDelta(delta));
 			const content = normalizeChunkText(delta.content);
 
 			if (reasoning) {
