@@ -5,6 +5,65 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.1.0] - 2026-02-19
+
+### 主要改进 ✨
+
+#### Thinking Block 完美显示
+- ✅ **Thinking 内容正确显示在正文上方** - 修复了 thinking block 显示在正文下方的问题
+- ✅ **显示"AI已深度思考"** - 不再显示不准确的秒数，改为简洁的状态提示
+- ✅ **完整提取思考过程内容** - 支持 Grok 等模型的 reasoning 内容提取
+
+#### 支持更多 AI 模型
+- ✅ **Grok** - 完美支持通过 `<think>` 标签提取 reasoning
+- ✅ **DeepSeek** - 支持通过 SSE `delta.reasoning_content` 提取
+- ✅ **OpenAI o1** - 支持 `<think>` 标签格式
+- ✅ **自动检测响应格式** - 智能适配 SSE/JSON 格式
+
+#### 历史会话功能增强
+- ✅ **支持从历史会话继续对话** - 保持完整上下文
+- ✅ **移除干扰提示** - 不再显示"提示：您正在查看历史会话..."
+- ✅ **后端自动重建对话历史** - 无缝恢复会话状态
+
+#### 稳定性大幅提升
+- ✅ **修复 TypeError** - `Cannot read properties of undefined (reading 'length')`
+- ✅ **修复 requestId 重复处理** - 同一个 requestId 不会被重复处理
+- ✅ **修复并发场景下的历史回滚错误** - 添加全面的类型安全防护
+- ✅ **修复 block 排序逻辑** - thinking block 现在正确显示在正文上方
+
+#### 调试体验优化
+- ✅ **所有关键日志输出到调试日志面板** - 方便开发者和用户排查问题
+- ✅ **详细记录 SSE 解析过程** - 包括 reasoning 提取的完整日志
+- ✅ **详细记录 block 排序过程** - 帮助诊断显示顺序问题
+
+### 技术改进 🔧
+
+#### SSE 解析重构
+- **三阶段解析** - 累积 → 提取标签 → 发送事件
+- **支持多种 reasoning 格式** - `<think>`, `<thought>`, `<thinking>`, SSE `delta.reasoning_content`
+- **响应格式自动检测** - 智能判断 SSE 或 JSON 格式
+
+#### 类型安全增强
+- **添加 `coerceToString()` 函数** - 防御性类型转换
+- **完善错误处理** - 避免 undefined/null 导致的崩溃
+
+#### 前端渲染优化
+- **修复 blocks 排序逻辑** - 确保 thinking → text → error 的正确顺序
+- **优化时间显示** - 移除不准确的秒数显示
+
+### 修复的问题 🐛
+
+- 🐛 **修复 thinking block 显示在正文下方** - 排序逻辑错误导致
+- 🐛 **修复 thinking 时间显示为 0 秒** - 改为显示"AI已深度思考"
+- 🐛 **修复 Grok 模型 reasoning 内容不完整** - 恢复 `stream: true` 模式
+- 🐛 **修复缓存导致的 TypeError** - 添加防御性类型检查
+- 🐛 **修复历史会话无法继续对话** - 实现 restore-session 监听器
+
+### 已知问题
+
+- 部分 AI 模型可能不支持 reasoning 内容提取（会正常显示文本内容）
+- 历史会话恢复时不包含 thinking 内容（仅恢复文本对话）
+
 ## [1.0.0] - 2026-02-19
 
 ### 首次发布 🎉
