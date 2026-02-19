@@ -26,8 +26,6 @@ function log(level: string, message: string, data?: any): void {
  * 器件采集选项
  */
 interface CollectComponentsOptions {
-	/** 是否使用 API 的 allSchematicPages 参数（仅降级时使用） */
-	allSchematicPages?: boolean;
 	/** 当前采集页 UUID（逐页采集时填充） */
 	schematicPageUuid?: string;
 }
@@ -74,11 +72,11 @@ async function promiseAllWithLimit<T>(
 }
 
 /**
- * 采集原理图数据（优化的逐页采集策略）
+ * 采集原理图数据（完全逐页采集策略）
  *
  * 性能优化要点：
- * 1. Component 使用 allSchematicPages=true 一次性获取所有页
- * 2. Wire/Text/Bus 必须逐页切换（API 限制）
+ * 1. 所有元素（Component/Wire/Text/Bus）均逐页采集（allSchematicPages=true 会超时）
+ * 2. 每页内并行采集所有元素类型
  * 3. 减少每个图元的属性获取次数
  */
 export async function collectSchematicData(): Promise<CollectedData> {
@@ -96,7 +94,7 @@ export async function collectSchematicData(): Promise<CollectedData> {
 
 	const originalTabId = docInfo.tabId;
 	const meta: CollectionMeta = {
-		mode: 'api-all-pages',
+		mode: 'per-page-hybrid',
 		quality: 'full',
 		expectedPageCount: 0,
 		collectedPageCount: 0,
@@ -110,35 +108,34 @@ export async function collectSchematicData(): Promise<CollectedData> {
 		meta.expectedPageCount = pages.length;
 		log('info', `[采集] 检测到 ${pages.length} 个图页`);
 
-		// 并行采集：网表 + 器件（使用 allSchematicPages=true）
-		const t1 = Date.now();
-		const [netlistRaw, components] = await Promise.all([
-			collectNetlist(),
-			collectComponents({ allSchematicPages: true }),
-		]);
-		log('info', `[采集] 器件采集完成: ${components.length} 个器件 (耗时 ${Date.now() - t1}ms)`);
+		// 先采集网表（全局数据，无需逐页）
+		const t0 = Date.now();
+		const netlistRaw = await collectNetlist();
+		log('info', `[采集] 网表采集完成 (耗时 ${Date.now() - t0}ms)`);
 
-		// 逐页采集 Wire/Text/Bus（API 限制，必须切换页面）
+		// 逐页采集所有元素（Component/Wire/Text/Bus）
+		let components: RawComponent[] = [];
 		let wires: Array<{ net: string; lines: number[][] }> = [];
 		let texts: RawText[] = [];
 		let buses: RawBus[] = [];
 
 		if (pages.length === 1) {
 			// 单页场景：无需切换
-			const t2 = Date.now();
-			[wires, texts, buses] = await Promise.all([
+			const t1 = Date.now();
+			[components, wires, texts, buses] = await Promise.all([
+				collectComponents({ schematicPageUuid: pages[0].uuid }),
 				collectWires(),
-				collectTexts(),
-				collectBuses(),
+				collectTexts({ schematicPageUuid: pages[0].uuid }),
+				collectBuses({ schematicPageUuid: pages[0].uuid }),
 			]);
-			log('info', `[采集] 单页数据采集完成: ${wires.length} 导线, ${texts.length} 文本, ${buses.length} 总线 (耗时 ${Date.now() - t2}ms)`);
+			log('info', `[采集] 单页数据采集完成: ${components.length} 器件, ${wires.length} 导线, ${texts.length} 文本, ${buses.length} 总线 (耗时 ${Date.now() - t1}ms)`);
 			meta.collectedPageUuids = [pages[0].uuid];
 			meta.collectedPageCount = 1;
 		}
 		else {
-			// 多页场景：快速逐页切换采集
-			log('info', `[采集] 开始逐页采集 Wire/Text/Bus...`);
-			const t2 = Date.now();
+			// 多页场景：逐页切换采集
+			log('info', `[采集] 开始逐页采集所有元素...`);
+			const t1 = Date.now();
 			for (let i = 0; i < pages.length; i++) {
 				const page = pages[i];
 				const pageStartTime = Date.now();
@@ -153,25 +150,27 @@ export async function collectSchematicData(): Promise<CollectedData> {
 
 					await eda.dmt_EditorControl.activateDocument(pageTabId);
 
-					// 并行采集当前页的 Wire/Text/Bus
-					const [pageWires, pageTexts, pageBuses] = await Promise.all([
+					// 并行采集当前页的所有元素
+					const [pageComponents, pageWires, pageTexts, pageBuses] = await Promise.all([
+						collectComponents({ schematicPageUuid: page.uuid }),
 						collectWires(),
-						collectTexts(),
-						collectBuses(),
+						collectTexts({ schematicPageUuid: page.uuid }),
+						collectBuses({ schematicPageUuid: page.uuid }),
 					]);
 
+					components.push(...pageComponents);
 					wires.push(...pageWires);
 					texts.push(...pageTexts);
 					buses.push(...pageBuses);
 					meta.collectedPageUuids.push(page.uuid);
-					log('info', `[采集] 图页 ${i + 1}/${pages.length} (${page.name}): ${pageWires.length} 导线, ${pageTexts.length} 文本, ${pageBuses.length} 总线 (耗时 ${Date.now() - pageStartTime}ms)`);
+					log('info', `[采集] 图页 ${i + 1}/${pages.length} (${page.name}): ${pageComponents.length} 器件, ${pageWires.length} 导线, ${pageTexts.length} 文本, ${pageBuses.length} 总线 (耗时 ${Date.now() - pageStartTime}ms)`);
 				}
 				catch (pageError) {
 					log('error', `[采集] 采集图页失败 ${i + 1}/${pages.length} (${page.name})`, pageError);
 					meta.missingPageUuids.push(page.uuid);
 				}
 			}
-			log('info', `[采集] 逐页采集完成: 总计 ${wires.length} 导线, ${texts.length} 文本, ${buses.length} 总线 (总耗时 ${Date.now() - t2}ms)`);
+			log('info', `[采集] 逐页采集完成: 总计 ${components.length} 器件, ${wires.length} 导线, ${texts.length} 文本, ${buses.length} 总线 (总耗时 ${Date.now() - t1}ms)`);
 
 			meta.collectedPageCount = meta.collectedPageUuids.length;
 			if (meta.missingPageUuids.length > 0) {
@@ -233,16 +232,15 @@ export async function collectSchematicData(): Promise<CollectedData> {
 }
 
 /**
- * 采集器件（优化并发性能）
+ * 采集器件（当前页，优化并发性能）
  */
 async function collectComponents(
 	options: CollectComponentsOptions = {},
 ): Promise<RawComponent[]> {
-	const { allSchematicPages = false, schematicPageUuid } = options;
+	const { schematicPageUuid } = options;
 
-	const t0 = Date.now();
-	const primitives = await eda.sch_PrimitiveComponent.getAll(undefined, allSchematicPages);
-	log('info', `[采集] getAll 返回 ${primitives.length} 个原始器件对象 (allSchematicPages=${allSchematicPages}, 耗时 ${Date.now() - t0}ms)`);
+	// 获取当前页的所有器件（allSchematicPages=false，避免超时）
+	const primitives = await eda.sch_PrimitiveComponent.getAll(undefined, false);
 
 	// 第一阶段：仅获取 componentType 进行过滤（减少不必要的 API 调用）
 	const filterTasks = primitives.map(primitive => async () => ({
@@ -250,23 +248,12 @@ async function collectComponents(
 		componentType: await primitive.getState_ComponentType(),
 	}));
 
-	const t1 = Date.now();
-	const filtered = await promiseAllWithLimit(filterTasks, 100); // 提高并发限制
-	log('info', `[采集] 获取 componentType 完成 (耗时 ${Date.now() - t1}ms)`);
-
-	// 统计各类型器件数量
-	const typeCount = new Map<string, number>();
-	for (const item of filtered) {
-		const count = typeCount.get(item.componentType) || 0;
-		typeCount.set(item.componentType, count + 1);
-	}
-	log('info', `[采集] 器件类型统计: ${JSON.stringify(Object.fromEntries(typeCount))}`);
+	const filtered = await promiseAllWithLimit(filterTasks, 100);
 
 	// 过滤掉网络标记类器件（NET_FLAG/NET_PORT）
 	const validPrimitives = filtered.filter(
 		item => item.componentType !== 'netflag' && item.componentType !== 'netport',
 	);
-	log('info', `[采集] 过滤后剩余 ${validPrimitives.length} 个有效器件 (过滤掉 ${filtered.length - validPrimitives.length} 个网络标记)`);
 
 	// 第二阶段：仅对有效器件获取详细信息
 	const componentTasks = validPrimitives.map(({ primitive }) => async () => {
@@ -315,10 +302,7 @@ async function collectComponents(
 		};
 	});
 
-	const t2 = Date.now();
-	const results = await promiseAllWithLimit(componentTasks, 50); // 提高并发限制
-	log('info', `[采集] 获取器件详细信息完成 (耗时 ${Date.now() - t2}ms)`);
-	return results;
+	return await promiseAllWithLimit(componentTasks, 50);
 }
 
 /**
