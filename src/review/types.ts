@@ -69,7 +69,7 @@ export interface RawNet {
 /**
  * 采集模式
  */
-export type CollectionMode = 'per-page' | 'api-all-pages-fallback';
+export type CollectionMode = 'api-all-pages';
 
 /**
  * 采集质量等级

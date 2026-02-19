@@ -58,14 +58,7 @@ async function promiseAllWithLimit<T>(
 }
 
 /**
- * 延时辅助函数
- */
-function delay(ms: number): Promise<void> {
-	return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-/**
- * 采集原理图数据（支持多子图纸逐页采集）
+ * 采集原理图数据（使用 allSchematicPages=true 一次性获取所有页数据）
  */
 export async function collectSchematicData(): Promise<CollectedData> {
 	// 检查是否有打开的原理图文档
@@ -77,9 +70,8 @@ export async function collectSchematicData(): Promise<CollectedData> {
 		);
 	}
 
-	const originalTabId = docInfo.tabId;
 	const meta: CollectionMeta = {
-		mode: 'per-page',
+		mode: 'api-all-pages',
 		quality: 'full',
 		expectedPageCount: 0,
 		collectedPageCount: 0,
@@ -91,138 +83,28 @@ export async function collectSchematicData(): Promise<CollectedData> {
 		// 网表可跨页使用，优先独立采集
 		const netlistRaw = await collectNetlist();
 
-		let components: RawComponent[] = [];
-		let wires: Array<{ net: string; lines: number[][] }> = [];
-		let texts: RawText[] = [];
-		let buses: RawBus[] = [];
+		// 获取当前原理图下的全部图页信息（用于元数据）
+		const pages = await eda.dmt_Schematic.getCurrentSchematicAllSchematicPagesInfo();
+		meta.expectedPageCount = pages.length;
 
-		try {
-			// 获取当前原理图下的全部图页
-			const pages = await eda.dmt_Schematic.getCurrentSchematicAllSchematicPagesInfo();
-			meta.expectedPageCount = pages.length;
-			console.warn(`[采集开始] 检测到 ${pages.length} 个图页: [${pages.map(p => p.name).join(', ')}]`);
+		// 使用 allSchematicPages=true 一次性获取所有页的数据（无需逐页切换）
+		const [components, wires, texts, buses] = await Promise.all([
+			collectComponents({ allSchematicPages: true }),
+			collectWires(),
+			collectTexts(),
+			collectBuses(),
+		]);
 
-			// 单页场景：直接按当前页采集，避免不必要切页
-			if (pages.length <= 1) {
-				const currentPageUuid = docInfo.uuid;
-				const [singlePageComponents, singlePageWires, singlePageTexts, singlePageBuses] = await Promise.all([
-					collectComponents({
-						allSchematicPages: false,
-						schematicPageUuid: currentPageUuid,
-					}),
-					collectWires(),
-					collectTexts({ schematicPageUuid: currentPageUuid }),
-					collectBuses({ schematicPageUuid: currentPageUuid }),
-				]);
+		// 记录采集到的页面 UUID
+		meta.collectedPageUuids = pages.map(p => p.uuid);
+		meta.collectedPageCount = pages.length;
 
-				components = singlePageComponents;
-				wires = singlePageWires;
-				texts = singlePageTexts;
-				buses = singlePageBuses;
-				if (currentPageUuid) {
-					meta.collectedPageUuids.push(currentPageUuid);
-				}
-				meta.collectedPageCount = meta.collectedPageUuids.length;
-			}
-			else {
-				// 多页场景：逐页打开并激活后采集
-				for (const page of pages) {
-					try {
-						const pageTabId = await eda.dmt_EditorControl.openDocument(page.uuid);
-						if (!pageTabId) {
-							console.warn(`无法打开图页: ${page.name} (${page.uuid})`);
-							meta.missingPageUuids.push(page.uuid);
-							continue;
-						}
-
-						const activated = await eda.dmt_EditorControl.activateDocument(pageTabId);
-						if (!activated) {
-							console.warn(`无法激活图页: ${page.name} (${page.uuid})`);
-							meta.missingPageUuids.push(page.uuid);
-							continue;
-						}
-
-						// 等待焦点切换落稳（EDA 内部可能有异步渲染）
-						await delay(200);
-
-						// 校验焦点是否真正切换到目标页
-						const focusCheck = await eda.dmt_SelectControl.getCurrentDocumentInfo();
-						if (!focusCheck || focusCheck.uuid !== page.uuid) {
-							// 重试一次：再次激活并等待
-							console.warn(`焦点校验失败（期望 ${page.uuid}，实际 ${focusCheck?.uuid}），重试中...`);
-							await eda.dmt_EditorControl.activateDocument(pageTabId);
-							await delay(300);
-
-							const retryCheck = await eda.dmt_SelectControl.getCurrentDocumentInfo();
-							if (!retryCheck || retryCheck.uuid !== page.uuid) {
-								console.warn(`焦点校验重试仍失败，跳过图页: ${page.name} (${page.uuid})`);
-								meta.missingPageUuids.push(page.uuid);
-								continue;
-							}
-						}
-
-						const [pageComponents, pageWires, pageTexts, pageBuses] = await Promise.all([
-							collectComponents({
-								allSchematicPages: false,
-								schematicPageUuid: page.uuid,
-							}),
-							collectWires(),
-							collectTexts({ schematicPageUuid: page.uuid }),
-							collectBuses({ schematicPageUuid: page.uuid }),
-						]);
-
-						console.warn(`图页 ${page.name} (${page.uuid}) 采集完成: ${pageComponents.length} 器件, ${pageWires.length} 导线`);
-						components.push(...pageComponents);
-						wires.push(...pageWires);
-						texts.push(...pageTexts);
-						buses.push(...pageBuses);
-						meta.collectedPageUuids.push(page.uuid);
-					}
-					catch (pageError) {
-						console.warn(`逐页采集失败，图页: ${page.name} (${page.uuid})`, pageError);
-						meta.missingPageUuids.push(page.uuid);
-					}
-				}
-
-				meta.collectedPageCount = meta.collectedPageUuids.length;
-				if (meta.collectedPageCount === pages.length) {
-					meta.quality = 'full';
-				}
-				else if (meta.collectedPageCount > 0) {
-					meta.quality = 'partial';
-				}
-				else {
-					// 触发降级：逐页路径完全不可用
-					throw new Error('逐页采集未成功获取任何图页数据');
-				}
-			}
+		// 检查数据完整性
+		if (components.length > 0 || wires.length > 0) {
+			meta.quality = 'full';
 		}
-		catch (perPageError) {
-			// 降级策略：逐页采集失败后回退到 allSchematicPages=true
-			console.warn('逐页采集失败，回退到 getAll(undefined, true):', perPageError);
-			meta.mode = 'api-all-pages-fallback';
-			meta.quality = 'partial';
-			meta.errorMessage = perPageError instanceof Error ? perPageError.message : String(perPageError);
-
-			const [fallbackComponents, fallbackWires, fallbackTexts, fallbackBuses] = await Promise.all([
-				collectComponents({ allSchematicPages: true }),
-				collectWires(),
-				collectTexts(),
-				collectBuses(),
-			]);
-			components = fallbackComponents;
-			wires = fallbackWires;
-			texts = fallbackTexts;
-			buses = fallbackBuses;
-		}
-		finally {
-			// 无论成功/失败，确保恢复用户原始焦点页
-			try {
-				await eda.dmt_EditorControl.activateDocument(originalTabId);
-			}
-			catch (restoreError) {
-				console.warn('恢复原始文档焦点失败:', restoreError);
-			}
+		else {
+			meta.quality = 'stale';
 		}
 
 		// 采集引脚并绑定网络
@@ -230,12 +112,6 @@ export async function collectSchematicData(): Promise<CollectedData> {
 
 		// 统计网络
 		const nets = buildNetStatistics(pins);
-
-		// 输出采集总结日志
-		console.warn(`[采集完成] mode=${meta.mode}, quality=${meta.quality}, `
-			+ `pages=${meta.collectedPageCount}/${meta.expectedPageCount}, `
-			+ `components=${components.length}, pins=${pins.length}, nets=${nets.length}, `
-			+ `missing=[${meta.missingPageUuids.join(',')}]`);
 
 		return {
 			components,
