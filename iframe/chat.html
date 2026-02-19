@@ -1387,9 +1387,10 @@
         function handleAIThinking(data) {
             if (!data || !data.requestId || !data.sessionId) return;
 
-            var pending = pendingRequests[data.requestId];
-            if (!pending || pending.sessionId !== currentSessionId) return;
-            if (data.sessionId !== pending.sessionId) return;
+            // 修复：不再严格要求 pendingRequests 存在
+            // 因为 AI_RESPONSE 可能先到，导致 pending 被清理
+            // 只要 sessionId 匹配就处理事件
+            if (data.sessionId !== currentSessionId) return;
 
             var msg = getOrCreateStreamingMessage(data.requestId);
             var thinkingBlock = findBlockByType(msg, 'thinking');
@@ -1452,9 +1453,10 @@
         function handleAIText(data) {
             if (!data || !data.requestId || !data.sessionId) return;
 
-            var pending = pendingRequests[data.requestId];
-            if (!pending || pending.sessionId !== currentSessionId) return;
-            if (data.sessionId !== pending.sessionId) return;
+            // 修复：不再严格要求 pendingRequests 存在
+            // 因为 AI_RESPONSE 可能先到，导致 pending 被清理
+            // 只要 sessionId 匹配就处理事件
+            if (data.sessionId !== currentSessionId) return;
 
             var msg = getOrCreateStreamingMessage(data.requestId);
             var textBlock = findBlockByType(msg, 'text');
