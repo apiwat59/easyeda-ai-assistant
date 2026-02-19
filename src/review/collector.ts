@@ -111,7 +111,8 @@ export async function collectSchematicData(): Promise<CollectedData> {
 		// 逐页采集所有元素（Component/Wire/Text/Bus/Pin/NetLabel）
 		let components: RawComponent[] = [];
 		let pins: RawPin[] = [];
-		let wires: Array<{ net: string; lines: number[][] }> = [];
+		let allValidWires: Array<{ net: string; lines: number[][] }> = [];
+		let allEmptyWires: Array<{ lines: number[][] }> = [];
 		let texts: RawText[] = [];
 		let buses: RawBus[] = [];
 		let netLabels: RawNetLabel[] = [];
@@ -119,28 +120,31 @@ export async function collectSchematicData(): Promise<CollectedData> {
 		if (pages.length === 1) {
 			// 单页场景：无需切换
 			const t1 = Date.now();
-			const [pageWires, pageTexts, pageBuses, pageNetLabels] = await Promise.all([
+			const [wireData, pageTexts, pageBuses, pageNetLabels] = await Promise.all([
 				collectWires(),
 				collectTexts({ schematicPageUuid: pages[0].uuid }),
 				collectBuses({ schematicPageUuid: pages[0].uuid }),
 				collectNetLabels({ schematicPageUuid: pages[0].uuid }),
 			]);
+
+			allValidWires = wireData.validWires;
+			allEmptyWires = wireData.emptyWires;
+
 			// 采集器件+引脚（需要 Wire+NetLabel 数据）
 			const { components: pageComponents, pins: pagePins } = await collectComponentsAndPins({
 				schematicPageUuid: pages[0].uuid,
 				netlistMap,
-				wires: pageWires,
+				wireData,
 				netLabels: pageNetLabels,
 			});
 
 			components = pageComponents;
 			pins = pagePins;
-			wires = pageWires;
 			texts = pageTexts;
 			buses = pageBuses;
 			netLabels = pageNetLabels;
 
-			log('info', `[采集] 单页数据采集完成: ${components.length} 器件, ${pins.length} 引脚, ${wires.length} 导线, ${texts.length} 文本, ${buses.length} 总线, ${netLabels.length} 网络标记 (耗时 ${Date.now() - t1}ms)`);
+			log('info', `[采集] 单页数据采集完成: ${components.length} 器件, ${pins.length} 引脚, ${allValidWires.length + allEmptyWires.length} 导线, ${texts.length} 文本, ${buses.length} 总线, ${netLabels.length} 网络标记 (耗时 ${Date.now() - t1}ms)`);
 			meta.collectedPageUuids = [pages[0].uuid];
 			meta.collectedPageCount = 1;
 		}
@@ -163,36 +167,38 @@ export async function collectSchematicData(): Promise<CollectedData> {
 					await eda.dmt_EditorControl.activateDocument(pageTabId);
 
 					// 先采集 Wire/Text/Bus/NetLabel
-					const [pageWires, pageTexts, pageBuses, pageNetLabels] = await Promise.all([
+					const [wireData, pageTexts, pageBuses, pageNetLabels] = await Promise.all([
 						collectWires(),
 						collectTexts({ schematicPageUuid: page.uuid }),
 						collectBuses({ schematicPageUuid: page.uuid }),
 						collectNetLabels({ schematicPageUuid: page.uuid }),
 					]);
 
+					allValidWires.push(...wireData.validWires);
+					allEmptyWires.push(...wireData.emptyWires);
+
 					// 再采集器件+引脚（需要 Wire+NetLabel 数据做网络绑定）
 					const { components: pageComponents, pins: pagePins } = await collectComponentsAndPins({
 						schematicPageUuid: page.uuid,
 						netlistMap,
-						wires: pageWires,
+						wireData,
 						netLabels: pageNetLabels,
 					});
 
 					components.push(...pageComponents);
 					pins.push(...pagePins);
-					wires.push(...pageWires);
 					texts.push(...pageTexts);
 					buses.push(...pageBuses);
 					netLabels.push(...pageNetLabels);
 					meta.collectedPageUuids.push(page.uuid);
-					log('info', `[采集] 图页 ${i + 1}/${pages.length} (${page.name}): ${pageComponents.length} 器件, ${pagePins.length} 引脚, ${pageWires.length} 导线, ${pageTexts.length} 文本, ${pageBuses.length} 总线, ${pageNetLabels.length} 网络标记 (耗时 ${Date.now() - pageStartTime}ms)`);
+					log('info', `[采集] 图页 ${i + 1}/${pages.length} (${page.name}): ${pageComponents.length} 器件, ${pagePins.length} 引脚, ${wireData.validWires.length + wireData.emptyWires.length} 导线, ${pageTexts.length} 文本, ${pageBuses.length} 总线, ${pageNetLabels.length} 网络标记 (耗时 ${Date.now() - pageStartTime}ms)`);
 				}
 				catch (pageError) {
 					log('error', `[采集] 采集图页失败 ${i + 1}/${pages.length} (${page.name})`, pageError);
 					meta.missingPageUuids.push(page.uuid);
 				}
 			}
-			log('info', `[采集] 逐页采集完成: 总计 ${components.length} 器件, ${pins.length} 引脚, ${wires.length} 导线, ${texts.length} 文本, ${buses.length} 总线, ${netLabels.length} 网络标记 (总耗时 ${Date.now() - t1}ms)`);
+			log('info', `[采集] 逐页采集完成: 总计 ${components.length} 器件, ${pins.length} 引脚, ${allValidWires.length + allEmptyWires.length} 导线, ${texts.length} 文本, ${buses.length} 总线, ${netLabels.length} 网络标记 (总耗时 ${Date.now() - t1}ms)`);
 
 			meta.collectedPageCount = meta.collectedPageUuids.length;
 			if (meta.missingPageUuids.length > 0) {
@@ -201,7 +207,7 @@ export async function collectSchematicData(): Promise<CollectedData> {
 		}
 
 		// 检查数据完整性
-		if (components.length === 0 && wires.length === 0) {
+		if (components.length === 0 && allValidWires.length === 0) {
 			meta.quality = 'stale';
 		}
 
@@ -255,15 +261,18 @@ export async function collectSchematicData(): Promise<CollectedData> {
  * 在同一个页面上下文中完成：
  * 1. 获取器件列表 → 分离 netflag/netport 和普通器件
  * 2. 获取普通器件的详细信息和引脚
- * 3. 绑定网络（网表优先，导线坐标次之，网络标记坐标兜底）
+ * 3. 绑定网络（L1:网表 → L2:导线坐标 → L3:网络标记坐标 → L4:导线拓扑）
  */
 async function collectComponentsAndPins(options: {
 	schematicPageUuid?: string;
 	netlistMap: Map<string, string>;
-	wires: Array<{ net: string; lines: number[][] }>;
+	wireData: WireData;
 	netLabels: RawNetLabel[];
 }): Promise<{ components: RawComponent[]; pins: RawPin[] }> {
-	const { schematicPageUuid, netlistMap, wires, netLabels } = options;
+	const { schematicPageUuid, netlistMap, wireData, netLabels } = options;
+
+	// 构建导线拓扑图（L4 策略）
+	const wireClusters = buildWireTopology(wireData.validWires, wireData.emptyWires, netLabels);
 
 	// 获取当前页的所有器件（allSchematicPages=false）
 	const primitives = await eda.sch_PrimitiveComponent.getAll(undefined, false);
@@ -367,7 +376,7 @@ async function collectComponentsAndPins(options: {
 
 				// L2: 如果网表未解析，尝试通过导线坐标匹配
 				if (!netName) {
-					const wireNet = findNetByWireProximity(pinX, pinY, wires);
+					const wireNet = findNetByWireProximity(pinX, pinY, wireData.validWires);
 					debugInfo.L2_wire = wireNet || 'miss';
 					if (wireNet) {
 						netName = wireNet;
@@ -376,7 +385,7 @@ async function collectComponentsAndPins(options: {
 					}
 				}
 
-				// L3: 如果导线也没匹配到，尝试通过网络标记坐标匹配（新增）
+				// L3: 如果导线也没匹配到，尝试通过网络标记坐标匹配
 				if (!netName) {
 					const labelNet = findNetByLabelProximity(pinX, pinY, netLabels);
 					debugInfo.L3_netlabel = labelNet || 'miss';
@@ -384,6 +393,17 @@ async function collectComponentsAndPins(options: {
 						netName = labelNet;
 						confidence = 0.7;
 						reason = 'netlabel';
+					}
+				}
+
+				// L4: 如果前三层都失败，尝试通过导线拓扑推断
+				if (!netName) {
+					const topologyResult = findNetByWireTopology(pinX, pinY, wireClusters);
+					debugInfo.L4_topology = topologyResult?.netName || 'miss';
+					if (topologyResult) {
+						netName = topologyResult.netName;
+						confidence = topologyResult.confidence;
+						reason = 'topology';
 					}
 				}
 
@@ -431,8 +451,9 @@ async function collectNetlist(): Promise<string | undefined> {
 	try {
 		const NETLIST_TIMEOUT_MS = 10000; // 10秒超时
 
+		// 尝试使用 Protel2 格式（通常比 JLCEDA_PRO 更快）
 		const result = await Promise.race([
-			eda.sch_Netlist.getNetlist(ESYS_NetlistType.JLCEDA_PRO),
+			eda.sch_Netlist.getNetlist(ESYS_NetlistType.PROTEL2),
 			new Promise<undefined>((resolve) => {
 				setTimeout(() => resolve(undefined), NETLIST_TIMEOUT_MS);
 			}),
@@ -441,21 +462,32 @@ async function collectNetlist(): Promise<string | undefined> {
 		if (result === undefined) {
 			log('warn', `[采集] 网表获取超时 (${NETLIST_TIMEOUT_MS}ms)，跳过网表绑定`);
 		}
+		else {
+			log('info', `[采集] 网表格式: Protel2, 大小: ${result.length} 字符`);
+		}
 
 		return result;
 	}
-	catch {
+	catch (error) {
+		log('warn', `[采集] 网表获取失败: ${error instanceof Error ? error.message : String(error)}`);
 		return undefined;
 	}
 }
 
 /**
- * 采集导线
+ * 导线数据结构（包含有 net 和无 net 的导线）
  */
-async function collectWires(): Promise<Array<{ net: string; lines: number[][] }>> {
+interface WireData {
+	validWires: Array<{ net: string; lines: number[][] }>;
+	emptyWires: Array<{ lines: number[][] }>;
+}
+
+/**
+ * 采集导线（包括 net 为空的导线，用于拓扑分析）
+ */
+async function collectWires(): Promise<WireData> {
 	const wirePrimitives = await eda.sch_PrimitiveWire.getAll();
 
-	// 使用并发控制，限制同时处理100条导线
 	let emptyNetCount = 0;
 
 	const wireTasks = wirePrimitives.map(wire => async () => {
@@ -464,27 +496,40 @@ async function collectWires(): Promise<Array<{ net: string; lines: number[][] }>
 			wire.getState_Line(),
 		]);
 
-		if (!net || !line) {
-			if (!net) {
-				emptyNetCount++;
-			}
+		if (!line) {
 			return null;
 		}
+
 		// 规范化line为二维数组
 		const lines = Array.isArray(line[0]) ? line as number[][] : [line as number[]];
-		return {
-			net: net || '',
-			lines,
-		};
+
+		if (!net) {
+			emptyNetCount++;
+			return { type: 'empty' as const, lines };
+		}
+
+		return { type: 'valid' as const, net, lines };
 	});
 
 	const results = await promiseAllWithLimit(wireTasks, 50);
-	const validWires = results.filter((w): w is { net: string; lines: number[][] } => w !== null);
+	const validWires: Array<{ net: string; lines: number[][] }> = [];
+	const emptyWires: Array<{ lines: number[][] }> = [];
+
+	for (const result of results) {
+		if (!result)
+			continue;
+		if (result.type === 'valid') {
+			validWires.push({ net: result.net, lines: result.lines });
+		}
+		else {
+			emptyWires.push({ lines: result.lines });
+		}
+	}
 
 	// 输出导线采集统计
 	log('info', `[采集] 导线统计: 总数=${wirePrimitives.length}, 有效=${validWires.length}, net为空=${emptyNetCount}`);
 
-	return validWires;
+	return { validWires, emptyWires };
 }
 
 /**
@@ -643,7 +688,7 @@ async function collectNetLabels(
 }
 
 /**
- * 解析网表字符串（简化版，仅支持JLCEDA_PRO格式）
+ * 解析网表字符串（支持 JLCEDA_PRO 和 Protel2 格式）
  */
 function parseNetlist(netlistRaw: string | undefined): Map<string, string> {
 	const map = new Map<string, string>();
@@ -651,28 +696,70 @@ function parseNetlist(netlistRaw: string | undefined): Map<string, string> {
 		return map;
 
 	try {
-		// JLCEDA_PRO格式示例：
-		// NET: VCC_3V3
-		//   U1-1
-		//   C1-1
-		const lines = netlistRaw.split('\n');
-		let currentNet = '';
+		// 检测网表格式
+		if (netlistRaw.includes('NET:')) {
+			// JLCEDA_PRO 格式示例：
+			// NET: VCC_3V3
+			//   U1-1
+			//   C1-1
+			const lines = netlistRaw.split('\n');
+			let currentNet = '';
 
-		for (const line of lines) {
-			const trimmed = line.trim();
-			if (trimmed.startsWith('NET:')) {
-				currentNet = trimmed.substring(4).trim();
-			}
-			else if (currentNet && trimmed.includes('-')) {
-				const [designator, pinNumber] = trimmed.split('-');
-				if (designator && pinNumber) {
-					map.set(`${designator.trim()}_${pinNumber.trim()}`, currentNet);
+			for (const line of lines) {
+				const trimmed = line.trim();
+				if (trimmed.startsWith('NET:')) {
+					currentNet = trimmed.substring(4).trim();
+				}
+				else if (currentNet && trimmed.includes('-')) {
+					const [designator, pinNumber] = trimmed.split('-');
+					if (designator && pinNumber) {
+						map.set(`${designator.trim()}_${pinNumber.trim()}`, currentNet);
+					}
 				}
 			}
 		}
+		else if (netlistRaw.includes('[') || netlistRaw.startsWith('(')) {
+			// Protel2 格式示例：
+			// ( { Component List }
+			//   ( U1
+			//     ( 1 VCC_3V3 )
+			//     ( 2 GND )
+			//   )
+			// )
+			const lines = netlistRaw.split('\n');
+			let currentComponent = '';
+
+			for (const line of lines) {
+				const trimmed = line.trim();
+
+				// 匹配器件名称：( U1
+				const componentMatch = trimmed.match(/^\(\s*([A-Z]+\d+)\s*$/);
+				if (componentMatch) {
+					currentComponent = componentMatch[1];
+					continue;
+				}
+
+				// 匹配引脚-网络：( 1 VCC_3V3 )
+				if (currentComponent) {
+					const pinMatch = trimmed.match(/^\(\s*(\d+)\s+([^\s)]+)\s*\)$/);
+					if (pinMatch) {
+						const pinNumber = pinMatch[1];
+						const netName = pinMatch[2];
+						map.set(`${currentComponent}_${pinNumber}`, netName);
+					}
+				}
+
+				// 器件结束：)
+				if (trimmed === ')' && currentComponent) {
+					currentComponent = '';
+				}
+			}
+		}
+
+		log('info', `[采集] 网表解析完成: ${map.size} 个 pin-net 映射`);
 	}
-	catch {
-		// 解析失败，返回空映射
+	catch (error) {
+		log('warn', `[采集] 网表解析失败: ${error instanceof Error ? error.message : String(error)}`);
 	}
 
 	return map;
@@ -736,6 +823,217 @@ function findNetByLabelProximity(
 	}
 
 	return bestNet;
+}
+
+/**
+ * 导线拓扑簇（L4 策略的数据结构）
+ */
+interface WireCluster {
+	id: string;
+	netName: string | null;
+	points: Array<{ x: number; y: number }>;
+	confidence: number; // 0.5=推断, 0.6=空导线, 0.7=标记, 0.8=导线net
+}
+
+/**
+ * L4: 构建导线拓扑图
+ * 通过导线的物理连接关系推断网络，即使导线的 net 属性为空
+ */
+function buildWireTopology(
+	validWires: Array<{ net: string; lines: number[][] }>,
+	emptyWires: Array<{ lines: number[][] }>,
+	netLabels: RawNetLabel[],
+): WireCluster[] {
+	const CONNECT_TOLERANCE = 5; // 导线端点连接容差
+
+	// 1. 收集所有导线段
+	interface WireSegment {
+		net: string | null;
+		points: Array<{ x: number; y: number }>;
+	}
+
+	const allSegments: WireSegment[] = [];
+
+	// 有 net 的导线
+	for (const wire of validWires) {
+		for (const line of wire.lines) {
+			const points: Array<{ x: number; y: number }> = [];
+			for (let i = 0; i < line.length; i += 2) {
+				if (line[i] !== undefined && line[i + 1] !== undefined) {
+					points.push({ x: line[i], y: line[i + 1] });
+				}
+			}
+			if (points.length >= 2) {
+				allSegments.push({ net: wire.net, points });
+			}
+		}
+	}
+
+	// net 为空的导线
+	for (const wire of emptyWires) {
+		for (const line of wire.lines) {
+			const points: Array<{ x: number; y: number }> = [];
+			for (let i = 0; i < line.length; i += 2) {
+				if (line[i] !== undefined && line[i + 1] !== undefined) {
+					points.push({ x: line[i], y: line[i + 1] });
+				}
+			}
+			if (points.length >= 2) {
+				allSegments.push({ net: null, points });
+			}
+		}
+	}
+
+	if (allSegments.length === 0) {
+		return [];
+	}
+
+	// 2. 使用并查集构建连通分量
+	const parent = new Map<number, number>();
+	const rank = new Map<number, number>();
+
+	function find(x: number): number {
+		if (!parent.has(x)) {
+			parent.set(x, x);
+			rank.set(x, 0);
+		}
+		if (parent.get(x) !== x) {
+			parent.set(x, find(parent.get(x)!));
+		}
+		return parent.get(x)!;
+	}
+
+	function union(x: number, y: number): void {
+		const rootX = find(x);
+		const rootY = find(y);
+		if (rootX === rootY)
+			return;
+
+		const rankX = rank.get(rootX) || 0;
+		const rankY = rank.get(rootY) || 0;
+
+		if (rankX < rankY) {
+			parent.set(rootX, rootY);
+		}
+		else if (rankX > rankY) {
+			parent.set(rootY, rootX);
+		}
+		else {
+			parent.set(rootY, rootX);
+			rank.set(rootX, rankX + 1);
+		}
+	}
+
+	// 3. 连接相邻的导线段
+	for (let i = 0; i < allSegments.length; i++) {
+		for (let j = i + 1; j < allSegments.length; j++) {
+			const seg1 = allSegments[i];
+			const seg2 = allSegments[j];
+
+			// 检查两个线段的端点是否接近
+			for (const p1 of seg1.points) {
+				for (const p2 of seg2.points) {
+					const dist = Math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2);
+					if (dist < CONNECT_TOLERANCE) {
+						union(i, j);
+					}
+				}
+			}
+		}
+	}
+
+	// 4. 按连通分量分组
+	const clusters = new Map<number, number[]>();
+	for (let i = 0; i < allSegments.length; i++) {
+		const root = find(i);
+		if (!clusters.has(root)) {
+			clusters.set(root, []);
+		}
+		clusters.get(root)!.push(i);
+	}
+
+	// 5. 为每个连通分量确定网络名称
+	const wireClusters: WireCluster[] = [];
+	let clusterIndex = 0;
+
+	for (const [_root, segmentIndices] of clusters.entries()) {
+		// 收集该连通分量的所有点
+		const allPoints: Array<{ x: number; y: number }> = [];
+		let netFromWire: string | null = null;
+
+		for (const idx of segmentIndices) {
+			const seg = allSegments[idx];
+			allPoints.push(...seg.points);
+			if (seg.net && !netFromWire) {
+				netFromWire = seg.net;
+			}
+		}
+
+		// 优先使用导线自带的 net
+		let netName = netFromWire;
+		let confidence = netFromWire ? 0.8 : 0.6;
+
+		// 如果导线没有 net，尝试从网络标记推断
+		if (!netName) {
+			const LABEL_TOLERANCE = 50;
+			for (const label of netLabels) {
+				for (const point of allPoints) {
+					const dist = Math.sqrt((point.x - label.x) ** 2 + (point.y - label.y) ** 2);
+					if (dist < LABEL_TOLERANCE) {
+						netName = label.netName;
+						confidence = 0.7;
+						break;
+					}
+				}
+				if (netName)
+					break;
+			}
+		}
+
+		// 如果还是没有，分配临时名称
+		if (!netName) {
+			netName = `WIRE_CLUSTER_${String(clusterIndex + 1).padStart(3, '0')}`;
+			confidence = 0.5;
+		}
+
+		wireClusters.push({
+			id: `cluster_${clusterIndex}`,
+			netName,
+			points: allPoints,
+			confidence,
+		});
+
+		clusterIndex++;
+	}
+
+	log('info', `[L4拓扑] 构建了 ${wireClusters.length} 个导线簇`);
+
+	return wireClusters;
+}
+
+/**
+ * L4: 通过导线拓扑查找网络
+ */
+function findNetByWireTopology(
+	pinX: number,
+	pinY: number,
+	wireClusters: WireCluster[],
+): { netName: string; confidence: number } | null {
+	const TOLERANCE = 10;
+
+	for (const cluster of wireClusters) {
+		for (const point of cluster.points) {
+			const dist = Math.sqrt((pinX - point.x) ** 2 + (pinY - point.y) ** 2);
+			if (dist < TOLERANCE) {
+				return {
+					netName: cluster.netName!,
+					confidence: cluster.confidence,
+				};
+			}
+		}
+	}
+
+	return null;
 }
 
 /**
