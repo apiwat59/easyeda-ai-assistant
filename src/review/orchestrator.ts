@@ -6,9 +6,14 @@
  */
 import type { AbortRequest, AIBlockResponse, CollectedData, MessageBlock, RegenerateRequest, UserMessage } from './types';
 import { ChatSession } from './chat-adapter';
-import { collectSchematicData } from './collector';
+import { collectSchematicData, setLogToIFrame } from './collector';
 import { loadChatHistory, loadConfig, saveChatHistory, saveConfig, validateConfig } from './config';
 import { CHAT_TOPICS, ChunkType, ErrorCode, ReviewError } from './types';
+
+// 初始化 collector 的日志发送函数
+setLogToIFrame((level: string, message: string, data?: any) => {
+	publishToIFrame('ai-chat/debug-log', { level, message, data });
+});
 
 /**
  * 按 sessionId 维护对话会话（替代单一全局 chatSession）

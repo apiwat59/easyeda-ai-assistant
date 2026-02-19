@@ -7,6 +7,22 @@ import type { CollectedData, CollectionMeta, RawBus, RawComponent, RawNet, RawPi
 import { ErrorCode, ReviewError } from './types';
 
 /**
+ * 日志发送函数（通过 MessageBus 发送到前端）
+ */
+let logToIFrame: ((level: string, message: string, data?: any) => void) | null = null;
+
+export function setLogToIFrame(fn: (level: string, message: string, data?: any) => void): void {
+	logToIFrame = fn;
+}
+
+function log(level: string, message: string, data?: any): void {
+	console.warn(`[${level.toUpperCase()}] ${message}`, data || '');
+	if (logToIFrame) {
+		logToIFrame(level, message, data);
+	}
+}
+
+/**
  * 器件采集选项
  */
 interface CollectComponentsOptions {
@@ -67,7 +83,7 @@ async function promiseAllWithLimit<T>(
  */
 export async function collectSchematicData(): Promise<CollectedData> {
 	const startTime = Date.now();
-	console.warn('[采集] 开始采集原理图数据...');
+	log('info', '[采集] 开始采集原理图数据...');
 
 	// 检查是否有打开的原理图文档
 	const docInfo = await eda.dmt_SelectControl.getCurrentDocumentInfo();
@@ -92,7 +108,7 @@ export async function collectSchematicData(): Promise<CollectedData> {
 		// 获取当前原理图下的全部图页信息
 		const pages = await eda.dmt_Schematic.getCurrentSchematicAllSchematicPagesInfo();
 		meta.expectedPageCount = pages.length;
-		console.warn(`[采集] 检测到 ${pages.length} 个图页`);
+		log('info', `[采集] 检测到 ${pages.length} 个图页`);
 
 		// 并行采集：网表 + 器件（使用 allSchematicPages=true）
 		const t1 = Date.now();
@@ -100,7 +116,7 @@ export async function collectSchematicData(): Promise<CollectedData> {
 			collectNetlist(),
 			collectComponents({ allSchematicPages: true }),
 		]);
-		console.warn(`[采集] 器件采集完成: ${components.length} 个器件 (耗时 ${Date.now() - t1}ms)`);
+		log('info', `[采集] 器件采集完成: ${components.length} 个器件 (耗时 ${Date.now() - t1}ms)`);
 
 		// 逐页采集 Wire/Text/Bus（API 限制，必须切换页面）
 		let wires: Array<{ net: string; lines: number[][] }> = [];
@@ -115,13 +131,13 @@ export async function collectSchematicData(): Promise<CollectedData> {
 				collectTexts(),
 				collectBuses(),
 			]);
-			console.warn(`[采集] 单页数据采集完成: ${wires.length} 导线, ${texts.length} 文本, ${buses.length} 总线 (耗时 ${Date.now() - t2}ms)`);
+			log('info', `[采集] 单页数据采集完成: ${wires.length} 导线, ${texts.length} 文本, ${buses.length} 总线 (耗时 ${Date.now() - t2}ms)`);
 			meta.collectedPageUuids = [pages[0].uuid];
 			meta.collectedPageCount = 1;
 		}
 		else {
 			// 多页场景：快速逐页切换采集
-			console.warn(`[采集] 开始逐页采集 Wire/Text/Bus...`);
+			log('info', `[采集] 开始逐页采集 Wire/Text/Bus...`);
 			const t2 = Date.now();
 			for (let i = 0; i < pages.length; i++) {
 				const page = pages[i];
@@ -130,7 +146,7 @@ export async function collectSchematicData(): Promise<CollectedData> {
 					// 打开并激活页面
 					const pageTabId = await eda.dmt_EditorControl.openDocument(page.uuid);
 					if (!pageTabId) {
-						console.warn(`[采集] 无法打开图页 ${i + 1}/${pages.length}: ${page.name}`);
+						log('warn', `[采集] 无法打开图页 ${i + 1}/${pages.length}: ${page.name}`);
 						meta.missingPageUuids.push(page.uuid);
 						continue;
 					}
@@ -148,14 +164,14 @@ export async function collectSchematicData(): Promise<CollectedData> {
 					texts.push(...pageTexts);
 					buses.push(...pageBuses);
 					meta.collectedPageUuids.push(page.uuid);
-					console.warn(`[采集] 图页 ${i + 1}/${pages.length} (${page.name}): ${pageWires.length} 导线, ${pageTexts.length} 文本, ${pageBuses.length} 总线 (耗时 ${Date.now() - pageStartTime}ms)`);
+					log('info', `[采集] 图页 ${i + 1}/${pages.length} (${page.name}): ${pageWires.length} 导线, ${pageTexts.length} 文本, ${pageBuses.length} 总线 (耗时 ${Date.now() - pageStartTime}ms)`);
 				}
 				catch (pageError) {
-					console.warn(`[采集] 采集图页失败 ${i + 1}/${pages.length} (${page.name}):`, pageError);
+					log('error', `[采集] 采集图页失败 ${i + 1}/${pages.length} (${page.name})`, pageError);
 					meta.missingPageUuids.push(page.uuid);
 				}
 			}
-			console.warn(`[采集] 逐页采集完成: 总计 ${wires.length} 导线, ${texts.length} 文本, ${buses.length} 总线 (总耗时 ${Date.now() - t2}ms)`);
+			log('info', `[采集] 逐页采集完成: 总计 ${wires.length} 导线, ${texts.length} 文本, ${buses.length} 总线 (总耗时 ${Date.now() - t2}ms)`);
 
 			meta.collectedPageCount = meta.collectedPageUuids.length;
 			if (meta.missingPageUuids.length > 0) {
@@ -179,13 +195,13 @@ export async function collectSchematicData(): Promise<CollectedData> {
 		// 采集引脚并绑定网络
 		const t3 = Date.now();
 		const pins = await collectPinsWithNetBinding(components, netlistRaw, wires);
-		console.warn(`[采集] 引脚采集完成: ${pins.length} 个引脚 (耗时 ${Date.now() - t3}ms)`);
+		log('info', `[采集] 引脚采集完成: ${pins.length} 个引脚 (耗时 ${Date.now() - t3}ms)`);
 
 		// 统计网络
 		const nets = buildNetStatistics(pins);
 
 		const totalTime = Date.now() - startTime;
-		console.warn(`[采集] 采集完成: ${components.length} 器件, ${pins.length} 引脚, ${nets.length} 网络 (总耗时 ${totalTime}ms)`);
+		log('success', `[采集] 采集完成: ${components.length} 器件, ${pins.length} 引脚, ${nets.length} 网络 (总耗时 ${totalTime}ms)`);
 
 		return {
 			components,
