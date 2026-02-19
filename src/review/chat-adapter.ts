@@ -269,8 +269,21 @@ async function makeRequest(
 			);
 		}
 
+		// 提取 text 和 reasoning 内容（至少需要一个）
 		const textContent = extractResponseText(data);
 		const reasoningContent = extractReasoningText(data);
+
+		// 验证至少有一个内容
+		if (!textContent && !reasoningContent) {
+			throw new ReviewError(
+				ErrorCode.AI_INVALID_RESPONSE,
+				'AI响应中既没有 content 也没有 reasoning_content',
+				{
+					url,
+					responseBody: JSON.stringify(data).substring(0, 2000),
+				},
+			);
+		}
 
 		emitCompleteBlocks(textContent, reasoningContent, onBlock);
 
@@ -566,13 +579,10 @@ function handleHttpError(status: number, body: string, url?: string): never {
 }
 
 /**
- * 从AI响应中提取文本
+ * 从AI响应中提取文本（允许为空，因为可能只有 reasoning 内容）
  */
 function extractResponseText(data: any): string {
-	const content = normalizeChunkText(data.choices?.[0]?.message?.content);
-	if (content)
-		return content;
-	throw new ReviewError(ErrorCode.AI_INVALID_RESPONSE, '无法解析AI响应格式');
+	return normalizeChunkText(data.choices?.[0]?.message?.content);
 }
 
 /**
