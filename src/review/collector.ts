@@ -917,11 +917,16 @@ function parseNetlistProtel2V2(netlistRaw: string, map: Map<string, string>): vo
 			}
 
 			// 后续行是 Designator-Pin 连接
+			// 格式：U4-18 RTL8723模组-CHIP_EN Input
+			// 需要提取：Designator=U4, PinNumber=18（只取第一个空格前的部分）
 			if (currentNet) {
 				const dashIdx = trimmed.indexOf('-');
 				if (dashIdx > 0) {
 					const designator = trimmed.substring(0, dashIdx);
-					const pinNumber = trimmed.substring(dashIdx + 1);
+					const afterDash = trimmed.substring(dashIdx + 1);
+					// 只取第一个空格之前的部分作为 pinNumber
+					const spaceIdx = afterDash.indexOf(' ');
+					const pinNumber = spaceIdx > 0 ? afterDash.substring(0, spaceIdx) : afterDash;
 					if (designator && pinNumber && /^[A-Z]/.test(designator)) {
 						map.set(`${designator}_${pinNumber}`, currentNet);
 					}
