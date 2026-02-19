@@ -1,0 +1,15 @@
+EasyEDA AI Assistant
+Copyright 2026 jifengshandian
+
+This product includes software developed by JLCEDA (https://pro.lceda.cn/).
+
+This project is based on the pro-api-sdk (https://github.com/easyeda/pro-api-sdk),
+which is licensed under the Apache License 2.0.
+
+The following components are included from pro-api-sdk:
+- Build configuration and tooling
+- EasyEDA Pro API type definitions (@jlceda/pro-api-types)
+- Extension packaging scripts
+
+All modifications and additions are Copyright 2026 jifengshandian and are also
+licensed under the Apache License 2.0.

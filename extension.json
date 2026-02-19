@@ -1,27 +1,31 @@
 {
-	"name": "pro-api-sdk",
+	"name": "easyeda-ai-assistant",
 	"uuid": "1756b096fd414831bfa7a0c3556f129f",
-	"displayName": "PRO API SDK",
-	"description": "嘉立创EDA & EasyEDA 专业版扩展 API 开发工具",
+	"displayName": "AI Schematic Assistant",
+	"description": "AI-powered schematic review and chat assistant for EasyEDA Pro",
 	"version": "1.0.0",
-	"publisher": "",
+	"publisher": "jifengshandian",
 	"engines": {
 		"eda": "^3.0.0"
 	},
 	"license": "Apache-2.0",
 	"repository": {
-		"type": "extension-store",
-		"url": ""
+		"type": "git",
+		"url": "https://github.com/jifengshandian/easyeda-ai-assistant"
 	},
 	"categories": "Other",
 	"keywords": [
-		"SDK"
+		"AI",
+		"Schematic",
+		"Review",
+		"Assistant",
+		"Chat"
 	],
 	"images": {
 		"logo": "./images/logo.png"
 	},
-	"homepage": "",
-	"bugs": "",
+	"homepage": "https://github.com/jifengshandian/easyeda-ai-assistant",
+	"bugs": "https://github.com/jifengshandian/easyeda-ai-assistant/issues",
 	"activationEvents": {},
 	"entry": "./dist/index",
 	"dependentExtensions": {},

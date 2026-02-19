@@ -1,0 +1,55 @@
+name: Feature Request
+description: 提出一个新功能建议
+title: '[Feature]: '
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢你提出功能建议！
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 问题描述
+      description: 你遇到了什么问题？这个功能将解决什么问题？
+      placeholder: 我总是感到沮丧，当...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: 建议的解决方案
+      description: 你希望看到什么样的解决方案？
+      placeholder: 我希望能够...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 替代方案
+      description: 你考虑过哪些替代解决方案或功能？
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: 使用场景
+      description: 描述一个具体的使用场景
+      placeholder: |
+        作为一个电路设计师，
+        我想要...
+        这样我就可以...
+
+  - type: textarea
+    id: examples
+    attributes:
+      label: 示例
+      description: 如果可能，提供示例或参考
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: 附加信息
+      description: 添加任何其他关于功能请求的信息
