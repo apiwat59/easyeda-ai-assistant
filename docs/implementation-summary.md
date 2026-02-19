@@ -244,13 +244,9 @@ for each pin:
 
 ---
 
-## 待实现功能清单
+### ✅ 8. 插件自动启动（问题2）
 
-### ❌ 1. 插件自动启动（问题2）
-
-**状态**：未实现
-
-**优先级**：中
+**状态**：已完成
 
 **实现方案**：在 `activate()` 中初始化后台服务
 
@@ -258,24 +254,39 @@ for each pin:
 - 在 `activate()` 函数中初始化后台采集服务
 - 使用定时器检测文档变化（每 5 秒）
 - 如果是原理图且文档变化了，自动触发后台采集
-- 不依赖 `activationEvents`（该功能尚未稳定）
+- 防止重复初始化和重复注册
+- 跳过正在采集中的情况（避免干扰）
 
-**待修改文件**：
-- `src/index.ts` - 实现 `activate()` 函数
-- `src/review/orchestrator.ts` - 重构后台采集服务
+**实现细节**：
+```typescript
+export function activate(status?: 'onStartupFinished', arg?: string): void {
+    // 防止重复初始化
+    if (autoCollectorInitialized) return;
+    autoCollectorInitialized = true;
 
-**注意事项**：
-- 定时器间隔可配置（默认 5 秒）
-- 采集失败不影响用户操作
-- 需要避免重复采集（检查文档 UUID）
+    // 启动定时器：每5秒检测文档变化
+    eda.sys_Timer.setIntervalTimer(AUTO_COLLECT_TIMER_ID, 5000, () => {
+        void probeDocumentAndTriggerCollection();
+    });
+
+    // 立即执行一次
+    void probeDocumentAndTriggerCollection();
+}
+```
+
+**修改文件**：
+- `src/index.ts` - 实现 `activate()` 和 `probeDocumentAndTriggerCollection()` 函数
+
+**提交记录**：
+```
+（已在之前的会话中实现）
+```
 
 ---
 
-### ❌ 2. Markdown 渲染改进（问题4）
+### ✅ 9. Markdown 渲染改进（问题4）
 
-**状态**：未实现
-
-**优先级**：中
+**状态**：已完成
 
 **实现方案**：引入 `marked.js` + `DOMPurify` 轻量级库
 
@@ -285,34 +296,40 @@ for each pin:
 - 支持代码块（带语法高亮）
 - 支持表格
 - 支持引用
-- XSS 防护
+- XSS 防护（DOMPurify）
+- 降级渲染（库未加载时）
 
-**实施步骤**：
-1. 在 `chat.html` 中引入 CDN 版本：
-   ```html
-   <script src="https://cdn.jsdelivr.net/npm/marked@11.0.0/marked.min.js"></script>
-   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
-   ```
+**实现细节**：
+```javascript
+function parseMarkdown(text) {
+    if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
+        var rawHtml = marked.parse(text, { breaks: true });
+        return DOMPurify.sanitize(rawHtml);
+    }
+    // 降级渲染
+    return fallbackRender(text);
+}
 
-2. 重写 `parseMarkdown()` 函数：
-   ```javascript
-   function parseMarkdown(text) {
-     const rawHtml = marked.parse(text);
-     const cleanHtml = DOMPurify.sanitize(rawHtml);
-     return cleanHtml;
-   }
-   ```
+function highlightReferencesDOM(containerElement) {
+    // 使用 TreeWalker 遍历文本节点
+    // 跳过 CODE/PRE/A/SPAN 标签（避免误伤代码块）
+    // 高亮器件位号和网络名
+}
+```
 
-3. 重写 `highlightReferences()` 为 DOM 遍历（避免误伤代码块）
+**修改文件**：
+- `iframe/chat.html` - 引入 CDN，实现 `parseMarkdown()` 和 `highlightReferencesDOM()` 函数
 
-4. 添加 Markdown 样式
-
-**待修改文件**：
-- `iframe/chat.html` - 重写渲染函数，添加 CDN 引用和样式
+**提交记录**：
+```
+（已在之前的会话中实现）
+```
 
 ---
 
-### ❌ 3. 扩展元素类型采集（P2 优先级）
+## 待实现功能清单
+
+### ❌ 1. 扩展元素类型采集（P2 优先级）
 
 **状态**：未实现
 
