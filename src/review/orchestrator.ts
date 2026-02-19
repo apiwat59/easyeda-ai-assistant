@@ -640,6 +640,13 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		return;
 	}
 
+	// 防重复提交：如果该 requestId 已经在处理中，直接忽略
+	const existingPending = pendingRequests.get(msg.requestId);
+	if (existingPending) {
+		console.warn(`[Orchestrator] 忽略重复的请求 requestId: ${msg.requestId}`);
+		return;
+	}
+
 	// 验证文本长度
 	if (msg.text && msg.text.length > 50000) {
 		publishToIFrame(CHAT_TOPICS.ERROR, {
@@ -684,13 +691,6 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 			sessionId: msg.sessionId,
 		});
 		return;
-	}
-
-	// 如果已有相同 requestId 的请求，先中止
-	const existingPending = pendingRequests.get(msg.requestId);
-	if (existingPending) {
-		existingPending.abortController.abort();
-		pendingRequests.delete(msg.requestId);
 	}
 
 	// 创建新的 AbortController
