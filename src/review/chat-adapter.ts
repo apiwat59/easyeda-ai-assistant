@@ -787,9 +787,15 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 			// 从 text 中移除标签及其内容
 			finalText = finalText.replace(thinkTagRegex, '').trim();
 
-			// 重新发送正确的内容
+			// 更新累积内容
 			reasoningContent = finalReasoning;
 			textContent = finalText;
+
+			// 重置完成标志，强制重新发送正确的 COMPLETE 事件
+			thinkingCompleted = false;
+			textCompleted = false;
+			hasStartedThinking = true;
+			hasStartedText = true;
 		}
 	}
 
