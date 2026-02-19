@@ -394,30 +394,51 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 			);
 			let content = normalizeChunkText(delta.content);
 
-			// 支持 Grok 的 [AgentThink] 格式
-			// 例如: "[Agent 1][AgentThink] 思考内容"
+			// 支持 Grok 的多种中间过程格式
+			// Grok 会输出：[Agent X][AgentThink]、[Agent X][WebSearch]、[Grok][WebSearch]、browse_page {...} 等
+			// 这些都是 AI 的内部操作过程，应该归类为 thinking
 			if (!reasoning && content) {
-				// 使用 matchAll 避免 ESLint no-cond-assign 错误
-				const thinkingPattern = /\[Agent\s+\d+\]\[AgentThink\]\s*/g;
-				const matches = Array.from(content.matchAll(thinkingPattern));
+				// 检测 Grok 的中间过程标记
+				const grokProcessPattern = /\[(?:Agent\s+\d+|Grok)\]\[(?:AgentThink|WebSearch)\]|browse_page\s*\{[^}]*\}/g;
+				const hasGrokProcess = grokProcessPattern.test(content);
 
-				if (matches.length > 0) {
-					// 提取所有 thinking 内容
-					const thinkingParts = [];
-					for (let i = 0; i < matches.length; i++) {
-						const start = matches[i].index!;
-						const end = i < matches.length - 1 ? matches[i + 1].index! : content.length;
-						const part = content.substring(start, end).replace(thinkingPattern, '').trim();
-						if (part) {
-							thinkingParts.push(part);
+				if (hasGrokProcess) {
+					// 重置正则（test 会移动 lastIndex）
+					grokProcessPattern.lastIndex = 0;
+
+					// 查找第一个不是 Grok 中间过程的内容（通常以 ** 或正常文本开头）
+					// 策略：把所有 [Agent X][xxx] 和 browse_page 开头的行都归为 thinking
+					const lines = content.split('\n');
+					const thinkingLines: string[] = [];
+					const contentLines: string[] = [];
+					let inThinkingMode = true;
+
+					for (const line of lines) {
+						const trimmedLine = line.trim();
+						// 如果是 Grok 中间过程标记，归为 thinking
+						if (trimmedLine.match(/^\[(Agent\s+\d+|Grok)\]\[/) || trimmedLine.startsWith('browse_page')) {
+							thinkingLines.push(line);
+							inThinkingMode = true;
+						}
+						// 如果遇到 Markdown 粗体开头（通常是正式回答），切换到 content 模式
+						else if (trimmedLine.startsWith('**') && inThinkingMode) {
+							contentLines.push(line);
+							inThinkingMode = false;
+						}
+						// 其他情况根据当前模式分类
+						else if (inThinkingMode && trimmedLine.length > 0) {
+							thinkingLines.push(line);
+						}
+						else if (!inThinkingMode) {
+							contentLines.push(line);
 						}
 					}
-					reasoning = thinkingParts.join('\n\n');
 
-					// 从 content 中移除 thinking 部分
-					content = content.replace(thinkingPattern, '').replace(/\s+/g, ' ').trim();
-
-					console.warn('[SSE Parser] 检测到 Grok [AgentThink] 格式, reasoning 长度:', reasoning.length, 'content 长度:', content.length);
+					if (thinkingLines.length > 0) {
+						reasoning = thinkingLines.join('\n').trim();
+						content = contentLines.join('\n').trim();
+						console.warn('[SSE Parser] 检测到 Grok 中间过程格式, reasoning 行数:', thinkingLines.length, 'content 行数:', contentLines.length);
+					}
 				}
 			}
 
