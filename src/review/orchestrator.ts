@@ -626,6 +626,48 @@ function setupChatListeners(): void {
 		// 无 sessionId 时清空所有会话
 		clearAllChatSessions();
 	});
+
+	// 监听恢复会话请求（从历史记录恢复上下文）
+	subscribe('ai-chat/restore-session', (data: any) => {
+		if (!data || typeof data !== 'object') {
+			return;
+		}
+
+		const sessionId = typeof data.sessionId === 'string' ? data.sessionId : '';
+		const messages = Array.isArray(data.messages) ? data.messages : [];
+
+		if (!sessionId || messages.length === 0) {
+			return;
+		}
+
+		// 获取或创建会话
+		const session = getOrCreateChatSession(sessionId);
+
+		// 重建历史记录
+		session.reset(); // 先清空
+		for (const msg of messages) {
+			if (!msg || typeof msg !== 'object') {
+				continue;
+			}
+
+			const role = msg.role === 'user' ? 'user' : 'assistant';
+			const content = typeof msg.content === 'string' ? msg.content : '';
+
+			// 如果是 assistant 消息且有 thinkingSummary，合并到 content
+			let finalContent = content;
+			if (role === 'assistant' && msg.thinkingSummary) {
+				finalContent = `${msg.thinkingSummary}\n\n${content}`;
+			}
+
+			// 直接操作 history（绕过 sendMessage 的验证）
+			(session as any).history.push({
+				role,
+				content: finalContent,
+			});
+		}
+
+		console.warn(`[restoreSession] 恢复会话 ${sessionId}，历史消息数: ${messages.length}`);
+	});
 }
 
 /**

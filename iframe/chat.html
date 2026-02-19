@@ -1193,18 +1193,21 @@
                     pendingRequests = {};
                     renderMessages();
                     renderHistoryList();
-                    // 通知后端清空会话
-                    publishMessage('ai-chat/clear-session', { sessionId: sessionId });
-
-                    // 添加提示
-                    messages.push({
-                        id: generateUUID(),
-                        role: 'ai',
-                        blocks: [{ id: generateUUID(), type: 'text', content: '提示：您正在查看历史会话。继续提问将基于新的上下文。', status: 'success' }],
-                        timestamp: Date.now(),
-                        transient: true
+                    // 不清空会话，而是重建历史上下文
+                    // 将历史消息发送给后端，让 ChatSession 重建 history
+                    var historyMessages = messages.map(function(msg) {
+                        return {
+                            role: msg.role === 'user' ? 'user' : 'assistant',
+                            content: msg.content || '',
+                            thinkingSummary: msg.blocks ? msg.blocks.find(function(b) { return b.type === 'thinking'; })?.content : null
+                        };
                     });
-                    renderMessages();
+
+                    publishMessage('ai-chat/restore-session', {
+                        sessionId: sessionId,
+                        messages: historyMessages
+                    });
+
                     return;
                 }
             }

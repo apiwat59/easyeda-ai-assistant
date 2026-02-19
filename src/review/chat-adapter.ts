@@ -323,6 +323,14 @@ async function makeRequest(
 		const textContent = extractResponseText(data);
 		const reasoningContent = extractReasoningText(data);
 
+		console.warn('[makeRequest] 原始提取结果:', {
+			textLength: textContent.length,
+			reasoningLength: reasoningContent.length,
+			textPreview: textContent.substring(0, 100),
+			reasoningPreview: reasoningContent.substring(0, 100),
+			hasThinkTag: /<think/i.test(textContent),
+		});
+
 		if (!textContent && !reasoningContent) {
 			throw new ReviewError(
 				ErrorCode.AI_INVALID_RESPONSE,
@@ -339,6 +347,12 @@ async function makeRequest(
 
 		// 合并提取的 reasoning（优先使用非空白的 reasoningContent）
 		const finalReasoning = hasNonWhitespace(reasoningContent) ? reasoningContent : extractedReasoning;
+
+		console.warn('[makeRequest] 最终提取结果:', {
+			finalTextLength: finalText.length,
+			finalReasoningLength: finalReasoning.length,
+			reasoningSource: hasNonWhitespace(reasoningContent) ? 'API字段' : (extractedReasoning ? '<think>标签' : '无'),
+		});
 
 		// 发送事件
 		emitCompleteBlocks(finalText, finalReasoning, onBlock);
