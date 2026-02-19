@@ -103,15 +103,22 @@ export class ChatSession {
 		];
 
 		// 调用 AI API
-		const result = await callOpenAICompatibleChat(messages, config, onBlock, signal);
+		try {
+			const result = await callOpenAICompatibleChat(messages, config, onBlock, signal);
 
-		// 将 AI 回复加入历史
-		const assistantContent = result.reasoningContent
-			? `${result.reasoningContent}\n\n${result.textContent}`
-			: result.textContent;
-		this.history.push({ role: 'assistant', content: assistantContent });
+			// 将 AI 回复加入历史
+			const assistantContent = result.reasoningContent
+				? `${result.reasoningContent}\n\n${result.textContent}`
+				: result.textContent;
+			this.history.push({ role: 'assistant', content: assistantContent });
 
-		return result.textContent;
+			return result.textContent;
+		}
+		catch (error) {
+			// 失败时移除刚加入的用户消息，保持历史一致
+			this.history.pop();
+			throw error;
+		}
 	}
 
 	/**
@@ -128,15 +135,19 @@ export class ChatSession {
 	 * 构建用户消息内容（支持文本+图片）
 	 */
 	private buildUserContent(userMsg: UserMessage): string | Array<{ type: string; text?: string; image_url?: { url: string } }> {
+		// 如果没有图片，直接返回文本
+		if (!userMsg.images || userMsg.images.length === 0) {
+			return userMsg.text || '';
+		}
+
+		// 有图片时使用 multipart 格式
 		const parts: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
 
-		if (userMsg.images && userMsg.images.length > 0) {
-			for (const img of userMsg.images) {
-				parts.push({
-					type: 'image_url',
-					image_url: { url: `data:${img.type};base64,${img.data}` },
-				});
-			}
+		for (const img of userMsg.images) {
+			parts.push({
+				type: 'image_url',
+				image_url: { url: `data:${img.type};base64,${img.data}` },
+			});
 		}
 
 		if (userMsg.text) {
