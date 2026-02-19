@@ -350,7 +350,8 @@ async function makeRequest(
  *   TEXT_START     → TEXT_DELTA(n)     → TEXT_COMPLETE
  */
 function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatCompletionResult {
-	const lines = text.split('\n');
+	// 使用正则支持 \r\n 和 \n 两种换行符（参考 Cherry Studio）
+	const lines = text.split(/\r?\n/);
 	let textContent = '';
 	let reasoningContent = '';
 	let currentEventData: string[] = [];
@@ -385,9 +386,10 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 			if (deltaReasoning) {
 				if (!thinkingStarted) {
 					thinkingStarted = true;
-					emitBlock(onBlock, ChunkType.THINKING_START, '', reasoningContent);
+					emitBlock(onBlock, ChunkType.THINKING_START, '', '');
 				}
 				reasoningContent += deltaReasoning;
+				// content=增量, accumulatedContent=累积（参考 Cherry Studio）
 				emitBlock(onBlock, ChunkType.THINKING_DELTA, deltaReasoning, reasoningContent);
 			}
 
@@ -400,9 +402,10 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 				}
 				if (!textStarted) {
 					textStarted = true;
-					emitBlock(onBlock, ChunkType.TEXT_START, '', textContent);
+					emitBlock(onBlock, ChunkType.TEXT_START, '', '');
 				}
 				textContent += deltaText;
+				// content=增量, accumulatedContent=累积（参考 Cherry Studio）
 				emitBlock(onBlock, ChunkType.TEXT_DELTA, deltaText, textContent);
 			}
 
