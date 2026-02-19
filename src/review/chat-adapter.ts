@@ -400,7 +400,7 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 			// 正式回答通常以 ** 开头（Markdown 粗体）或者是普通文本
 			if (!reasoning && content) {
 				// 检测是否包含 Grok 的中间过程标记
-				const hasGrokMarkers = /^\[(?:Agent\s+\d+|Grok)\]\[/.test(content) || /^browse_page\s*\{/.test(content);
+				const hasGrokMarkers = /\[(?:Agent\s+\d+|Grok)\]\[/.test(content) || /browse_page\s*\{/.test(content);
 
 				if (hasGrokMarkers) {
 					// 按行分类：中间过程标记开头的行归为 thinking，其他归为 content
