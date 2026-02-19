@@ -1879,7 +1879,20 @@
                 // 按类型排序：thinking block 始终在 text block 前面
                 var sortedBlocks = msg.blocks.slice().sort(function(a, b) {
                     var order = { 'thinking': 0, 'text': 1, 'error': 2 };
-                    return (order[a.type] || 99) - (order[b.type] || 99);
+                    var aOrder = order[a.type] !== undefined ? order[a.type] : 99;
+                    var bOrder = order[b.type] !== undefined ? order[b.type] : 99;
+
+                    // 调试：记录排序比较
+                    if (aOrder === 99 || bOrder === 99) {
+                        addDebugLog('warn', 'blocks 排序 - 未知类型', {
+                            aType: a.type,
+                            bType: b.type,
+                            aOrder: aOrder,
+                            bOrder: bOrder
+                        });
+                    }
+
+                    return aOrder - bOrder;
                 });
 
                 // 调试日志：检查排序结果
