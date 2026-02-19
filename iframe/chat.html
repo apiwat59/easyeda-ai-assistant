@@ -1248,6 +1248,21 @@
                 }
             });
 
+            // 拦截所有链接点击，在默认浏览器中打开
+            document.addEventListener('click', function(e) {
+                var target = e.target;
+                // 向上查找，找到 <a> 标签
+                while (target && target.tagName !== 'A') {
+                    target = target.parentElement;
+                }
+                if (target && target.tagName === 'A' && target.href) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    // 在新窗口打开链接（会使用默认浏览器）
+                    window.open(target.href, '_blank', 'noopener,noreferrer');
+                }
+            }, true); // 使用捕获阶段，确保优先处理
+
             if (typeof eda !== 'undefined' && eda.sys_MessageBus) {
                 eda.sys_MessageBus.subscribePublic('ai-chat/schematic-data', handleSchematicData);
                 eda.sys_MessageBus.subscribePublic('ai-chat/config-data', handleConfigData);
@@ -1858,8 +1873,14 @@
             bodyDiv.className = 'message-body';
 
             if (msg.blocks && msg.blocks.length > 0) {
-                for (var i = 0; i < msg.blocks.length; i++) {
-                    var block = msg.blocks[i];
+                // 按类型排序：thinking block 始终在 text block 前面
+                var sortedBlocks = msg.blocks.slice().sort(function(a, b) {
+                    var order = { 'thinking': 0, 'text': 1, 'error': 2 };
+                    return (order[a.type] || 99) - (order[b.type] || 99);
+                });
+
+                for (var i = 0; i < sortedBlocks.length; i++) {
+                    var block = sortedBlocks[i];
                     if (block.type === 'thinking') {
                         bodyDiv.appendChild(createThinkingBlockElement(block));
                     } else if (block.type === 'text') {
