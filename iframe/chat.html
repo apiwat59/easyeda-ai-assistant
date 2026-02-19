@@ -944,7 +944,16 @@
 
                     if (update.blockType === 'thinking') {
                         var contentEl = el.querySelector('.thinking-content');
-                        if (contentEl) contentEl.textContent = update.content;
+                        if (contentEl) {
+                            // 流式阶段使用 textContent（性能优化）
+                            if (update.status === 'streaming') {
+                                contentEl.textContent = update.content;
+                            } else {
+                                // 完成后使用 Markdown 渲染
+                                var html = parseMarkdown(update.content);
+                                contentEl.innerHTML = html;
+                            }
+                        }
                         var statusEl = el.querySelector('.thinking-status-text');
                         if (statusEl) {
                             if (update.status === 'streaming') {
@@ -958,7 +967,7 @@
                                 statusEl.textContent = '已深度思考 ' + total + ' 秒';
                             }
                         }
-                        // 流式状态下自动展开，完成/暂停后折叠
+                        // 流式状态下自动展开，完成/暂停后自动折叠（参考 Cherry Studio）
                         if (update.status === 'streaming') {
                             if (el.className.indexOf('streaming') === -1) {
                                 el.className += ' streaming';
@@ -968,16 +977,13 @@
                             }
                         } else {
                             el.className = el.className.replace(' streaming', '');
-                            // 完成或暂停后自动折叠
+                            // 完成或暂停后自动折叠（Cherry Studio 的行为）
                             if (update.status === 'success' || update.status === 'paused') {
                                 el.className = el.className.replace(' expanded', '');
                             }
                         }
                     } else {
-                        // text block 更新
-                        var el = document.getElementById(id);
-                        if (!el) continue;
-
+                        // text block 更新（参考 Cherry Studio 的平滑流式渲染）
                         if (update.status === 'streaming') {
                             // 流式阶段：轻渲染（仅 textContent，避免 O(n²) 解析）
                             el.textContent = update.content;

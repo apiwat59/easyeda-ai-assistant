@@ -350,7 +350,8 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 		if (currentEventData.length === 0)
 			return;
 
-		const eventText = currentEventData.join('\n');
+		// 合并多行 data（某些提供商可能分多行发送 JSON）
+		const eventText = currentEventData.join('');
 		currentEventData = [];
 
 		try {
@@ -360,7 +361,11 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 				return;
 
 			const delta = choice.delta || {};
-			const deltaReasoning = normalizeChunkText(delta.reasoning_content);
+
+			// 支持多种 reasoning 字段格式（参考 Cherry Studio）
+			const deltaReasoning = normalizeChunkText(
+				delta.reasoning_content || delta.reasoning,
+			);
 			const deltaText = normalizeChunkText(delta.content);
 
 			// 处理 thinking 增量
@@ -375,7 +380,7 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 
 			// 处理 text 增量
 			if (deltaText) {
-				// 如果 thinking 尚未结束，先结束它
+				// 如果 thinking 尚未结束，先结束它（参考 Cherry Studio 的 emitThinkingCompleteIfNeeded）
 				if (thinkingStarted && !thinkingCompleted) {
 					thinkingCompleted = true;
 					emitBlock(onBlock, ChunkType.THINKING_COMPLETE, '', reasoningContent);
@@ -389,8 +394,10 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 			}
 
 			// 兼容某些提供方：SSE 事件中直接给完整 message 内容
-			if (!deltaReasoning && !reasoningContent) {
-				const messageReasoning = normalizeChunkText(choice.message?.reasoning_content);
+			if (!deltaReasoning && !reasoningContent && choice.message) {
+				const messageReasoning = normalizeChunkText(
+					choice.message.reasoning_content || choice.message.reasoning,
+				);
 				if (messageReasoning) {
 					thinkingStarted = true;
 					reasoningContent = messageReasoning;
@@ -399,9 +406,14 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 				}
 			}
 
-			if (!deltaText && !textContent) {
-				const messageText = normalizeChunkText(choice.message?.content);
+			if (!deltaText && !textContent && choice.message) {
+				const messageText = normalizeChunkText(choice.message.content);
 				if (messageText) {
+					// 如果有 reasoning 但还没结束，先结束它
+					if (thinkingStarted && !thinkingCompleted) {
+						thinkingCompleted = true;
+						emitBlock(onBlock, ChunkType.THINKING_COMPLETE, '', reasoningContent);
+					}
 					textStarted = true;
 					textContent = messageText;
 					emitBlock(onBlock, ChunkType.TEXT_START, '', '');
@@ -421,8 +433,9 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 				}
 			}
 		}
-		catch {
-			// 忽略无法解析的事件
+		catch (error) {
+			// 忽略无法解析的事件，但记录日志便于调试
+			console.warn('SSE chunk parse failed:', eventText.substring(0, 100), error);
 		}
 	};
 
