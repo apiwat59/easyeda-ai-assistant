@@ -23,14 +23,6 @@ function log(level: string, message: string, data?: any): void {
 }
 
 /**
- * 器件采集选项
- */
-interface CollectComponentsOptions {
-	/** 当前采集页 UUID（逐页采集时填充） */
-	schematicPageUuid?: string;
-}
-
-/**
  * 文本/总线采集选项
  */
 interface CollectTextAndBusOptions {
@@ -75,8 +67,8 @@ async function promiseAllWithLimit<T>(
  * 采集原理图数据（完全逐页采集策略）
  *
  * 性能优化要点：
- * 1. 所有元素（Component/Wire/Text/Bus）均逐页采集（allSchematicPages=true 会超时）
- * 2. 每页内并行采集所有元素类型
+ * 1. 所有元素（Component/Wire/Text/Bus/Pin）均逐页采集（避免跨页 ID 失效）
+ * 2. 每页内先采集 Wire，再采集 Component+Pin（Pin 需要 Wire 数据做网络绑定）
  * 3. 减少每个图元的属性获取次数
  */
 export async function collectSchematicData(): Promise<CollectedData> {
@@ -113,8 +105,12 @@ export async function collectSchematicData(): Promise<CollectedData> {
 		const netlistRaw = await collectNetlist();
 		log('info', `[采集] 网表采集完成 (耗时 ${Date.now() - t0}ms)`);
 
-		// 逐页采集所有元素（Component/Wire/Text/Bus）
+		// 解析网表构建 pin-net 映射（全局）
+		const netlistMap = parseNetlist(netlistRaw);
+
+		// 逐页采集所有元素（Component/Wire/Text/Bus/Pin）
 		let components: RawComponent[] = [];
+		let pins: RawPin[] = [];
 		let wires: Array<{ net: string; lines: number[][] }> = [];
 		let texts: RawText[] = [];
 		let buses: RawBus[] = [];
@@ -122,13 +118,25 @@ export async function collectSchematicData(): Promise<CollectedData> {
 		if (pages.length === 1) {
 			// 单页场景：无需切换
 			const t1 = Date.now();
-			[components, wires, texts, buses] = await Promise.all([
-				collectComponents({ schematicPageUuid: pages[0].uuid }),
+			const [pageWires, pageTexts, pageBuses] = await Promise.all([
 				collectWires(),
 				collectTexts({ schematicPageUuid: pages[0].uuid }),
 				collectBuses({ schematicPageUuid: pages[0].uuid }),
 			]);
-			log('info', `[采集] 单页数据采集完成: ${components.length} 器件, ${wires.length} 导线, ${texts.length} 文本, ${buses.length} 总线 (耗时 ${Date.now() - t1}ms)`);
+			// 采集器件+引脚（需要 Wire 数据）
+			const { components: pageComponents, pins: pagePins } = await collectComponentsAndPins({
+				schematicPageUuid: pages[0].uuid,
+				netlistMap,
+				wires: pageWires,
+			});
+
+			components = pageComponents;
+			pins = pagePins;
+			wires = pageWires;
+			texts = pageTexts;
+			buses = pageBuses;
+
+			log('info', `[采集] 单页数据采集完成: ${components.length} 器件, ${pins.length} 引脚, ${wires.length} 导线, ${texts.length} 文本, ${buses.length} 总线 (耗时 ${Date.now() - t1}ms)`);
 			meta.collectedPageUuids = [pages[0].uuid];
 			meta.collectedPageCount = 1;
 		}
@@ -150,27 +158,34 @@ export async function collectSchematicData(): Promise<CollectedData> {
 
 					await eda.dmt_EditorControl.activateDocument(pageTabId);
 
-					// 并行采集当前页的所有元素
-					const [pageComponents, pageWires, pageTexts, pageBuses] = await Promise.all([
-						collectComponents({ schematicPageUuid: page.uuid }),
+					// 先采集 Wire/Text/Bus
+					const [pageWires, pageTexts, pageBuses] = await Promise.all([
 						collectWires(),
 						collectTexts({ schematicPageUuid: page.uuid }),
 						collectBuses({ schematicPageUuid: page.uuid }),
 					]);
 
+					// 再采集器件+引脚（需要 Wire 数据做网络绑定）
+					const { components: pageComponents, pins: pagePins } = await collectComponentsAndPins({
+						schematicPageUuid: page.uuid,
+						netlistMap,
+						wires: pageWires,
+					});
+
 					components.push(...pageComponents);
+					pins.push(...pagePins);
 					wires.push(...pageWires);
 					texts.push(...pageTexts);
 					buses.push(...pageBuses);
 					meta.collectedPageUuids.push(page.uuid);
-					log('info', `[采集] 图页 ${i + 1}/${pages.length} (${page.name}): ${pageComponents.length} 器件, ${pageWires.length} 导线, ${pageTexts.length} 文本, ${pageBuses.length} 总线 (耗时 ${Date.now() - pageStartTime}ms)`);
+					log('info', `[采集] 图页 ${i + 1}/${pages.length} (${page.name}): ${pageComponents.length} 器件, ${pagePins.length} 引脚, ${pageWires.length} 导线, ${pageTexts.length} 文本, ${pageBuses.length} 总线 (耗时 ${Date.now() - pageStartTime}ms)`);
 				}
 				catch (pageError) {
 					log('error', `[采集] 采集图页失败 ${i + 1}/${pages.length} (${page.name})`, pageError);
 					meta.missingPageUuids.push(page.uuid);
 				}
 			}
-			log('info', `[采集] 逐页采集完成: 总计 ${components.length} 器件, ${wires.length} 导线, ${texts.length} 文本, ${buses.length} 总线 (总耗时 ${Date.now() - t1}ms)`);
+			log('info', `[采集] 逐页采集完成: 总计 ${components.length} 器件, ${pins.length} 引脚, ${wires.length} 导线, ${texts.length} 文本, ${buses.length} 总线 (总耗时 ${Date.now() - t1}ms)`);
 
 			meta.collectedPageCount = meta.collectedPageUuids.length;
 			if (meta.missingPageUuids.length > 0) {
@@ -190,11 +205,6 @@ export async function collectSchematicData(): Promise<CollectedData> {
 		catch (restoreError) {
 			console.warn('[采集] 恢复原始文档焦点失败:', restoreError);
 		}
-
-		// 采集引脚并绑定网络
-		const t3 = Date.now();
-		const pins = await collectPinsWithNetBinding(components, netlistRaw, wires);
-		log('info', `[采集] 引脚采集完成: ${pins.length} 个引脚 (耗时 ${Date.now() - t3}ms)`);
 
 		// 统计网络
 		const nets = buildNetStatistics(pins);
@@ -232,22 +242,27 @@ export async function collectSchematicData(): Promise<CollectedData> {
 }
 
 /**
- * 采集器件（当前页，优化并发性能）
+ * 采集当前页的器件及其引脚（统一采集，避免跨页 ID 失效）
+ *
+ * 在同一个页面上下文中完成：
+ * 1. 获取器件列表 → 过滤 netflag/netport → 获取器件详细信息
+ * 2. 获取每个器件的引脚 → 绑定网络（网表优先，导线坐标兜底）
  */
-async function collectComponents(
-	options: CollectComponentsOptions = {},
-): Promise<RawComponent[]> {
-	const { schematicPageUuid } = options;
+async function collectComponentsAndPins(options: {
+	schematicPageUuid?: string;
+	netlistMap: Map<string, string>;
+	wires: Array<{ net: string; lines: number[][] }>;
+}): Promise<{ components: RawComponent[]; pins: RawPin[] }> {
+	const { schematicPageUuid, netlistMap, wires } = options;
 
-	// 获取当前页的所有器件（allSchematicPages=false，避免超时）
+	// 获取当前页的所有器件（allSchematicPages=false）
 	const primitives = await eda.sch_PrimitiveComponent.getAll(undefined, false);
 
-	// 第一阶段：仅获取 componentType 进行过滤（减少不必要的 API 调用）
+	// 第一阶段：仅获取 componentType 进行过滤
 	const filterTasks = primitives.map(primitive => async () => ({
 		primitive,
 		componentType: await primitive.getState_ComponentType(),
 	}));
-
 	const filtered = await promiseAllWithLimit(filterTasks, 100);
 
 	// 过滤掉网络标记类器件（NET_FLAG/NET_PORT）
@@ -255,9 +270,12 @@ async function collectComponents(
 		item => item.componentType !== 'netflag' && item.componentType !== 'netport',
 	);
 
-	// 第二阶段：仅对有效器件获取详细信息
+	// 第二阶段：获取器件详细信息 + 引脚
+	const allComponents: RawComponent[] = [];
+	const allPins: RawPin[] = [];
+
 	const componentTasks = validPrimitives.map(({ primitive }) => async () => {
-		// 并行获取所有基本字段
+		// 并行获取器件基本信息 + 引脚列表
 		const [
 			primitiveId,
 			designator,
@@ -265,6 +283,7 @@ async function collectComponents(
 			x,
 			y,
 			rotation,
+			pinPrimitives,
 		] = await Promise.all([
 			primitive.getState_PrimitiveId(),
 			primitive.getState_Designator(),
@@ -272,9 +291,12 @@ async function collectComponents(
 			primitive.getState_X(),
 			primitive.getState_Y(),
 			primitive.getState_Rotation(),
+			eda.sch_PrimitiveComponent.getAllPinsByPrimitiveId(
+				await primitive.getState_PrimitiveId(),
+			),
 		]);
 
-		// 制造商信息可选，失败不影响主流程
+		// 制造商信息可选
 		let manufacturer = '';
 		let manufacturerPartNumber = '';
 		try {
@@ -289,7 +311,7 @@ async function collectComponents(
 			// 某些器件可能没有这些属性
 		}
 
-		return {
+		const component: RawComponent = {
 			primitiveId,
 			designator: designator || '',
 			name: name || '',
@@ -300,19 +322,92 @@ async function collectComponents(
 			rotation: rotation || 0,
 			schematicPageUuid,
 		};
+
+		// 采集该器件的引脚
+		const componentPins: RawPin[] = [];
+		if (pinPrimitives && pinPrimitives.length > 0) {
+			const pinTasks = pinPrimitives.map(pinPrimitive => async () => {
+				const [
+					pinPrimitiveId,
+					pinNumber,
+					pinName,
+					electricalType,
+					pinX,
+					pinY,
+				] = await Promise.all([
+					pinPrimitive.getState_PrimitiveId(),
+					pinPrimitive.getState_PinNumber(),
+					pinPrimitive.getState_PinName(),
+					pinPrimitive.getState_pinType(),
+					pinPrimitive.getState_X(),
+					pinPrimitive.getState_Y(),
+				]);
+
+				const pinKey = `${component.designator}_${pinNumber}`;
+
+				// L1: 优先使用网表映射
+				let netName: string | null = netlistMap.get(pinKey) || null;
+				let confidence = netName ? 1.0 : 0;
+				let reason = netName ? 'netlist' : 'unresolved';
+
+				// L2: 如果网表未解析，尝试通过导线坐标匹配
+				if (!netName) {
+					const wireNet = findNetByWireProximity(pinX, pinY, wires);
+					if (wireNet) {
+						netName = wireNet;
+						confidence = 0.8;
+						reason = 'wire';
+					}
+				}
+
+				return {
+					primitiveId: pinPrimitiveId,
+					componentPrimitiveId: component.primitiveId,
+					componentDesignator: component.designator,
+					pinNumber: pinNumber || '',
+					pinName: pinName || '',
+					pinType: electricalType || 'Passive',
+					netName,
+					netBindingConfidence: confidence,
+					netBindingReason: reason,
+				} as RawPin;
+			});
+
+			const pinResults = await promiseAllWithLimit(pinTasks, 50);
+			componentPins.push(...pinResults);
+		}
+
+		return { component, pins: componentPins };
 	});
 
-	return await promiseAllWithLimit(componentTasks, 50);
+	const results = await promiseAllWithLimit(componentTasks, 30);
+	for (const result of results) {
+		allComponents.push(result.component);
+		allPins.push(...result.pins);
+	}
+
+	return { components: allComponents, pins: allPins };
 }
 
 /**
- * 采集网表
+ * 采集网表（带超时保护，避免阻塞整体采集流程）
  */
 async function collectNetlist(): Promise<string | undefined> {
 	try {
-		// P2: 使用正确的枚举类型ESYS_NetlistType.JLCEDA_PRO
-		const netlist = await eda.sch_Netlist.getNetlist(ESYS_NetlistType.JLCEDA_PRO);
-		return netlist;
+		const NETLIST_TIMEOUT_MS = 10000; // 10秒超时
+
+		const result = await Promise.race([
+			eda.sch_Netlist.getNetlist(ESYS_NetlistType.JLCEDA_PRO),
+			new Promise<undefined>((resolve) => {
+				setTimeout(() => resolve(undefined), NETLIST_TIMEOUT_MS);
+			}),
+		]);
+
+		if (result === undefined) {
+			log('warn', `[采集] 网表获取超时 (${NETLIST_TIMEOUT_MS}ms)，跳过网表绑定`);
+		}
+
+		return result;
 	}
 	catch {
 		return undefined;
@@ -441,89 +536,6 @@ async function collectBuses(
 		console.warn('采集总线失败，已降级为空数组:', error);
 		return [];
 	}
-}
-
-/**
- * 采集引脚并绑定网络（优化并发性能）
- */
-async function collectPinsWithNetBinding(
-	components: RawComponent[],
-	netlistRaw: string | undefined,
-	wires: Array<{ net: string; lines: number[][] }>,
-): Promise<RawPin[]> {
-	// L1: 解析网表构建pin-net映射
-	const netlistMap = parseNetlist(netlistRaw);
-
-	// 使用并发控制获取所有器件的引脚
-	const componentTasks = components.map(component => async () => ({
-		component,
-		pinPrimitives: await eda.sch_PrimitiveComponent.getAllPinsByPrimitiveId(
-			component.primitiveId,
-		),
-	}));
-
-	const pinPrimitivesByComponent = await promiseAllWithLimit(componentTasks, 50); // 提高并发限制
-
-	// 收集所有引脚处理任务
-	const allPinTasks: Array<() => Promise<RawPin>> = [];
-
-	for (const { component, pinPrimitives } of pinPrimitivesByComponent) {
-		if (!pinPrimitives)
-			continue;
-
-		for (const pinPrimitive of pinPrimitives) {
-			// 为每个引脚创建一个任务
-			allPinTasks.push(async () => {
-				const [
-					primitiveId,
-					pinNumber,
-					pinName,
-					electricalType,
-					x,
-					y,
-				] = await Promise.all([
-					pinPrimitive.getState_PrimitiveId(),
-					pinPrimitive.getState_PinNumber(),
-					pinPrimitive.getState_PinName(),
-					pinPrimitive.getState_pinType(),
-					pinPrimitive.getState_X(),
-					pinPrimitive.getState_Y(),
-				]);
-
-				const pinKey = `${component.designator}_${pinNumber}`;
-
-				// L1: 优先使用网表映射
-				let netName: string | null = netlistMap.get(pinKey) || null;
-				let confidence = netName ? 1.0 : 0;
-				let reason = netName ? 'netlist' : 'unresolved';
-
-				// L2: 如果网表未解析，尝试通过导线坐标匹配
-				if (!netName) {
-					const wireNet = findNetByWireProximity(x, y, wires);
-					if (wireNet) {
-						netName = wireNet;
-						confidence = 0.8;
-						reason = 'wire';
-					}
-				}
-
-				return {
-					primitiveId,
-					componentPrimitiveId: component.primitiveId,
-					componentDesignator: component.designator,
-					pinNumber: pinNumber || '',
-					pinName: pinName || '',
-					pinType: electricalType || 'Passive',
-					netName,
-					netBindingConfidence: confidence,
-					netBindingReason: reason,
-				};
-			});
-		}
-	}
-
-	// 使用并发控制处理所有引脚
-	return await promiseAllWithLimit(allPinTasks, 100); // 提高并发限制
 }
 
 /**
