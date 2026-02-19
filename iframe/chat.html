@@ -1882,6 +1882,13 @@
                     return (order[a.type] || 99) - (order[b.type] || 99);
                 });
 
+                // 调试日志：检查排序结果
+                addDebugLog('info', 'renderMessages - blocks 排序', {
+                    originalOrder: msg.blocks.map(function(b) { return b.type; }),
+                    sortedOrder: sortedBlocks.map(function(b) { return b.type; }),
+                    blockCount: sortedBlocks.length
+                });
+
                 for (var i = 0; i < sortedBlocks.length; i++) {
                     var block = sortedBlocks[i];
                     if (block.type === 'thinking') {
