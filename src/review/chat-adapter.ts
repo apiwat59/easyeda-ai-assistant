@@ -364,7 +364,7 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 	let hasStartedThinking = false;
 	let hasStartedText = false;
 
-	const parseChunk = (eventText: string): { isThinking: boolean; content: string } | null => {
+	const parseChunk = (eventText: string): { isThinking: boolean; content: string; isFinish: boolean } | null => {
 		try {
 			const chunk = JSON.parse(eventText);
 			const choice = chunk?.choices?.[0];
@@ -372,6 +372,8 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 				return null;
 
 			const delta = choice.delta || {};
+			const finishReason = choice.finish_reason;
+			const isFinish = finishReason !== null && finishReason !== undefined;
 
 			// 参考 NextChat：优先检查 reasoning_content
 			const reasoning = normalizeChunkText(
@@ -379,22 +381,28 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 			);
 			const content = normalizeChunkText(delta.content);
 
-			// 检查 finish_reason
-			if (choice.finish_reason !== null && choice.finish_reason !== undefined) {
-				return { isThinking: false, content: '' }; // 标记结束
-			}
-
 			// 参考 NextChat：优先返回 reasoning
 			if (reasoning && reasoning.length > 0) {
 				return {
 					isThinking: true,
 					content: reasoning,
+					isFinish,
 				};
 			}
 			else if (content && content.length > 0) {
 				return {
 					isThinking: false,
 					content,
+					isFinish,
+				};
+			}
+
+			// 无增量但包含 finish_reason（最后一个 chunk）
+			if (isFinish) {
+				return {
+					isThinking: isInThinkingMode,
+					content: '',
+					isFinish: true,
 				};
 			}
 
@@ -406,11 +414,73 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 		}
 	};
 
+	// 安全地发送 THINKING_COMPLETE（幂等）
+	let thinkingCompleted = false;
+	const emitThinkingComplete = (): void => {
+		if (!hasStartedThinking || thinkingCompleted)
+			return;
+		emitBlock(onBlock, ChunkType.THINKING_COMPLETE, '', reasoningContent);
+		thinkingCompleted = true;
+	};
+
+	// 安全地发送 TEXT_COMPLETE（幂等）
+	let textCompleted = false;
+	const emitTextComplete = (): void => {
+		if (!hasStartedText || textCompleted)
+			return;
+		emitBlock(onBlock, ChunkType.TEXT_COMPLETE, '', textContent);
+		textCompleted = true;
+	};
+
+	// 处理已解析的 chunk
+	const handleParsedChunk = (
+		parsed: { isThinking: boolean; content: string; isFinish: boolean },
+	): void => {
+		if (parsed.content) {
+			if (parsed.isThinking) {
+				// Thinking 模式
+				if (!isInThinkingMode) {
+					if (hasStartedText)
+						emitTextComplete();
+					isInThinkingMode = true;
+					if (!hasStartedThinking) {
+						hasStartedThinking = true;
+						emitBlock(onBlock, ChunkType.THINKING_START, '', '');
+					}
+				}
+				reasoningContent += parsed.content;
+				thinkingCompleted = false;
+				emitBlock(onBlock, ChunkType.THINKING_DELTA, parsed.content, reasoningContent);
+			}
+			else {
+				// Text 模式
+				if (isInThinkingMode) {
+					emitThinkingComplete();
+					isInThinkingMode = false;
+				}
+				if (!hasStartedText) {
+					hasStartedText = true;
+					emitBlock(onBlock, ChunkType.TEXT_START, '', '');
+				}
+				textContent += parsed.content;
+				textCompleted = false;
+				emitBlock(onBlock, ChunkType.TEXT_DELTA, parsed.content, textContent);
+			}
+		}
+
+		// finish_reason 到达时补齐 COMPLETE 事件
+		if (parsed.isFinish) {
+			if (isInThinkingMode)
+				emitThinkingComplete();
+			else
+				emitTextComplete();
+		}
+	};
+
 	const flushEvent = (): void => {
 		if (currentEventData.length === 0)
 			return;
 
-		// 合并多行 data
 		const eventText = currentEventData.join('');
 		currentEventData = [];
 
@@ -418,53 +488,20 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 		if (!parsed)
 			return;
 
-		// 检查是否是结束标记
-		if (parsed.content === '') {
-			// finish_reason 触发，发送完成事件
-			if (isInThinkingMode && hasStartedThinking) {
-				emitBlock(onBlock, ChunkType.THINKING_COMPLETE, '', reasoningContent);
-			}
-			if (!isInThinkingMode && hasStartedText) {
-				emitBlock(onBlock, ChunkType.TEXT_COMPLETE, '', textContent);
-			}
-			return;
-		}
+		handleParsedChunk(parsed);
+	};
 
-		// 参考 NextChat：根据 isThinking 状态处理
-		if (parsed.isThinking) {
-			// Thinking 模式
-			if (!isInThinkingMode) {
-				// 切换到 thinking 模式
-				if (hasStartedText) {
-					// 先完成 text
-					emitBlock(onBlock, ChunkType.TEXT_COMPLETE, '', textContent);
-				}
-				isInThinkingMode = true;
-				hasStartedThinking = true;
-				emitBlock(onBlock, ChunkType.THINKING_START, '', '');
-			}
-			reasoningContent += parsed.content;
-			// 发送累积内容（参考 NextChat）
-			emitBlock(onBlock, ChunkType.THINKING_DELTA, parsed.content, reasoningContent);
-		}
-		else {
-			// Text 模式
-			if (isInThinkingMode) {
-				// 切换到 text 模式
-				if (hasStartedThinking) {
-					// 先完成 thinking
-					emitBlock(onBlock, ChunkType.THINKING_COMPLETE, '', reasoningContent);
-				}
-				isInThinkingMode = false;
-			}
-			if (!hasStartedText) {
-				hasStartedText = true;
-				emitBlock(onBlock, ChunkType.TEXT_START, '', '');
-			}
-			textContent += parsed.content;
-			// 发送累积内容（参考 NextChat）
-			emitBlock(onBlock, ChunkType.TEXT_DELTA, parsed.content, textContent);
-		}
+	// 兼容"无空行分隔"的 SSE：每次累积 data 后尝试解析
+	const maybeFlushCompletedJson = (): void => {
+		if (currentEventData.length === 0)
+			return;
+
+		const eventText = currentEventData.join('');
+		if (!isCompleteJson(eventText))
+			return;
+
+		// data 行本身已是完整 JSON，立即 flush
+		flushEvent();
 	};
 
 	for (let i = 0; i < lines.length; i++) {
@@ -488,25 +525,47 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 
 			// 累积多行 data
 			currentEventData.push(dataContent);
+			// 关键修复：兼容无空行分隔的 SSE 文本
+			maybeFlushCompletedJson();
 		}
 	}
 
 	// 处理最后一个事件
 	flushEvent();
 
-	// 确保所有已开始的 block 都收到 COMPLETE 事件
-	if (hasStartedThinking && isInThinkingMode) {
-		emitBlock(onBlock, ChunkType.THINKING_COMPLETE, '', reasoningContent);
-	}
-	if (hasStartedText && !isInThinkingMode) {
-		emitBlock(onBlock, ChunkType.TEXT_COMPLETE, '', textContent);
-	}
+	// 确保所有已开始的 block 都收到 COMPLETE 事件（幂等调用）
+	emitThinkingComplete();
+	emitTextComplete();
 
 	if (!textContent && !reasoningContent) {
 		throw new ReviewError(ErrorCode.AI_INVALID_RESPONSE, '无法从SSE响应中提取内容');
 	}
 
 	return { textContent, reasoningContent };
+}
+
+/**
+ * 判断当前 data 缓冲是否已经构成完整 JSON
+ *
+ * 用于兼容某些环境下"丢失空行分隔"的 SSE 文本：
+ * data: {...}\n\ndata: {...}\n  -> 正常
+ * data: {...}\ndata: {...}\n     -> 无空行，也能逐条解析
+ */
+function isCompleteJson(eventText: string): boolean {
+	if (!eventText)
+		return false;
+
+	const first = eventText[0];
+	if (first !== '{' && first !== '[')
+		return false;
+
+	try {
+		JSON.parse(eventText);
+		return true;
+	}
+	catch {
+		return false;
+	}
 }
 
 // ============ 辅助函数 ============
