@@ -1993,11 +1993,10 @@
             if (block.status === 'streaming') {
                 statusSpan.textContent = '思考中...';
             } else if (block.status === 'paused') {
-                var pausedSecs = ((block.thinkingMs || 0) / 1000).toFixed(1);
-                statusSpan.innerHTML = '<span class="status-paused">已停止思考（' + pausedSecs + ' 秒）</span>';
+                statusSpan.innerHTML = '<span class="status-paused">已停止思考</span>';
             } else {
-                var secs = ((block.thinkingMs || 0) / 1000).toFixed(1);
-                statusSpan.textContent = '已深度思考 ' + secs + ' 秒';
+                // 由于后端一次性发送所有事件，时间计算不准确，改为固定文案
+                statusSpan.textContent = 'AI已深度思考';
             }
 
             // 复制思考内容按钮
