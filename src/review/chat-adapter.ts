@@ -355,12 +355,8 @@ async function makeRequest(
  *   TEXT_START     → TEXT_DELTA(n)     → TEXT_COMPLETE
  */
 function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatCompletionResult {
-	console.warn('[SSE Parser] 开始解析 SSE 响应，总长度:', text.length);
-	console.warn('[SSE Parser] 前 500 字符:', text.substring(0, 500));
-
 	// 使用正则支持 \r\n 和 \n 两种换行符
 	const lines = text.split(/\r?\n/);
-	console.warn('[SSE Parser] 分割后行数:', lines.length);
 
 	let textContent = '';
 	let reasoningContent = '';
@@ -370,14 +366,11 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 	let hasStartedText = false;
 
 	const parseChunk = (eventText: string): { isThinking: boolean; content: string; isFinish: boolean } | null => {
-		console.warn('[SSE Parser] parseChunk 输入:', eventText.substring(0, 200));
 		try {
 			const chunk = JSON.parse(eventText);
-			console.warn('[SSE Parser] JSON 解析成功:', JSON.stringify(chunk).substring(0, 200));
 
 			const choice = chunk?.choices?.[0];
 			if (!choice) {
-				console.warn('[SSE Parser] 无 choices[0]，跳过');
 				return null;
 			}
 
@@ -385,10 +378,7 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 			const finishReason = choice.finish_reason;
 			const isFinish = finishReason !== null && finishReason !== undefined;
 
-			console.warn('[SSE Parser] delta:', JSON.stringify(delta).substring(0, 200));
-			console.warn('[SSE Parser] finishReason:', finishReason, 'isFinish:', isFinish);
-
-			// 参考 NextChat：优先检查 reasoning_content
+			// 参考 Cherry Studio：优先检查 reasoning_content
 			let reasoning = normalizeChunkText(
 				delta.reasoning_content || delta.reasoning,
 			);
@@ -399,7 +389,7 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 			// 这些都是 AI 的内部操作过程，应该归类为 thinking
 			// 正式回答通常以 ** 开头（Markdown 粗体）或者是普通文本
 			if (!reasoning && content) {
-				// 检测是否包含 Grok 的中间过程标记
+				// 检测是否包含 Grok 的中间过程标记（检查整个content，不只是开头）
 				const hasGrokMarkers = /\[(?:Agent\s+\d+|Grok)\]\[/.test(content) || /browse_page\s*\{/.test(content);
 
 				if (hasGrokMarkers) {
@@ -424,16 +414,12 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 					if (thinkingLines.length > 0) {
 						reasoning = thinkingLines.join('\n').trim();
 						content = contentLines.join('\n').trim();
-						console.warn('[SSE Parser] 检测到 Grok 中间过程格式, thinking 行数:', thinkingLines.length, 'content 行数:', contentLines.length);
 					}
 				}
 			}
 
-			console.warn('[SSE Parser] reasoning 长度:', reasoning.length, 'content 长度:', content.length);
-
-			// 参考 NextChat：优先返回 reasoning
+			// 参考 Cherry Studio：优先返回 reasoning
 			if (reasoning && reasoning.length > 0) {
-				console.warn('[SSE Parser] 返回 thinking 模式, content:', reasoning.substring(0, 50));
 				return {
 					isThinking: true,
 					content: reasoning,
@@ -441,7 +427,6 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 				};
 			}
 			else if (content && content.length > 0) {
-				console.warn('[SSE Parser] 返回 text 模式, content:', content.substring(0, 50));
 				return {
 					isThinking: false,
 					content,
@@ -451,7 +436,6 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 
 			// 无增量但包含 finish_reason（最后一个 chunk）
 			if (isFinish) {
-				console.warn('[SSE Parser] 返回 finish 标记, isInThinkingMode:', isInThinkingMode);
 				return {
 					isThinking: isInThinkingMode,
 					content: '',
@@ -459,7 +443,6 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 				};
 			}
 
-			console.warn('[SSE Parser] 返回 null（空 chunk）');
 			return null; // 空 chunk
 		}
 		catch (error) {
@@ -472,10 +455,8 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 	let thinkingCompleted = false;
 	const emitThinkingComplete = (): void => {
 		if (!hasStartedThinking || thinkingCompleted) {
-			console.warn('[SSE Parser] emitThinkingComplete 跳过 (hasStarted:', hasStartedThinking, 'completed:', thinkingCompleted, ')');
 			return;
 		}
-		console.warn('[SSE Parser] 发送 THINKING_COMPLETE, 累积长度:', reasoningContent.length);
 		emitBlock(onBlock, ChunkType.THINKING_COMPLETE, '', reasoningContent);
 		thinkingCompleted = true;
 	};
@@ -484,10 +465,8 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 	let textCompleted = false;
 	const emitTextComplete = (): void => {
 		if (!hasStartedText || textCompleted) {
-			console.warn('[SSE Parser] emitTextComplete 跳过 (hasStarted:', hasStartedText, 'completed:', textCompleted, ')');
 			return;
 		}
-		console.warn('[SSE Parser] 发送 TEXT_COMPLETE, 累积长度:', textContent.length);
 		emitBlock(onBlock, ChunkType.TEXT_COMPLETE, '', textContent);
 		textCompleted = true;
 	};
@@ -496,49 +475,40 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 	const handleParsedChunk = (
 		parsed: { isThinking: boolean; content: string; isFinish: boolean },
 	): void => {
-		console.warn('[SSE Parser] handleParsedChunk, isThinking:', parsed.isThinking, 'content 长度:', parsed.content.length, 'isFinish:', parsed.isFinish);
-
 		if (parsed.content) {
 			if (parsed.isThinking) {
 				// Thinking 模式
 				if (!isInThinkingMode) {
-					console.warn('[SSE Parser] 切换到 thinking 模式');
 					if (hasStartedText)
 						emitTextComplete();
 					isInThinkingMode = true;
 					if (!hasStartedThinking) {
 						hasStartedThinking = true;
-						console.warn('[SSE Parser] 发送 THINKING_START');
 						emitBlock(onBlock, ChunkType.THINKING_START, '', '');
 					}
 				}
 				reasoningContent += parsed.content;
 				thinkingCompleted = false;
-				console.warn('[SSE Parser] 发送 THINKING_DELTA, 增量:', parsed.content.length, '累积:', reasoningContent.length);
 				emitBlock(onBlock, ChunkType.THINKING_DELTA, parsed.content, reasoningContent);
 			}
 			else {
 				// Text 模式
 				if (isInThinkingMode) {
-					console.warn('[SSE Parser] 切换到 text 模式');
 					emitThinkingComplete();
 					isInThinkingMode = false;
 				}
 				if (!hasStartedText) {
 					hasStartedText = true;
-					console.warn('[SSE Parser] 发送 TEXT_START');
 					emitBlock(onBlock, ChunkType.TEXT_START, '', '');
 				}
 				textContent += parsed.content;
 				textCompleted = false;
-				console.warn('[SSE Parser] 发送 TEXT_DELTA, 增量:', parsed.content.length, '累积:', textContent.length);
 				emitBlock(onBlock, ChunkType.TEXT_DELTA, parsed.content, textContent);
 			}
 		}
 
 		// finish_reason 到达时补齐 COMPLETE 事件
 		if (parsed.isFinish) {
-			console.warn('[SSE Parser] 收到 finish 标记');
 			if (isInThinkingMode)
 				emitThinkingComplete();
 			else
@@ -551,12 +521,10 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 			return;
 
 		const eventText = currentEventData.join('');
-		console.warn('[SSE Parser] flushEvent, 累积 data 行数:', currentEventData.length, '合并后长度:', eventText.length);
 		currentEventData = [];
 
 		const parsed = parseChunk(eventText);
 		if (!parsed) {
-			console.warn('[SSE Parser] parseChunk 返回 null，跳过');
 			return;
 		}
 
@@ -570,23 +538,19 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 
 		const eventText = currentEventData.join('');
 		if (!isCompleteJson(eventText)) {
-			console.warn('[SSE Parser] maybeFlushCompletedJson: 不是完整 JSON，继续累积');
 			return;
 		}
 
-		console.warn('[SSE Parser] maybeFlushCompletedJson: 检测到完整 JSON，立即 flush');
 		// data 行本身已是完整 JSON，立即 flush
 		flushEvent();
 	};
 
-	let eventCount = 0;
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i].trim();
 
 		// 空行表示事件结束
 		if (line === '') {
 			if (currentEventData.length > 0) {
-				console.warn(`[SSE Parser] 遇到空行，flush 事件 #${++eventCount}`);
 				flushEvent();
 			}
 			continue;
@@ -598,12 +562,10 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 
 			// 跳过 [DONE] 标记
 			if (dataContent === '[DONE]') {
-				console.warn('[SSE Parser] 遇到 [DONE] 标记');
 				flushEvent();
 				continue;
 			}
 
-			console.warn(`[SSE Parser] 累积 data 行 #${i + 1}:`, dataContent.substring(0, 100));
 			// 累积多行 data
 			currentEventData.push(dataContent);
 			// 关键修复：兼容无空行分隔的 SSE 文本
@@ -613,16 +575,12 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 
 	// 处理最后一个事件
 	if (currentEventData.length > 0) {
-		console.warn('[SSE Parser] 处理最后一个事件');
 		flushEvent();
 	}
 
 	// 确保所有已开始的 block 都收到 COMPLETE 事件（幂等调用）
-	console.warn('[SSE Parser] 最终清理，发送剩余 COMPLETE 事件');
 	emitThinkingComplete();
 	emitTextComplete();
-
-	console.warn('[SSE Parser] 解析完成，textContent 长度:', textContent.length, 'reasoningContent 长度:', reasoningContent.length);
 
 	if (!textContent && !reasoningContent) {
 		console.error('[SSE Parser] 错误：无法从 SSE 响应中提取内容');
