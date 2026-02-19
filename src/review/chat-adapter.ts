@@ -293,6 +293,28 @@ async function readStreamingResponse(
 			}
 		}
 
+		// 在最终累积内容上提取标签（修复跨chunk标签问题）
+		let finalReasoning = reasoningContent;
+		let finalText = textContent;
+
+		// 如果没有 reasoning 但 text 中包含标签，提取之
+		if (!finalReasoning && finalText) {
+			const thinkTagRegex = /<think>[\s\S]*?<\/think>|<thought>[\s\S]*?<\/thought>|<thinking>[\s\S]*?<\/thinking>/gi;
+			const thinkMatches = finalText.match(thinkTagRegex);
+			if (thinkMatches && thinkMatches.length > 0) {
+				// 提取标签内的内容作为 thinking
+				finalReasoning = thinkMatches.map((match) => {
+					return match.replace(/<\/?think(?:ing|thought)>/gi, '').trim();
+				}).join('\n\n');
+				// 从 text 中移除标签及其内容
+				finalText = finalText.replace(thinkTagRegex, '').trim();
+
+				// 更新累积内容
+				reasoningContent = finalReasoning;
+				textContent = finalText;
+			}
+		}
+
 		// 发送完成事件
 		if (onBlock) {
 			if (reasoningContent) {
@@ -747,6 +769,28 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 	// 处理最后一个事件
 	if (currentEventData.length > 0) {
 		flushEvent();
+	}
+
+	// 在最终累积内容上提取标签（修复跨chunk标签问题）
+	let finalReasoning = reasoningContent;
+	let finalText = textContent;
+
+	// 如果没有 reasoning 但 text 中包含标签，提取之
+	if (!finalReasoning && finalText) {
+		const thinkTagRegex = /<think>[\s\S]*?<\/think>|<thought>[\s\S]*?<\/thought>|<thinking>[\s\S]*?<\/thinking>/gi;
+		const thinkMatches = finalText.match(thinkTagRegex);
+		if (thinkMatches && thinkMatches.length > 0) {
+			// 提取标签内的内容作为 thinking
+			finalReasoning = thinkMatches.map((match) => {
+				return match.replace(/<\/?think(?:ing|thought)>/gi, '').trim();
+			}).join('\n\n');
+			// 从 text 中移除标签及其内容
+			finalText = finalText.replace(thinkTagRegex, '').trim();
+
+			// 重新发送正确的内容
+			reasoningContent = finalReasoning;
+			textContent = finalText;
+		}
 	}
 
 	// 确保所有已开始的 block 都收到 COMPLETE 事件（幂等调用）
