@@ -94,8 +94,9 @@ export class ChatSession {
 		// 构建用户消息内容
 		const userContent = this.buildUserContent(userMsg);
 
-		// 将用户消息加入历史
-		this.history.push({ role: 'user', content: userContent });
+		// 将用户消息加入历史（保存引用用于精确回滚）
+		const userHistoryEntry: ChatMessage = { role: 'user', content: userContent };
+		this.history.push(userHistoryEntry);
 
 		// 构建完整消息列表
 		const messages: ChatMessage[] = [
@@ -116,8 +117,11 @@ export class ChatSession {
 			return result.textContent;
 		}
 		catch (error) {
-			// 失败时移除刚加入的用户消息，保持历史一致
-			this.history.pop();
+			// 失败时精确移除刚加入的用户消息（防止并发场景下误删）
+			const rollbackIndex = this.history.lastIndexOf(userHistoryEntry);
+			if (rollbackIndex >= 0) {
+				this.history.splice(rollbackIndex, 1);
+			}
 			throw error;
 		}
 	}
@@ -273,14 +277,16 @@ async function makeRequest(
 		}
 
 		// 读取完整响应（EDA API 不支持真正的流式传输）
-		let responseText: string;
+		let responseText = '';
 		try {
-			responseText = await response.text();
+			const rawResponseText = await response.text();
+			// 防御性类型转换：确保是字符串
+			responseText = coerceToString(rawResponseText);
 			console.warn('[makeRequest] response.text() 成功:', {
 				url,
-				textLength: responseText?.length || 0,
-				textType: typeof responseText,
-				textPreview: responseText ? responseText.substring(0, 200) : 'N/A',
+				textLength: responseText.length,
+				textType: typeof rawResponseText,
+				textPreview: responseText.substring(0, 200),
 			});
 		}
 		catch (error) {
@@ -331,8 +337,8 @@ async function makeRequest(
 		// 提取 <think> 标签（如果 AI 在 content 中包含了思考过程）
 		const { finalText, extractedReasoning } = extractThinkTags(textContent);
 
-		// 合并提取的 reasoning
-		const finalReasoning = reasoningContent || extractedReasoning;
+		// 合并提取的 reasoning（优先使用非空白的 reasoningContent）
+		const finalReasoning = hasNonWhitespace(reasoningContent) ? reasoningContent : extractedReasoning;
 
 		// 发送事件
 		emitCompleteBlocks(finalText, finalReasoning, onBlock);
@@ -511,7 +517,7 @@ function serializeUnknownError(error: unknown): any {
 	return String(error);
 }
 
-function handleHttpError(status: number, errorText: string, url: string): never {
+function handleHttpError(status: number, errorText: unknown, url: string): never {
 	let errorMessage = `HTTP ${status}`;
 	let errorCode = ErrorCode.AI_NETWORK_ERROR;
 
@@ -534,7 +540,35 @@ function handleHttpError(status: number, errorText: string, url: string): never 
 		{
 			url,
 			status,
-			responseBody: errorText.substring(0, 500),
+			responseBody: coerceToString(errorText).substring(0, 500),
 		},
 	);
+}
+
+/**
+ * 检查字符串是否包含非空白字符
+ */
+function hasNonWhitespace(text: string): boolean {
+	return text.trim().length > 0;
+}
+
+/**
+ * 将未知类型强制转换为字符串
+ */
+function coerceToString(value: unknown): string {
+	if (typeof value === 'string') {
+		return value;
+	}
+	if (value === null || value === undefined) {
+		return '';
+	}
+	if (typeof value === 'object') {
+		try {
+			return JSON.stringify(value);
+		}
+		catch {
+			return String(value);
+		}
+	}
+	return String(value);
 }
