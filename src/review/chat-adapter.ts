@@ -223,6 +223,20 @@ async function readStreamingResponse(
 						let reasoning = delta.reasoning_content || '';
 						let content = delta.content || '';
 
+						// 标签格式检测和分离（<think>, <thought>, <thinking> 等）
+						if (!reasoning && content) {
+							const thinkTagRegex = /<think>[\s\S]*?<\/think>|<thought>[\s\S]*?<\/thought>|<thinking>[\s\S]*?<\/thinking>/gi;
+							const thinkMatches = content.match(thinkTagRegex);
+							if (thinkMatches && thinkMatches.length > 0) {
+								// 提取标签内的内容作为 thinking
+								reasoning = thinkMatches.map((match) => {
+									return match.replace(/<\/?think(?:ing|thought)>/gi, '').trim();
+								}).join('\n\n');
+								// 从 content 中移除标签及其内容
+								content = content.replace(thinkTagRegex, '').trim();
+							}
+						}
+
 						// Grok 格式检测和分离
 						if (!reasoning && content) {
 							const hasGrokMarkers = /\[(?:Agent\s+\d+|Grok)\]\[/.test(content) || /browse_page\s*\{/.test(content);
@@ -526,6 +540,20 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 				delta.reasoning_content || delta.reasoning,
 			);
 			let content = normalizeChunkText(delta.content);
+
+			// 标签格式检测和分离（<think>, <thought>, <thinking> 等）
+			if (!reasoning && content) {
+				const thinkTagRegex = /<think>[\s\S]*?<\/think>|<thought>[\s\S]*?<\/thought>|<thinking>[\s\S]*?<\/thinking>/gi;
+				const thinkMatches = content.match(thinkTagRegex);
+				if (thinkMatches && thinkMatches.length > 0) {
+					// 提取标签内的内容作为 thinking
+					reasoning = thinkMatches.map((match) => {
+						return match.replace(/<\/?think(?:ing|thought)>/gi, '').trim();
+					}).join('\n\n');
+					// 从 content 中移除标签及其内容
+					content = content.replace(thinkTagRegex, '').trim();
+				}
+			}
 
 			// 支持 Grok 的行前缀标记格式
 			// Grok 输出格式：[Agent X][AgentThink]、[Agent X][WebSearch]、[Grok][WebSearch]、browse_page {...}
