@@ -3,7 +3,7 @@
 	"uuid": "1756b096fd414831bfa7a0c3556f129f",
 	"displayName": "AI Schematic Assistant",
 	"description": "AI-powered schematic review and chat assistant for EasyEDA Pro",
-	"version": "1.0.0",
+	"version": "1.1.0",
 	"publisher": "jifengshandian",
 	"engines": {
 		"eda": "^3.0.0"
