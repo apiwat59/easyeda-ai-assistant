@@ -465,19 +465,36 @@ function emitCompleteBlocks(
 	reasoningContent: string,
 	onBlock?: MessageBlockHandler,
 ): void {
-	if (!onBlock)
+	if (!onBlock) {
+		console.warn('[emitCompleteBlocks] onBlock 回调为空，跳过事件发送');
 		return;
+	}
+
+	console.warn('[emitCompleteBlocks] 准备发送事件:', {
+		hasReasoning: !!reasoningContent,
+		hasText: !!textContent,
+		reasoningLength: reasoningContent.length,
+		textLength: textContent.length,
+	});
 
 	if (reasoningContent) {
+		console.warn('[emitCompleteBlocks] 发送 THINKING 事件');
 		onBlock({ type: ChunkType.THINKING_START, content: '', accumulatedContent: '' });
 		onBlock({ type: ChunkType.THINKING_DELTA, content: reasoningContent, accumulatedContent: reasoningContent });
 		onBlock({ type: ChunkType.THINKING_COMPLETE, content: '', accumulatedContent: reasoningContent, status: 'success' });
 	}
+	else {
+		console.warn('[emitCompleteBlocks] 没有 reasoning 内容，跳过 THINKING 事件');
+	}
 
 	if (textContent) {
+		console.warn('[emitCompleteBlocks] 发送 TEXT 事件');
 		onBlock({ type: ChunkType.TEXT_START, content: '', accumulatedContent: '' });
 		onBlock({ type: ChunkType.TEXT_DELTA, content: textContent, accumulatedContent: textContent });
 		onBlock({ type: ChunkType.TEXT_COMPLETE, content: '', accumulatedContent: textContent, status: 'success' });
+	}
+	else {
+		console.warn('[emitCompleteBlocks] 没有 text 内容，跳过 TEXT 事件');
 	}
 }
 
