@@ -58,9 +58,17 @@ async function promiseAllWithLimit<T>(
 }
 
 /**
- * 采集原理图数据（使用 allSchematicPages=true 一次性获取所有页数据）
+ * 采集原理图数据（优化的逐页采集策略）
+ *
+ * 性能优化要点：
+ * 1. Component 使用 allSchematicPages=true 一次性获取所有页
+ * 2. Wire/Text/Bus 必须逐页切换（API 限制）
+ * 3. 减少每个图元的属性获取次数
  */
 export async function collectSchematicData(): Promise<CollectedData> {
+	const startTime = Date.now();
+	console.warn('[采集] 开始采集原理图数据...');
+
 	// 检查是否有打开的原理图文档
 	const docInfo = await eda.dmt_SelectControl.getCurrentDocumentInfo();
 	if (!docInfo || docInfo.documentType !== 1) { // EDMT_EditorDocumentType.SCHEMATIC_PAGE = 1
@@ -70,6 +78,7 @@ export async function collectSchematicData(): Promise<CollectedData> {
 		);
 	}
 
+	const originalTabId = docInfo.tabId;
 	const meta: CollectionMeta = {
 		mode: 'api-all-pages',
 		quality: 'full',
@@ -80,38 +89,103 @@ export async function collectSchematicData(): Promise<CollectedData> {
 	};
 
 	try {
-		// 网表可跨页使用，优先独立采集
-		const netlistRaw = await collectNetlist();
-
-		// 获取当前原理图下的全部图页信息（用于元数据）
+		// 获取当前原理图下的全部图页信息
 		const pages = await eda.dmt_Schematic.getCurrentSchematicAllSchematicPagesInfo();
 		meta.expectedPageCount = pages.length;
+		console.warn(`[采集] 检测到 ${pages.length} 个图页`);
 
-		// 使用 allSchematicPages=true 一次性获取所有页的数据（无需逐页切换）
-		const [components, wires, texts, buses] = await Promise.all([
+		// 并行采集：网表 + 器件（使用 allSchematicPages=true）
+		const t1 = Date.now();
+		const [netlistRaw, components] = await Promise.all([
+			collectNetlist(),
 			collectComponents({ allSchematicPages: true }),
-			collectWires(),
-			collectTexts(),
-			collectBuses(),
 		]);
+		console.warn(`[采集] 器件采集完成: ${components.length} 个器件 (耗时 ${Date.now() - t1}ms)`);
 
-		// 记录采集到的页面 UUID
-		meta.collectedPageUuids = pages.map(p => p.uuid);
-		meta.collectedPageCount = pages.length;
+		// 逐页采集 Wire/Text/Bus（API 限制，必须切换页面）
+		let wires: Array<{ net: string; lines: number[][] }> = [];
+		let texts: RawText[] = [];
+		let buses: RawBus[] = [];
 
-		// 检查数据完整性
-		if (components.length > 0 || wires.length > 0) {
-			meta.quality = 'full';
+		if (pages.length === 1) {
+			// 单页场景：无需切换
+			const t2 = Date.now();
+			[wires, texts, buses] = await Promise.all([
+				collectWires(),
+				collectTexts(),
+				collectBuses(),
+			]);
+			console.warn(`[采集] 单页数据采集完成: ${wires.length} 导线, ${texts.length} 文本, ${buses.length} 总线 (耗时 ${Date.now() - t2}ms)`);
+			meta.collectedPageUuids = [pages[0].uuid];
+			meta.collectedPageCount = 1;
 		}
 		else {
+			// 多页场景：快速逐页切换采集
+			console.warn(`[采集] 开始逐页采集 Wire/Text/Bus...`);
+			const t2 = Date.now();
+			for (let i = 0; i < pages.length; i++) {
+				const page = pages[i];
+				const pageStartTime = Date.now();
+				try {
+					// 打开并激活页面
+					const pageTabId = await eda.dmt_EditorControl.openDocument(page.uuid);
+					if (!pageTabId) {
+						console.warn(`[采集] 无法打开图页 ${i + 1}/${pages.length}: ${page.name}`);
+						meta.missingPageUuids.push(page.uuid);
+						continue;
+					}
+
+					await eda.dmt_EditorControl.activateDocument(pageTabId);
+
+					// 并行采集当前页的 Wire/Text/Bus
+					const [pageWires, pageTexts, pageBuses] = await Promise.all([
+						collectWires(),
+						collectTexts(),
+						collectBuses(),
+					]);
+
+					wires.push(...pageWires);
+					texts.push(...pageTexts);
+					buses.push(...pageBuses);
+					meta.collectedPageUuids.push(page.uuid);
+					console.warn(`[采集] 图页 ${i + 1}/${pages.length} (${page.name}): ${pageWires.length} 导线, ${pageTexts.length} 文本, ${pageBuses.length} 总线 (耗时 ${Date.now() - pageStartTime}ms)`);
+				}
+				catch (pageError) {
+					console.warn(`[采集] 采集图页失败 ${i + 1}/${pages.length} (${page.name}):`, pageError);
+					meta.missingPageUuids.push(page.uuid);
+				}
+			}
+			console.warn(`[采集] 逐页采集完成: 总计 ${wires.length} 导线, ${texts.length} 文本, ${buses.length} 总线 (总耗时 ${Date.now() - t2}ms)`);
+
+			meta.collectedPageCount = meta.collectedPageUuids.length;
+			if (meta.missingPageUuids.length > 0) {
+				meta.quality = 'partial';
+			}
+		}
+
+		// 检查数据完整性
+		if (components.length === 0 && wires.length === 0) {
 			meta.quality = 'stale';
 		}
 
+		// 恢复用户原始焦点页
+		try {
+			await eda.dmt_EditorControl.activateDocument(originalTabId);
+		}
+		catch (restoreError) {
+			console.warn('[采集] 恢复原始文档焦点失败:', restoreError);
+		}
+
 		// 采集引脚并绑定网络
+		const t3 = Date.now();
 		const pins = await collectPinsWithNetBinding(components, netlistRaw, wires);
+		console.warn(`[采集] 引脚采集完成: ${pins.length} 个引脚 (耗时 ${Date.now() - t3}ms)`);
 
 		// 统计网络
 		const nets = buildNetStatistics(pins);
+
+		const totalTime = Date.now() - startTime;
+		console.warn(`[采集] 采集完成: ${components.length} 器件, ${pins.length} 引脚, ${nets.length} 网络 (总耗时 ${totalTime}ms)`);
 
 		return {
 			components,
@@ -125,6 +199,15 @@ export async function collectSchematicData(): Promise<CollectedData> {
 		};
 	}
 	catch (error) {
+		// 确保恢复原始焦点页
+		try {
+			await eda.dmt_EditorControl.activateDocument(originalTabId);
+		}
+		catch {
+			// ignore
+		}
+
+		console.error('[采集] 采集失败:', error);
 		throw new ReviewError(
 			ErrorCode.COLLECT_API_FAILED,
 			`数据采集失败: ${error instanceof Error ? error.message : String(error)}`,
@@ -134,7 +217,7 @@ export async function collectSchematicData(): Promise<CollectedData> {
 }
 
 /**
- * 采集器件（支持逐页和降级两种模式）
+ * 采集器件（优化并发性能）
  */
 async function collectComponents(
 	options: CollectComponentsOptions = {},
@@ -149,7 +232,7 @@ async function collectComponents(
 		componentType: await primitive.getState_ComponentType(),
 	}));
 
-	const filtered = await promiseAllWithLimit(filterTasks, 50);
+	const filtered = await promiseAllWithLimit(filterTasks, 100); // 提高并发限制
 
 	// 过滤掉网络标记类器件（NET_FLAG/NET_PORT）
 	const validPrimitives = filtered.filter(
@@ -175,7 +258,7 @@ async function collectComponents(
 			primitive.getState_Rotation(),
 		]);
 
-		// 并行获取制造商信息（可能不存在）
+		// 制造商信息可选，失败不影响主流程
 		let manufacturer = '';
 		let manufacturerPartNumber = '';
 		try {
@@ -203,7 +286,7 @@ async function collectComponents(
 		};
 	});
 
-	const results = await promiseAllWithLimit(componentTasks, 20);
+	const results = await promiseAllWithLimit(componentTasks, 50); // 提高并发限制
 	return results;
 }
 
@@ -346,7 +429,7 @@ async function collectBuses(
 }
 
 /**
- * 采集引脚并绑定网络（4级策略）
+ * 采集引脚并绑定网络（优化并发性能）
  */
 async function collectPinsWithNetBinding(
 	components: RawComponent[],
@@ -356,8 +439,7 @@ async function collectPinsWithNetBinding(
 	// L1: 解析网表构建pin-net映射
 	const netlistMap = parseNetlist(netlistRaw);
 
-	// 使用并发控制获取所有器件的引脚，限制同时处理30个器件
-	// 使用并发控制获取所有器件的引脚，限制同时处理20个器件
+	// 使用并发控制获取所有器件的引脚
 	const componentTasks = components.map(component => async () => ({
 		component,
 		pinPrimitives: await eda.sch_PrimitiveComponent.getAllPinsByPrimitiveId(
@@ -365,7 +447,7 @@ async function collectPinsWithNetBinding(
 		),
 	}));
 
-	const pinPrimitivesByComponent = await promiseAllWithLimit(componentTasks, 20);
+	const pinPrimitivesByComponent = await promiseAllWithLimit(componentTasks, 50); // 提高并发限制
 
 	// 收集所有引脚处理任务
 	const allPinTasks: Array<() => Promise<RawPin>> = [];
@@ -425,8 +507,8 @@ async function collectPinsWithNetBinding(
 		}
 	}
 
-	// 使用并发控制处理所有引脚，限制同时处理30个引脚
-	return await promiseAllWithLimit(allPinTasks, 30);
+	// 使用并发控制处理所有引脚
+	return await promiseAllWithLimit(allPinTasks, 100); // 提高并发限制
 }
 
 /**

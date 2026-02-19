@@ -92,9 +92,7 @@ export function triggerBackgroundCollection(
 	if (backgroundCollectionInFlight) {
 		backgroundCollectionRerunPending = true;
 		backgroundCollectionRerunReason = reason;
-		// 使用最后一次触发的 notifyIFrame 值，不再 OR 累积
-		// 避免定时器（notifyIFrame=false）的 rerun 继承 startAIChat 的 true 导致覆盖
-		backgroundCollectionRerunNotify = notifyIFrame;
+		backgroundCollectionRerunNotify = backgroundCollectionRerunNotify || notifyIFrame;
 		return backgroundCollectionInFlight;
 	}
 
@@ -129,9 +127,9 @@ async function executeBackgroundCollection(
 	reason: string,
 	notifyIFrame: boolean,
 ): Promise<void> {
+	const startTime = Date.now();
 	try {
-		// 仅在没有可用缓存时才发送"采集中"状态，避免覆盖已显示的数据
-		if (notifyIFrame && !cachedSchematicData) {
+		if (notifyIFrame) {
 			publishToIFrame(CHAT_TOPICS.SCHEMATIC_DATA, {
 				summary: {
 					components: -1, // -1 表示正在采集
@@ -142,10 +140,20 @@ async function executeBackgroundCollection(
 			});
 		}
 
+		// 发送采集开始事件到 IFrame 调试日志
+		publishToIFrame('ai-chat/debug-log', {
+			level: 'info',
+			message: `后台采集开始 (原因: ${reason}, epoch: ${epoch})`,
+		});
+
 		const collected = await collectSchematicData();
 
 		// epoch/version：只接纳最新采集结果，过期结果直接丢弃
 		if (epoch !== backgroundCollectionEpoch) {
+			publishToIFrame('ai-chat/debug-log', {
+				level: 'warn',
+				message: `采集结果被丢弃 (epoch ${epoch} 已过期, 当前 ${backgroundCollectionEpoch})`,
+			});
 			return;
 		}
 
@@ -156,6 +164,23 @@ async function executeBackgroundCollection(
 			session.setSchematicContext(collected);
 		}
 
+		const elapsed = Date.now() - startTime;
+
+		// 发送详细采集结果到 IFrame 调试日志
+		publishToIFrame('ai-chat/debug-log', {
+			level: 'success',
+			message: `采集完成 (耗时 ${elapsed}ms)`,
+			data: {
+				components: collected.components.length,
+				pins: collected.pins.length,
+				nets: collected.nets.length,
+				texts: collected.texts?.length || 0,
+				buses: collected.buses?.length || 0,
+				meta: collected.meta,
+				elapsed,
+			},
+		});
+
 		if (notifyIFrame) {
 			publishToIFrame(CHAT_TOPICS.SCHEMATIC_DATA, {
 				summary: {
@@ -164,7 +189,6 @@ async function executeBackgroundCollection(
 					nets: collected.nets.length,
 				},
 				timestamp: collected.timestamp,
-				meta: collected.meta,
 			});
 		}
 	}
@@ -174,7 +198,16 @@ async function executeBackgroundCollection(
 			return;
 		}
 
+		const elapsed = Date.now() - startTime;
+		const errorMsg = error instanceof Error ? error.message : String(error);
 		console.warn(`后台采集数据失败(${reason}):`, error);
+
+		// 发送错误日志到 IFrame
+		publishToIFrame('ai-chat/debug-log', {
+			level: 'error',
+			message: `采集失败 (耗时 ${elapsed}ms): ${errorMsg}`,
+		});
+
 		if (notifyIFrame) {
 			// 采集失败不阻塞 UI，对话仍可继续
 			publishToIFrame(CHAT_TOPICS.SCHEMATIC_DATA, {
@@ -205,7 +238,6 @@ function setupChatListeners(): void {
 					nets: cachedSchematicData.nets.length,
 				},
 				timestamp: cachedSchematicData.timestamp,
-				meta: cachedSchematicData.meta,
 			});
 		}
 		else {
