@@ -445,25 +445,75 @@ async function collectComponentsAndPins(options: {
 }
 
 /**
- * 采集网表（带超时保护，避免阻塞整体采集流程）
+ * 后台网表获取状态（用于延迟回填）
+ */
+interface BackgroundNetlistState {
+	promise: Promise<string | undefined>;
+	startTime: number;
+	completed: boolean;
+	result?: string;
+	duration?: number;
+}
+
+let backgroundNetlistState: BackgroundNetlistState | null = null;
+
+/**
+ * 采集网表（带超时保护 + 后台继续获取）
+ *
+ * 策略：
+ * 1. 启动网表获取，设置 10 秒超时
+ * 2. 如果超时，返回 undefined 让主流程继续（使用 L2/L3/L4）
+ * 3. 但网表获取在后台继续运行，记录实际耗时
+ * 4. 如果最终成功，通过 orchestrator 触发重新绑定
  */
 async function collectNetlist(): Promise<string | undefined> {
 	try {
-		const NETLIST_TIMEOUT_MS = 10000; // 10秒超时
+		const NETLIST_TIMEOUT_MS = 10000; // 10秒超时（主流程）
+		const startTime = Date.now();
 
-		// 尝试使用 Protel2 格式（通常比 JLCEDA_PRO 更快）
+		// 启动网表获取（不取消，让它在后台继续）
+		const netlistPromise = eda.sch_Netlist.getNetlist(ESYS_NetlistType.PROTEL2);
+
+		// 保存到全局状态，供后续查询
+		backgroundNetlistState = {
+			promise: netlistPromise.then(
+				(result) => {
+					const duration = Date.now() - startTime;
+					if (backgroundNetlistState) {
+						backgroundNetlistState.completed = true;
+						backgroundNetlistState.result = result;
+						backgroundNetlistState.duration = duration;
+					}
+					log('success', `[采集] 网表后台获取成功 (耗时 ${duration}ms, 大小: ${result.length} 字符)`);
+					return result;
+				},
+				(error) => {
+					const duration = Date.now() - startTime;
+					if (backgroundNetlistState) {
+						backgroundNetlistState.completed = true;
+						backgroundNetlistState.duration = duration;
+					}
+					log('error', `[采集] 网表后台获取失败 (耗时 ${duration}ms): ${error instanceof Error ? error.message : String(error)}`);
+					return undefined;
+				},
+			),
+			startTime,
+			completed: false,
+		};
+
+		// 主流程等待超时
 		const result = await Promise.race([
-			eda.sch_Netlist.getNetlist(ESYS_NetlistType.PROTEL2),
+			netlistPromise,
 			new Promise<undefined>((resolve) => {
 				setTimeout(() => resolve(undefined), NETLIST_TIMEOUT_MS);
 			}),
 		]);
 
 		if (result === undefined) {
-			log('warn', `[采集] 网表获取超时 (${NETLIST_TIMEOUT_MS}ms)，跳过网表绑定`);
+			log('warn', `[采集] 网表获取超时 (${NETLIST_TIMEOUT_MS}ms)，跳过网表绑定（后台继续获取中...）`);
 		}
 		else {
-			log('info', `[采集] 网表格式: Protel2, 大小: ${result.length} 字符`);
+			log('info', `[采集] 网表格式: Protel2, 大小: ${result.length} 字符 (耗时 ${Date.now() - startTime}ms)`);
 		}
 
 		return result;
@@ -472,6 +522,20 @@ async function collectNetlist(): Promise<string | undefined> {
 		log('warn', `[采集] 网表获取失败: ${error instanceof Error ? error.message : String(error)}`);
 		return undefined;
 	}
+}
+
+/**
+ * 获取后台网表状态（供外部查询）
+ */
+export function getBackgroundNetlistState(): BackgroundNetlistState | null {
+	return backgroundNetlistState;
+}
+
+/**
+ * 清除后台网表状态
+ */
+export function clearBackgroundNetlistState(): void {
+	backgroundNetlistState = null;
 }
 
 /**
@@ -690,7 +754,7 @@ async function collectNetLabels(
 /**
  * 解析网表字符串（支持 JLCEDA_PRO 和 Protel2 格式）
  */
-function parseNetlist(netlistRaw: string | undefined): Map<string, string> {
+export function parseNetlist(netlistRaw: string | undefined): Map<string, string> {
 	const map = new Map<string, string>();
 	if (!netlistRaw)
 		return map;

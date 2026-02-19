@@ -6,7 +6,7 @@
  */
 import type { AbortRequest, AIBlockResponse, CollectedData, MessageBlock, RegenerateRequest, UserMessage } from './types';
 import { ChatSession } from './chat-adapter';
-import { collectSchematicData, setLogToIFrame } from './collector';
+import { clearBackgroundNetlistState, collectSchematicData, getBackgroundNetlistState, parseNetlist, setLogToIFrame } from './collector';
 import { loadChatHistory, loadConfig, saveChatHistory, saveConfig, validateConfig } from './config';
 import { CHAT_TOPICS, ChunkType, ErrorCode, ReviewError } from './types';
 
@@ -196,6 +196,9 @@ async function executeBackgroundCollection(
 				timestamp: collected.timestamp,
 			});
 		}
+
+		// 如果网表超时但后台仍在获取，启动延迟回填
+		void scheduleNetlistBackfill(epoch, collected);
 	}
 	catch (error) {
 		// 过期任务失败不需要覆盖新任务状态
@@ -225,6 +228,192 @@ async function executeBackgroundCollection(
 			});
 		}
 	}
+}
+
+/**
+ * 延迟回填网表数据（如果后台网表获取成功）
+ *
+ * 策略：
+ * 1. 检查 backgroundNetlistState 是否存在且未完成
+ * 2. 使用定时器轮询检查完成状态（每 2 秒检查一次，最多 60 秒）
+ * 3. 当完成时，重新解析网表并更新引脚的 netName
+ * 4. 更新 cachedSchematicData 并通知 IFrame
+ * 5. 使用 epoch 版本控制，避免过期任务覆盖新任务
+ */
+async function scheduleNetlistBackfill(
+	epoch: number,
+	collected: CollectedData,
+): Promise<void> {
+	const netlistState = getBackgroundNetlistState();
+
+	// 如果没有后台网表任务，或者已经完成，直接返回
+	if (!netlistState || netlistState.completed) {
+		return;
+	}
+
+	publishToIFrame('ai-chat/debug-log', {
+		level: 'info',
+		message: '网表后台获取中，将在完成后自动回填引脚绑定...',
+	});
+
+	let pollCount = 0;
+	const MAX_POLL_COUNT = 30; // 最多轮询 30 次（60 秒）
+	const POLL_INTERVAL_MS = 2000; // 每 2 秒检查一次
+
+	const pollTimer = eda.sys_Timer.setIntervalTimer(async () => {
+		pollCount++;
+
+		// 检查是否超过最大轮询次数
+		if (pollCount > MAX_POLL_COUNT) {
+			pollTimer.cancel();
+			publishToIFrame('ai-chat/debug-log', {
+				level: 'warn',
+				message: '网表后台获取超时（60秒），放弃回填',
+			});
+			clearBackgroundNetlistState();
+			return;
+		}
+
+		// 检查 epoch 是否过期
+		if (epoch !== backgroundCollectionEpoch) {
+			pollTimer.cancel();
+			publishToIFrame('ai-chat/debug-log', {
+				level: 'warn',
+				message: `网表回填任务被取消（epoch ${epoch} 已过期）`,
+			});
+			return;
+		}
+
+		// 检查网表是否完成
+		const currentState = getBackgroundNetlistState();
+		if (!currentState || !currentState.completed) {
+			return; // 继续等待
+		}
+
+		// 网表已完成，停止轮询
+		pollTimer.cancel();
+
+		// 如果网表获取失败，直接返回
+		if (!currentState.result) {
+			publishToIFrame('ai-chat/debug-log', {
+				level: 'warn',
+				message: `网表后台获取失败（耗时 ${currentState.duration}ms），无法回填`,
+			});
+			clearBackgroundNetlistState();
+			return;
+		}
+
+		// 网表获取成功，开始回填
+		publishToIFrame('ai-chat/debug-log', {
+			level: 'info',
+			message: `网表后台获取成功（耗时 ${currentState.duration}ms），开始回填引脚绑定...`,
+		});
+
+		try {
+			// 解析网表
+			const netlistMap = parseNetlist(currentState.result);
+
+			if (netlistMap.size === 0) {
+				publishToIFrame('ai-chat/debug-log', {
+					level: 'warn',
+					message: '网表解析结果为空，无法回填',
+				});
+				clearBackgroundNetlistState();
+				return;
+			}
+
+			// 统计回填效果
+			let reboundCount = 0;
+			let improvedCount = 0;
+
+			// 更新引脚的 netName（使用 L1 策略）
+			for (const pin of collected.pins) {
+				const pinKey = `${pin.componentDesignator}_${pin.pinNumber}`;
+				const netNameFromNetlist = netlistMap.get(pinKey);
+
+				if (netNameFromNetlist) {
+					// 如果原来没有绑定，现在绑定了
+					if (!pin.netName) {
+						reboundCount++;
+					}
+					// 如果原来有绑定，但置信度较低（L2/L3/L4），现在用 L1 覆盖
+					else if (pin.netBindingConfidence && pin.netBindingConfidence < 1.0) {
+						improvedCount++;
+					}
+
+					// 更新引脚的网络绑定
+					pin.netName = netNameFromNetlist;
+					pin.netBindingConfidence = 1.0;
+					pin.netBindingReason = 'netlist-backfill';
+				}
+			}
+
+			// 重新构建网络统计
+			const netMap = new Map<string, Set<string>>();
+			for (const pin of collected.pins) {
+				if (pin.netName) {
+					if (!netMap.has(pin.netName)) {
+						netMap.set(pin.netName, new Set());
+					}
+					netMap.get(pin.netName)!.add(pin.primitiveId);
+				}
+			}
+
+			// 更新网络数据
+			collected.nets = Array.from(netMap.entries()).map(([netName, pinIds]) => ({
+				netName,
+				pinCount: pinIds.size,
+				pins: Array.from(pinIds),
+			}));
+
+			// 更新缓存数据（如果 epoch 仍然有效）
+			if (epoch === backgroundCollectionEpoch) {
+				cachedSchematicData = collected;
+
+				// 将更新后的数据注入所有已存在的会话
+				for (const session of chatSessions.values()) {
+					session.setSchematicContext(collected);
+				}
+
+				// 通知 IFrame 数据已更新
+				publishToIFrame(CHAT_TOPICS.SCHEMATIC_DATA, {
+					summary: {
+						components: collected.components.length,
+						pins: collected.pins.length,
+						nets: collected.nets.length,
+					},
+					timestamp: collected.timestamp,
+				});
+
+				publishToIFrame('ai-chat/debug-log', {
+					level: 'success',
+					message: `网表回填完成：新绑定 ${reboundCount} 个引脚，改进 ${improvedCount} 个引脚绑定`,
+					data: {
+						reboundCount,
+						improvedCount,
+						totalNetlistMappings: netlistMap.size,
+						totalPins: collected.pins.length,
+						totalNets: collected.nets.length,
+					},
+				});
+			}
+			else {
+				publishToIFrame('ai-chat/debug-log', {
+					level: 'warn',
+					message: `网表回填被丢弃（epoch ${epoch} 已过期）`,
+				});
+			}
+		}
+		catch (error) {
+			publishToIFrame('ai-chat/debug-log', {
+				level: 'error',
+				message: `网表回填失败: ${error instanceof Error ? error.message : String(error)}`,
+			});
+		}
+		finally {
+			clearBackgroundNetlistState();
+		}
+	}, POLL_INTERVAL_MS);
 }
 
 /**
