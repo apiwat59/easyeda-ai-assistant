@@ -359,10 +359,16 @@ async function collectComponentsAndPins(options: {
 				let netName: string | null = netlistMap.get(pinKey) || null;
 				let confidence = netName ? 1.0 : 0;
 				let reason = netName ? 'netlist' : 'unresolved';
+				const debugInfo: any = {
+					pin: pinKey,
+					coord: `(${pinX}, ${pinY})`,
+					L1_netlist: netName || 'miss',
+				};
 
 				// L2: 如果网表未解析，尝试通过导线坐标匹配
 				if (!netName) {
 					const wireNet = findNetByWireProximity(pinX, pinY, wires);
+					debugInfo.L2_wire = wireNet || 'miss';
 					if (wireNet) {
 						netName = wireNet;
 						confidence = 0.8;
@@ -373,11 +379,20 @@ async function collectComponentsAndPins(options: {
 				// L3: 如果导线也没匹配到，尝试通过网络标记坐标匹配（新增）
 				if (!netName) {
 					const labelNet = findNetByLabelProximity(pinX, pinY, netLabels);
+					debugInfo.L3_netlabel = labelNet || 'miss';
 					if (labelNet) {
 						netName = labelNet;
 						confidence = 0.7;
 						reason = 'netlabel';
 					}
+				}
+
+				// 输出未绑定引脚的调试信息
+				if (!netName && (electricalType === 'Power' || electricalType === 'Ground')) {
+					log('warn', `[Pin-Net] 电源/地引脚未绑定`, debugInfo);
+				}
+				else if (!netName) {
+					log('debug', `[Pin-Net] 引脚未绑定`, debugInfo);
 				}
 
 				return {
@@ -441,26 +456,35 @@ async function collectWires(): Promise<Array<{ net: string; lines: number[][] }>
 	const wirePrimitives = await eda.sch_PrimitiveWire.getAll();
 
 	// 使用并发控制，限制同时处理100条导线
+	let emptyNetCount = 0;
+
 	const wireTasks = wirePrimitives.map(wire => async () => {
 		const [net, line] = await Promise.all([
 			wire.getState_Net(),
 			wire.getState_Line(),
 		]);
 
-		if (net && line) {
-			// 规范化line为二维数组
-			const lines = Array.isArray(line[0]) ? line as number[][] : [line as number[]];
-			return {
-				net: net || '',
-				lines,
-			};
+		if (!net || !line) {
+			if (!net) {
+				emptyNetCount++;
+			}
+			return null;
 		}
-		return null;
+		// 规范化line为二维数组
+		const lines = Array.isArray(line[0]) ? line as number[][] : [line as number[]];
+		return {
+			net: net || '',
+			lines,
+		};
 	});
 
 	const results = await promiseAllWithLimit(wireTasks, 50);
-	// 过滤掉null值
-	return results.filter((w): w is { net: string; lines: number[][] } => w !== null);
+	const validWires = results.filter((w): w is { net: string; lines: number[][] } => w !== null);
+
+	// 输出导线采集统计
+	log('info', `[采集] 导线统计: 总数=${wirePrimitives.length}, 有效=${validWires.length}, net为空=${emptyNetCount}`);
+
+	return validWires;
 }
 
 /**
