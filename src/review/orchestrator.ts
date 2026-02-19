@@ -43,6 +43,17 @@ const pendingRequests = new Map<string, PendingRequestState>();
 const processingRequests = new Set<string>();
 
 /**
+ * 已完成的 requestId 缓存（用于防止重复处理）
+ * 格式：{ requestId: timestamp }
+ */
+const completedRequests = new Map<string, number>();
+
+/**
+ * 已完成请求的缓存时间（毫秒）
+ */
+const COMPLETED_REQUEST_CACHE_TIME = 60000; // 60 秒
+
+/**
  * 记录每个会话最后一条用户消息（用于重新生成）
  */
 const lastUserMessageBySession = new Map<string, UserMessage>();
@@ -694,6 +705,14 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 
 	console.warn(`[handleUserMessage] 收到消息: requestId=${msg.requestId}, sessionId=${msg.sessionId}, text=${msg.text?.substring(0, 50)}`);
 
+	// 检查是否已完成（防止重复处理）
+	if (completedRequests.has(msg.requestId)) {
+		const completedTime = completedRequests.get(msg.requestId)!;
+		const elapsed = Date.now() - completedTime;
+		console.warn(`[handleUserMessage] 忽略已完成的请求 requestId: ${msg.requestId}（${elapsed}ms 前已完成）`);
+		return;
+	}
+
 	// 防重复提交：使用 Set 实现同步锁，防止并发重复处理
 	if (processingRequests.has(msg.requestId)) {
 		console.warn(`[handleUserMessage] 忽略重复的请求 requestId: ${msg.requestId}`);
@@ -830,7 +849,26 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		console.warn(`[handleUserMessage] 清理状态, requestId=${msg.requestId}, 清理前队列大小: ${processingRequests.size}`);
 		pendingRequests.delete(msg.requestId);
 		processingRequests.delete(msg.requestId);
+
+		// 记录已完成的请求（防止重复处理）
+		completedRequests.set(msg.requestId, Date.now());
+
+		// 清理过期的已完成请求（避免内存泄漏）
+		cleanupCompletedRequests();
+
 		console.warn(`[handleUserMessage] 清理完成, requestId=${msg.requestId}, 清理后队列大小: ${processingRequests.size}`);
+	}
+}
+
+/**
+ * 清理过期的已完成请求缓存
+ */
+function cleanupCompletedRequests(): void {
+	const now = Date.now();
+	for (const [requestId, completedTime] of completedRequests.entries()) {
+		if (now - completedTime > COMPLETED_REQUEST_CACHE_TIME) {
+			completedRequests.delete(requestId);
+		}
 	}
 }
 
