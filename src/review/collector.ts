@@ -483,8 +483,8 @@ async function collectNetlist(): Promise<string | undefined> {
 		const startTime = Date.now();
 		log('info', `[采集] 开始获取网表...`);
 
-		// 启动网表获取（不取消，让它在后台继续）
-		const netlistPromise = eda.sch_Netlist.getNetlist(ESYS_NetlistType.PROTEL2);
+		// 尝试 JLCEDA_PRO 格式（可能包含 pin-net 映射）
+		const netlistPromise = eda.sch_Netlist.getNetlist(ESYS_NetlistType.JLCEDA_PRO);
 
 		// 保存到全局状态，供后续查询
 		backgroundNetlistState = {
@@ -525,7 +525,7 @@ async function collectNetlist(): Promise<string | undefined> {
 			log('warn', `[采集] 网表获取超时 (${NETLIST_TIMEOUT_MS}ms)，跳过网表绑定（后台继续获取中...）`);
 		}
 		else {
-			log('info', `[采集] 网表格式: Protel2, 大小: ${result.length} 字符 (耗时 ${Date.now() - startTime}ms)`);
+			log('info', `[采集] 网表格式: JLCEDA_PRO, 大小: ${result.length} 字符 (耗时 ${Date.now() - startTime}ms)`);
 		}
 
 		return result;
@@ -773,21 +773,30 @@ export function parseNetlist(netlistRaw: string | undefined): Map<string, string
 		return map;
 
 	try {
-		// 诊断日志：显示网表前500字符（帮助确认格式）
+		// 诊断日志：显示网表前500字符和末尾500字符
 		const preview = netlistRaw.substring(0, 500).replace(/\n/g, '\\n');
 		log('info', `[采集] 网表预览 (前500字符): ${preview}`);
+		if (netlistRaw.length > 1000) {
+			const tail = netlistRaw.substring(netlistRaw.length - 500).replace(/\n/g, '\\n');
+			log('info', `[采集] 网表预览 (末500字符): ${tail}`);
+		}
 
 		// 策略1：JLCEDA_PRO 格式（关键字 "NET:"）
 		if (netlistRaw.includes('NET:')) {
 			parseNetlistJlcedaPro(netlistRaw, map);
 		}
 
-		// 策略2：Protel2 标准格式（关键字 "Net List" 或 "Component List"）
+		// 策略2：PROTEL NETLIST 2.0 格式（方括号器件 + 圆括号网络）
+		if (map.size === 0 && netlistRaw.startsWith('PROTEL NETLIST 2.0')) {
+			parseNetlistProtel2V2(netlistRaw, map);
+		}
+
+		// 策略3：Protel2 标准格式（关键字 "Net List" 或 "Component List"）
 		if (map.size === 0 && (netlistRaw.includes('Net List') || netlistRaw.includes('Component List'))) {
 			parseNetlistProtel2Standard(netlistRaw, map);
 		}
 
-		// 策略3：通用 Designator-Pin 格式（使用正则全局匹配）
+		// 策略4：通用 Designator-Pin 格式（使用正则全局匹配）
 		if (map.size === 0) {
 			parseNetlistGeneric(netlistRaw, map);
 		}
@@ -826,6 +835,95 @@ function parseNetlistJlcedaPro(netlistRaw: string, map: Map<string, string>): vo
 				map.set(`${designator}_${pinNumber}`, currentNet);
 			}
 		}
+	}
+}
+
+/**
+ * 解析 PROTEL NETLIST 2.0 格式网表
+ *
+ * 格式特征：
+ * - 第一行: "PROTEL NETLIST 2.0"
+ * - Component 部分: 方括号 [...] 包裹，含 DESIGNATOR/FOOTPRINT/PARTTYPE 等
+ * - Net 部分: 圆括号 (...) 包裹，含网络名和 Designator-Pin 连接
+ *
+ * 示例：
+ * PROTEL NETLIST 2.0
+ * [
+ * DESIGNATOR
+ * U1
+ * FOOTPRINT
+ * LQFP-48
+ * ...
+ * ]
+ * (
+ * GND
+ * U1-14
+ * C1-2
+ * )
+ * (
+ * VCC_3V3
+ * U1-1
+ * C1-1
+ * )
+ */
+function parseNetlistProtel2V2(netlistRaw: string, map: Map<string, string>): void {
+	const lines = netlistRaw.split('\n');
+	let inNetSection = false;
+	let currentNet = '';
+	let justOpenedParen = false;
+
+	for (const line of lines) {
+		const trimmed = line.trim();
+		if (!trimmed)
+			continue;
+
+		// 圆括号开始：标志 Net 部分的一个网络块
+		if (trimmed === '(') {
+			inNetSection = true;
+			justOpenedParen = true;
+			currentNet = '';
+			continue;
+		}
+
+		// 圆括号结束：当前网络块结束
+		if (trimmed === ')') {
+			inNetSection = false;
+			currentNet = '';
+			justOpenedParen = false;
+			continue;
+		}
+
+		// 方括号开始/结束：Component 部分（跳过）
+		if (trimmed === '[' || trimmed === ']') {
+			inNetSection = false;
+			justOpenedParen = false;
+			continue;
+		}
+
+		if (inNetSection) {
+			// 圆括号后的第一个非空行是网络名
+			if (justOpenedParen) {
+				currentNet = trimmed;
+				justOpenedParen = false;
+				continue;
+			}
+
+			// 后续行是 Designator-Pin 连接
+			if (currentNet) {
+				const dashIdx = trimmed.indexOf('-');
+				if (dashIdx > 0) {
+					const designator = trimmed.substring(0, dashIdx);
+					const pinNumber = trimmed.substring(dashIdx + 1);
+					if (designator && pinNumber && /^[A-Z]/.test(designator)) {
+						map.set(`${designator}_${pinNumber}`, currentNet);
+					}
+				}
+			}
+		}
+	}
+
+	if (map.size > 0) {
+		log('info', `[采集] 使用 PROTEL NETLIST 2.0 格式解析器`);
 	}
 }
 
