@@ -219,7 +219,7 @@ async function callOpenAICompatibleChat(
 			content: m.content,
 		})),
 		temperature: 0.4,
-		stream: false, // EDA API 不支持真正的流式传输，直接请求完整响应
+		stream: true, // 需要流式模式才能获取 reasoning_content（Grok 等模型）
 	};
 
 	return await makeRequest(url, config, body, onBlock, signal);
@@ -318,7 +318,25 @@ async function makeRequest(
 			throw createAbortReviewError('请求已取消', url, signal.reason);
 		}
 
-		// 解析 JSON 响应
+		// 检查是否是 SSE 格式
+		const contentType = response.headers.get('content-type') || '';
+		const isSSE = contentType.includes('text/event-stream')
+			|| contentType.includes('text/plain')
+			|| responseText.startsWith('data:')
+			|| responseText.includes('\ndata:');
+
+		logDebug('info', '响应格式检测', {
+			contentType,
+			isSSE,
+			startsWithData: responseText.startsWith('data:'),
+		});
+
+		if (isSSE) {
+			// SSE 格式：解析所有事件，累积 reasoning 和 content
+			return parseSSEResponse(responseText, onBlock);
+		}
+
+		// 标准 JSON 响应
 		let data: any;
 		try {
 			data = JSON.parse(responseText);
@@ -424,6 +442,133 @@ async function makeRequest(
 			signal.removeEventListener('abort', abortHandler);
 		}
 	}
+}
+
+// ============ SSE 解析 ============
+
+/**
+ * 解析 SSE 响应
+ *
+ * 策略：
+ * 1. 解析所有 SSE 事件，累积完整的 text 和 reasoning 内容
+ * 2. 提取 <think> 标签（如果有）
+ * 3. 按正确顺序发送事件：THINKING → TEXT
+ */
+function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatCompletionResult {
+	// 防御性检查
+	if (!text || typeof text !== 'string') {
+		logDebug('error', 'SSE响应为空或格式错误', {
+			textType: typeof text,
+			textValue: text,
+		});
+		throw new ReviewError(ErrorCode.AI_INVALID_RESPONSE, 'SSE响应为空或格式错误');
+	}
+
+	logDebug('info', '开始解析 SSE 响应', {
+		textLength: text.length,
+		textPreview: text.substring(0, 200),
+	});
+
+	const lines = text.split(/\r?\n/);
+
+	let textContent = '';
+	let reasoningContent = '';
+	let currentEventData: string[] = [];
+
+	// 第一阶段：解析所有 SSE 事件，累积内容
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i].trim();
+
+		// 空行表示事件结束
+		if (line === '') {
+			if (currentEventData.length > 0) {
+				processEvent(currentEventData.join(''));
+				currentEventData = [];
+			}
+			continue;
+		}
+
+		// 处理 data: 行
+		if (line.startsWith('data:')) {
+			const dataContent = line.substring(5).trim();
+
+			// 跳过 [DONE] 标记
+			if (dataContent === '[DONE]') {
+				if (currentEventData.length > 0) {
+					processEvent(currentEventData.join(''));
+					currentEventData = [];
+				}
+				continue;
+			}
+
+			currentEventData.push(dataContent);
+		}
+	}
+
+	// 处理最后一个事件
+	if (currentEventData.length > 0) {
+		processEvent(currentEventData.join(''));
+	}
+
+	// 解析单个 SSE 事件
+	function processEvent(eventText: string): void {
+		try {
+			const chunk = JSON.parse(eventText);
+			const delta = chunk?.choices?.[0]?.delta;
+			if (!delta)
+				return;
+
+			// 提取 reasoning 和 content
+			const reasoning = normalizeChunkText(delta.reasoning_content || delta.reasoning);
+			const content = normalizeChunkText(delta.content);
+
+			if (reasoning) {
+				reasoningContent += reasoning;
+			}
+			if (content) {
+				textContent += content;
+			}
+		}
+		catch {
+			// 忽略解析错误
+		}
+	}
+
+	logDebug('info', 'SSE 解析完成（累积阶段）', {
+		textLength: textContent.length,
+		reasoningLength: reasoningContent.length,
+	});
+
+	// 第二阶段：提取标签
+	if (!reasoningContent && textContent) {
+		// 提取 <think> 标签
+		const thinkTagRegex = /<think>[\s\S]*?<\/think>|<thought>[\s\S]*?<\/thought>|<thinking>[\s\S]*?<\/thinking>/gi;
+		const thinkMatches = textContent.match(thinkTagRegex);
+		if (thinkMatches && thinkMatches.length > 0) {
+			reasoningContent = thinkMatches.map((match) => {
+				return match.replace(/<\/?(?:think|thought|thinking)>/gi, '').trim();
+			}).join('\n\n');
+			textContent = textContent.replace(thinkTagRegex, '').trim();
+			logDebug('info', '从 <think> 标签提取 reasoning', {
+				extractedLength: reasoningContent.length,
+			});
+		}
+	}
+
+	logDebug('info', 'SSE 最终提取结果', {
+		textLength: textContent.length,
+		reasoningLength: reasoningContent.length,
+		reasoningSource: reasoningContent ? 'SSE delta' : '无',
+	});
+
+	// 第三阶段：按正确顺序发送事件
+	emitCompleteBlocks(textContent, reasoningContent, onBlock);
+
+	if (!textContent && !reasoningContent) {
+		throw new ReviewError(ErrorCode.AI_INVALID_RESPONSE, '无法从SSE响应中提取内容');
+	}
+
+	return { textContent, reasoningContent };
 }
 
 // ============ 辅助函数 ============
