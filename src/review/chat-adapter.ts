@@ -389,10 +389,37 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 			console.warn('[SSE Parser] finishReason:', finishReason, 'isFinish:', isFinish);
 
 			// 参考 NextChat：优先检查 reasoning_content
-			const reasoning = normalizeChunkText(
+			let reasoning = normalizeChunkText(
 				delta.reasoning_content || delta.reasoning,
 			);
-			const content = normalizeChunkText(delta.content);
+			let content = normalizeChunkText(delta.content);
+
+			// 支持 Grok 的 [AgentThink] 格式
+			// 例如: "[Agent 1][AgentThink] 思考内容"
+			if (!reasoning && content) {
+				// 使用 matchAll 避免 ESLint no-cond-assign 错误
+				const thinkingPattern = /\[Agent\s+\d+\]\[AgentThink\]\s*/g;
+				const matches = Array.from(content.matchAll(thinkingPattern));
+
+				if (matches.length > 0) {
+					// 提取所有 thinking 内容
+					const thinkingParts = [];
+					for (let i = 0; i < matches.length; i++) {
+						const start = matches[i].index!;
+						const end = i < matches.length - 1 ? matches[i + 1].index! : content.length;
+						const part = content.substring(start, end).replace(thinkingPattern, '').trim();
+						if (part) {
+							thinkingParts.push(part);
+						}
+					}
+					reasoning = thinkingParts.join('\n\n');
+
+					// 从 content 中移除 thinking 部分
+					content = content.replace(thinkingPattern, '').replace(/\s+/g, ' ').trim();
+
+					console.warn('[SSE Parser] 检测到 Grok [AgentThink] 格式, reasoning 长度:', reasoning.length, 'content 长度:', content.length);
+				}
+			}
 
 			console.warn('[SSE Parser] reasoning 长度:', reasoning.length, 'content 长度:', content.length);
 
