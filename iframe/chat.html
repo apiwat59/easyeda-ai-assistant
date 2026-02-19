@@ -1401,8 +1401,17 @@
         function handleAIThinking(data) {
             console.warn('[前端] handleAIThinking 收到事件:', data.type, 'requestId:', data.requestId, 'sessionId:', data.sessionId);
 
+            addDebugLog('info', 'Thinking 事件: ' + (data.type || 'unknown'), {
+                type: data.type,
+                requestId: data.requestId,
+                sessionId: data.sessionId,
+                currentSessionId: currentSessionId,
+                contentLength: data.accumulatedContent ? data.accumulatedContent.length : 0
+            });
+
             if (!data || !data.requestId || !data.sessionId) {
                 console.warn('[前端] handleAIThinking 缺少必要字段，跳过');
+                addDebugLog('warn', 'Thinking 事件缺少必要字段', data);
                 return;
             }
 
@@ -1411,6 +1420,10 @@
             // 只要 sessionId 匹配就处理事件
             if (data.sessionId !== currentSessionId) {
                 console.warn('[前端] handleAIThinking sessionId 不匹配，跳过. 当前:', currentSessionId, '事件:', data.sessionId);
+                addDebugLog('warn', 'Thinking sessionId 不匹配', {
+                    currentSessionId: currentSessionId,
+                    eventSessionId: data.sessionId
+                });
                 return;
             }
 
@@ -1487,8 +1500,17 @@
         function handleAIText(data) {
             console.warn('[前端] handleAIText 收到事件:', data.type, 'requestId:', data.requestId, 'sessionId:', data.sessionId);
 
+            addDebugLog('info', 'Text 事件: ' + (data.type || 'unknown'), {
+                type: data.type,
+                requestId: data.requestId,
+                sessionId: data.sessionId,
+                currentSessionId: currentSessionId,
+                contentLength: data.accumulatedContent ? data.accumulatedContent.length : 0
+            });
+
             if (!data || !data.requestId || !data.sessionId) {
                 console.warn('[前端] handleAIText 缺少必要字段，跳过');
+                addDebugLog('warn', 'Text 事件缺少必要字段', data);
                 return;
             }
 
@@ -1497,6 +1519,10 @@
             // 只要 sessionId 匹配就处理事件
             if (data.sessionId !== currentSessionId) {
                 console.warn('[前端] handleAIText sessionId 不匹配，跳过. 当前:', currentSessionId, '事件:', data.sessionId);
+                addDebugLog('warn', 'Text sessionId 不匹配', {
+                    currentSessionId: currentSessionId,
+                    eventSessionId: data.sessionId
+                });
                 return;
             }
 
