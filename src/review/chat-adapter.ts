@@ -1,10 +1,11 @@
 /**
- * AI原理图审查 - AI通信适配器（重构版）
+ * AI原理图审查 - AI通信适配器
  *
- * 核心改动：
- * 1. 移除假装的流式传输（readStreamingResponse）
- * 2. 简化 parseSSEResponse：先累积完整内容，再提取标签，最后发送事件
- * 3. 确保事件顺序正确：THINKING 完成后才开始 TEXT
+ * 核心设计：
+ * 1. 不使用流式传输（EDA API 不支持真正的 ReadableStream）
+ * 2. 请求 stream: false，服务端返回标准 JSON
+ * 3. 一次性接收完整响应，然后提取 thinking 和 text 内容
+ * 4. 通过 onBlock 回调模拟流式事件，保持前端体验一致
  */
 
 import type { CollectedData, ConfigStore, UserMessage } from './types';
@@ -12,13 +13,13 @@ import { chunkData } from './chunker';
 import { ChunkType, ErrorCode, ReviewError } from './types';
 
 /**
- * 消息块处理器
+ * 消息块处理器（用于模拟流式体验）
  */
 export type MessageBlockHandler = (block: {
 	type: ChunkType;
 	content: string;
 	accumulatedContent: string;
-	status?: 'streaming' | 'success' | 'paused';
+	status?: 'success' | 'paused';
 }) => void;
 
 /**
@@ -75,7 +76,7 @@ export class ChatSession {
 	 *
 	 * @param userMsg 用户消息对象
 	 * @param config AI 配置
-	 * @param onBlock 可选的流式分块回调，接收 thinking/text 事件
+	 * @param onBlock 可选的分块回调，用于模拟流式体验（实际是一次性发送）
 	 * @param signal 可选的 AbortSignal，用于取消请求
 	 */
 	async sendMessage(
@@ -198,7 +199,7 @@ async function callOpenAICompatibleChat(
 			content: m.content,
 		})),
 		temperature: 0.4,
-		stream: true,
+		stream: false, // EDA API 不支持真正的流式传输，直接请求完整响应
 	};
 
 	return await makeRequest(url, config, body, onBlock, signal);
@@ -271,7 +272,7 @@ async function makeRequest(
 			throw createAbortReviewError('请求已取消', url, signal.reason);
 		}
 
-		// 等待完整响应（EDA API 不支持真正的流式传输）
+		// 读取完整响应（EDA API 不支持真正的流式传输）
 		let responseText: string;
 		try {
 			responseText = await response.text();
@@ -295,18 +296,7 @@ async function makeRequest(
 			throw createAbortReviewError('请求已取消', url, signal.reason);
 		}
 
-		// 检查是否是 SSE 格式
-		const contentType = response.headers.get('content-type') || '';
-		const isSSE = contentType.includes('text/event-stream')
-			|| contentType.includes('text/plain')
-			|| responseText.startsWith('data:')
-			|| responseText.includes('\ndata:');
-
-		if (isSSE) {
-			return parseSSEResponse(responseText, onBlock);
-		}
-
-		// 标准 JSON 响应（非流式回退）
+		// 解析 JSON 响应
 		let data: any;
 		try {
 			data = JSON.parse(responseText);
@@ -338,9 +328,16 @@ async function makeRequest(
 			);
 		}
 
-		emitCompleteBlocks(textContent, reasoningContent, onBlock);
+		// 提取 <think> 标签（如果 AI 在 content 中包含了思考过程）
+		const { finalText, extractedReasoning } = extractThinkTags(textContent);
 
-		return { textContent, reasoningContent };
+		// 合并提取的 reasoning
+		const finalReasoning = reasoningContent || extractedReasoning;
+
+		// 发送事件
+		emitCompleteBlocks(finalText, finalReasoning, onBlock);
+
+		return { textContent: finalText, reasoningContent: finalReasoning };
 	}
 	catch (error) {
 		if (isAbortLikeError(error)) {
@@ -393,172 +390,55 @@ async function makeRequest(
 	}
 }
 
-// ============ SSE 解析（简化版） ============
+// ============ 辅助函数 ============
 
 /**
- * 解析 SSE 响应（简化版）
- *
- * 策略：
- * 1. 先解析所有 SSE 事件，累积完整的 text 和 reasoning 内容
- * 2. 然后提取标签（<think>, Grok 格式等）
- * 3. 最后按正确顺序发送事件：THINKING → TEXT
+ * 从文本中提取 <think> 标签
  */
-function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatCompletionResult {
-	// 防御性检查
-	if (!text || typeof text !== 'string') {
-		console.error('[parseSSEResponse] 输入参数无效:', {
-			textType: typeof text,
-			textValue: text,
-			textLength: text ? String(text).length : 'N/A',
-		});
-		throw new ReviewError(ErrorCode.AI_INVALID_RESPONSE, 'SSE响应为空或格式错误');
+function extractThinkTags(text: string): { finalText: string; extractedReasoning: string } {
+	if (!text) {
+		return { finalText: '', extractedReasoning: '' };
 	}
 
-	console.warn('[parseSSEResponse] 开始解析 SSE 响应:', {
-		textLength: text.length,
-		textPreview: text.substring(0, 200),
-	});
+	// 提取 <think> 标签
+	const thinkTagRegex = /<think>[\s\S]*?<\/think>|<thought>[\s\S]*?<\/thought>|<thinking>[\s\S]*?<\/thinking>/gi;
+	const thinkMatches = text.match(thinkTagRegex);
 
-	const lines = text.split(/\r?\n/);
-
-	let textContent = '';
-	let reasoningContent = '';
-	let currentEventData: string[] = [];
-
-	// 第一阶段：解析所有 SSE 事件，累积内容
-	for (let i = 0; i < lines.length; i++) {
-		const line = lines[i].trim();
-
-		// 空行表示事件结束
-		if (line === '') {
-			if (currentEventData.length > 0) {
-				processEvent(currentEventData.join(''));
-				currentEventData = [];
-			}
-			continue;
-		}
-
-		// 处理 data: 行
-		if (line.startsWith('data:')) {
-			const dataContent = line.substring(5).trim();
-
-			// 跳过 [DONE] 标记
-			if (dataContent === '[DONE]') {
-				if (currentEventData.length > 0) {
-					processEvent(currentEventData.join(''));
-					currentEventData = [];
-				}
-				continue;
-			}
-
-			currentEventData.push(dataContent);
-		}
+	if (thinkMatches && thinkMatches.length > 0) {
+		const extractedReasoning = thinkMatches.map((match) => {
+			return match.replace(/<\/?(?:think|thought|thinking)>/gi, '').trim();
+		}).join('\n\n');
+		const finalText = text.replace(thinkTagRegex, '').trim();
+		return { finalText, extractedReasoning };
 	}
 
-	// 处理最后一个事件
-	if (currentEventData.length > 0) {
-		processEvent(currentEventData.join(''));
-	}
+	// 提取 Grok 格式
+	const hasGrokMarkers = /\[(?:Agent\s+\d+|Grok)\]\[/.test(text) || /browse_page\s*\{/.test(text);
+	if (hasGrokMarkers) {
+		const contentLines = text.split('\n');
+		const thinkingLines: string[] = [];
+		const textLines: string[] = [];
 
-	// 解析单个 SSE 事件
-	function processEvent(eventText: string): void {
-		try {
-			const chunk = JSON.parse(eventText);
-			const delta = chunk?.choices?.[0]?.delta;
-			if (!delta)
-				return;
-
-			// 提取 reasoning 和 content
-			const reasoning = normalizeChunkText(delta.reasoning_content || delta.reasoning);
-			const content = normalizeChunkText(delta.content);
-
-			if (reasoning) {
-				reasoningContent += reasoning;
+		for (const line of contentLines) {
+			const trimmed = line.trim();
+			if (trimmed.match(/^\[(?:Agent\s+\d+|Grok)\]\[/) || trimmed.startsWith('browse_page')) {
+				thinkingLines.push(line);
 			}
-			if (content) {
-				textContent += content;
+			else if (trimmed.length > 0) {
+				textLines.push(line);
 			}
 		}
-		catch {
-			// 忽略解析错误
+
+		if (thinkingLines.length > 0) {
+			return {
+				finalText: textLines.join('\n').trim(),
+				extractedReasoning: thinkingLines.join('\n').trim(),
+			};
 		}
 	}
 
-	// 第二阶段：提取标签
-	if (!reasoningContent && textContent) {
-		// 提取 <think> 标签
-		const thinkTagRegex = /<think>[\s\S]*?<\/think>|<thought>[\s\S]*?<\/thought>|<thinking>[\s\S]*?<\/thinking>/gi;
-		const thinkMatches = textContent.match(thinkTagRegex);
-		if (thinkMatches && thinkMatches.length > 0) {
-			reasoningContent = thinkMatches.map((match) => {
-				return match.replace(/<\/?(?:think|thought|thinking)>/gi, '').trim();
-			}).join('\n\n');
-			textContent = textContent.replace(thinkTagRegex, '').trim();
-		}
-		// 提取 Grok 格式
-		else {
-			const hasGrokMarkers = /\[(?:Agent\s+\d+|Grok)\]\[/.test(textContent) || /browse_page\s*\{/.test(textContent);
-			if (hasGrokMarkers) {
-				const contentLines = textContent.split('\n');
-				const thinkingLines: string[] = [];
-				const textLines: string[] = [];
-
-				for (const line of contentLines) {
-					const trimmed = line.trim();
-					if (trimmed.match(/^\[(?:Agent\s+\d+|Grok)\]\[/) || trimmed.startsWith('browse_page')) {
-						thinkingLines.push(line);
-					}
-					else if (trimmed.length > 0) {
-						textLines.push(line);
-					}
-				}
-
-				if (thinkingLines.length > 0) {
-					reasoningContent = thinkingLines.join('\n').trim();
-					textContent = textLines.join('\n').trim();
-				}
-			}
-		}
-	}
-
-	// 第三阶段：按正确顺序发送事件
-	if (onBlock) {
-		console.warn('[parseSSEResponse] 发送事件:', {
-			hasReasoning: !!reasoningContent,
-			hasText: !!textContent,
-			reasoningLength: reasoningContent.length,
-			textLength: textContent.length,
-		});
-
-		// 先发送 THINKING 事件（如果有）
-		if (reasoningContent) {
-			onBlock({ type: ChunkType.THINKING_START, content: '', accumulatedContent: '' });
-			onBlock({ type: ChunkType.THINKING_DELTA, content: reasoningContent, accumulatedContent: reasoningContent });
-			onBlock({ type: ChunkType.THINKING_COMPLETE, content: '', accumulatedContent: reasoningContent, status: 'success' });
-		}
-
-		// 再发送 TEXT 事件（如果有）
-		if (textContent) {
-			onBlock({ type: ChunkType.TEXT_START, content: '', accumulatedContent: '' });
-			onBlock({ type: ChunkType.TEXT_DELTA, content: textContent, accumulatedContent: textContent });
-			onBlock({ type: ChunkType.TEXT_COMPLETE, content: '', accumulatedContent: textContent, status: 'success' });
-		}
-	}
-
-	if (!textContent && !reasoningContent) {
-		console.error('[parseSSEResponse] 无法提取内容');
-		throw new ReviewError(ErrorCode.AI_INVALID_RESPONSE, '无法从SSE响应中提取内容');
-	}
-
-	console.warn('[parseSSEResponse] 解析完成:', {
-		textLength: textContent.length,
-		reasoningLength: reasoningContent.length,
-	});
-
-	return { textContent, reasoningContent };
+	return { finalText: text, extractedReasoning: '' };
 }
-
-// ============ 辅助函数 ============
 
 function emitCompleteBlocks(
 	textContent: string,
