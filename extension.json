@@ -30,31 +30,7 @@
 	"entry": "./dist/index",
 	"dependentExtensions": {},
 	"headerMenus": {
-		"home": [
-			{
-				"id": "API SDK",
-				"title": "API SDK",
-				"menuItems": [
-					{
-						"id": "About",
-						"title": "About...",
-						"registerFn": "about"
-					}
-				]
-			}
-		],
 		"sch": [
-			{
-				"id": "API SDK",
-				"title": "API SDK",
-				"menuItems": [
-					{
-						"id": "About",
-						"title": "About...",
-						"registerFn": "about"
-					}
-				]
-			},
 			{
 				"id": "AI Review",
 				"title": "AI Review",
@@ -68,19 +44,6 @@
 						"id": "ReviewConfig",
 						"title": "Review Settings...",
 						"registerFn": "aiReviewConfig"
-					}
-				]
-			}
-		],
-		"pcb": [
-			{
-				"id": "API SDK",
-				"title": "API SDK",
-				"menuItems": [
-					{
-						"id": "About",
-						"title": "About...",
-						"registerFn": "about"
 					}
 				]
 			}
