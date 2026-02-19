@@ -2254,16 +2254,71 @@
 
         // ============ 文件处理 ============
 
+        /**
+         * 压缩图片（使用 Canvas API）
+         * @param {File} file - 原始图片文件
+         * @param {number} maxDimension - 最大尺寸（宽或高）
+         * @param {number} quality - JPEG 质量 (0-1)
+         * @returns {Promise<string>} - 压缩后的 data URL
+         */
+        function compressImage(file, maxDimension, quality) {
+            return new Promise(function(resolve, reject) {
+                var img = new Image();
+                img.onload = function() {
+                    try {
+                        // 计算新尺寸（保持宽高比）
+                        var width = img.width;
+                        var height = img.height;
+
+                        if (width > maxDimension || height > maxDimension) {
+                            var ratio = maxDimension / Math.max(width, height);
+                            width = Math.round(width * ratio);
+                            height = Math.round(height * ratio);
+                        }
+
+                        // 创建 Canvas 并绘制
+                        var canvas = document.createElement('canvas');
+                        canvas.width = width;
+                        canvas.height = height;
+                        var ctx = canvas.getContext('2d');
+                        ctx.imageSmoothingQuality = 'high';
+                        ctx.drawImage(img, 0, 0, width, height);
+
+                        // 输出压缩后的 data URL
+                        var compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+
+                        // 清理
+                        URL.revokeObjectURL(img.src);
+                        resolve(compressedDataUrl);
+                    } catch (error) {
+                        reject(error);
+                    }
+                };
+                img.onerror = function() {
+                    reject(new Error('图片加载失败'));
+                };
+                img.src = URL.createObjectURL(file);
+            });
+        }
+
         function handleFileSelect(e) {
             var files = Array.from(e.target.files);
             files.forEach(function(file) {
                 if (file.type.indexOf('image/') === 0) {
-                    var reader = new FileReader();
-                    reader.onload = function(event) {
-                        attachedFiles.push({ name: file.name, type: file.type, data: event.target.result });
-                        renderFilePreviews();
-                    };
-                    reader.readAsDataURL(file);
+                    // 压缩图片（最大 1024px，质量 0.75）
+                    compressImage(file, 1024, 0.75)
+                        .then(function(compressedDataUrl) {
+                            attachedFiles.push({
+                                name: file.name,
+                                type: 'image/jpeg', // 压缩后统一为 JPEG
+                                data: compressedDataUrl
+                            });
+                            renderFilePreviews();
+                        })
+                        .catch(function(error) {
+                            console.error('图片压缩失败:', error);
+                            showError('图片压缩失败: ' + error.message);
+                        });
                 }
             });
             fileInput.value = '';

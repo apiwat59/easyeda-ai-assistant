@@ -166,9 +166,13 @@ export class ChatSession {
 		const parts: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
 
 		for (const img of userMsg.images) {
+			// img.data 可能是完整 data URL（data:image/...;base64,...）或纯 base64 字符串
+			const url = img.data.startsWith('data:')
+				? img.data
+				: `data:${img.type};base64,${img.data}`;
 			parts.push({
 				type: 'image_url',
-				image_url: { url: `data:${img.type};base64,${img.data}` },
+				image_url: { url },
 			});
 		}
 

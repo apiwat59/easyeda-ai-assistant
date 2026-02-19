@@ -5,6 +5,15 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.1.1] - 2026-02-20
+
+### 修复的问题 🐛
+
+- 🐛 **修复图片上传失败（502 错误）** - 上传图片前自动压缩（最大 1024px，JPEG 质量 0.75），解决代理服务拒绝大图片的问题
+- 🐛 **修复 data URL 重复前缀** - 修复图片 URL 拼接时可能出现 `data:image/jpeg;base64,data:image/jpeg;base64,...` 的问题
+
+---
+
 ## [1.1.0] - 2026-02-19
 
 ### 主要改进 ✨
