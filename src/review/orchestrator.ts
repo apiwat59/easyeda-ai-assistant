@@ -5,13 +5,18 @@
  * 按 sessionId 隔离对话会话，支持流式 thinking/text 推送
  */
 import type { AbortRequest, AIBlockResponse, CollectedData, MessageBlock, RegenerateRequest, UserMessage } from './types';
-import { ChatSession } from './chat-adapter';
+import { ChatSession, setDebugLog } from './chat-adapter';
 import { clearBackgroundNetlistState, collectSchematicData, getBackgroundNetlistState, parseNetlist, setLogToIFrame } from './collector';
 import { loadChatHistory, loadConfig, saveChatHistory, saveConfig, validateConfig } from './config';
 import { CHAT_TOPICS, ChunkType, ErrorCode, ReviewError } from './types';
 
 // 初始化 collector 的日志发送函数
 setLogToIFrame((level: string, message: string, data?: any) => {
+	publishToIFrame('ai-chat/debug-log', { level, message, data });
+});
+
+// 初始化 chat-adapter 的日志发送函数
+setDebugLog((level: string, message: string, data?: any) => {
 	publishToIFrame('ai-chat/debug-log', { level, message, data });
 });
 

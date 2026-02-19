@@ -13,6 +13,22 @@ import { chunkData } from './chunker';
 import { ChunkType, ErrorCode, ReviewError } from './types';
 
 /**
+ * 调试日志发送函数（由 orchestrator 注入）
+ */
+let debugLog: ((level: string, message: string, data?: any) => void) | null = null;
+
+export function setDebugLog(fn: (level: string, message: string, data?: any) => void): void {
+	debugLog = fn;
+}
+
+function logDebug(level: string, message: string, data?: any): void {
+	console.warn(`[chat-adapter] ${message}`, data || '');
+	if (debugLog) {
+		debugLog(level, `[chat-adapter] ${message}`, data);
+	}
+}
+
+/**
  * 消息块处理器（用于模拟流式体验）
  */
 export type MessageBlockHandler = (block: {
@@ -282,7 +298,7 @@ async function makeRequest(
 			const rawResponseText = await response.text();
 			// 防御性类型转换：确保是字符串
 			responseText = coerceToString(rawResponseText);
-			console.warn('[makeRequest] response.text() 成功:', {
+			logDebug('info', 'response.text() 成功', {
 				url,
 				textLength: responseText.length,
 				textType: typeof rawResponseText,
@@ -323,7 +339,7 @@ async function makeRequest(
 		const textContent = extractResponseText(data);
 		const reasoningContent = extractReasoningText(data);
 
-		console.warn('[makeRequest] 原始提取结果:', {
+		logDebug('info', '原始提取结果', {
 			textLength: textContent.length,
 			reasoningLength: reasoningContent.length,
 			textPreview: textContent.substring(0, 100),
@@ -348,7 +364,7 @@ async function makeRequest(
 		// 合并提取的 reasoning（优先使用非空白的 reasoningContent）
 		const finalReasoning = hasNonWhitespace(reasoningContent) ? reasoningContent : extractedReasoning;
 
-		console.warn('[makeRequest] 最终提取结果:', {
+		logDebug('info', '最终提取结果', {
 			finalTextLength: finalText.length,
 			finalReasoningLength: finalReasoning.length,
 			reasoningSource: hasNonWhitespace(reasoningContent) ? 'API字段' : (extractedReasoning ? '<think>标签' : '无'),
@@ -466,11 +482,11 @@ function emitCompleteBlocks(
 	onBlock?: MessageBlockHandler,
 ): void {
 	if (!onBlock) {
-		console.warn('[emitCompleteBlocks] onBlock 回调为空，跳过事件发送');
+		logDebug('warn', 'onBlock 回调为空，跳过事件发送');
 		return;
 	}
 
-	console.warn('[emitCompleteBlocks] 准备发送事件:', {
+	logDebug('info', '准备发送事件', {
 		hasReasoning: !!reasoningContent,
 		hasText: !!textContent,
 		reasoningLength: reasoningContent.length,
@@ -478,23 +494,23 @@ function emitCompleteBlocks(
 	});
 
 	if (reasoningContent) {
-		console.warn('[emitCompleteBlocks] 发送 THINKING 事件');
+		logDebug('info', '发送 THINKING 事件', { length: reasoningContent.length });
 		onBlock({ type: ChunkType.THINKING_START, content: '', accumulatedContent: '' });
 		onBlock({ type: ChunkType.THINKING_DELTA, content: reasoningContent, accumulatedContent: reasoningContent });
 		onBlock({ type: ChunkType.THINKING_COMPLETE, content: '', accumulatedContent: reasoningContent, status: 'success' });
 	}
 	else {
-		console.warn('[emitCompleteBlocks] 没有 reasoning 内容，跳过 THINKING 事件');
+		logDebug('warn', '没有 reasoning 内容，跳过 THINKING 事件');
 	}
 
 	if (textContent) {
-		console.warn('[emitCompleteBlocks] 发送 TEXT 事件');
+		logDebug('info', '发送 TEXT 事件', { length: textContent.length });
 		onBlock({ type: ChunkType.TEXT_START, content: '', accumulatedContent: '' });
 		onBlock({ type: ChunkType.TEXT_DELTA, content: textContent, accumulatedContent: textContent });
 		onBlock({ type: ChunkType.TEXT_COMPLETE, content: '', accumulatedContent: textContent, status: 'success' });
 	}
 	else {
-		console.warn('[emitCompleteBlocks] 没有 text 内容，跳过 TEXT 事件');
+		logDebug('warn', '没有 text 内容，跳过 TEXT 事件');
 	}
 }
 
