@@ -114,6 +114,18 @@ export interface RawBus {
 }
 
 /**
+ * 原始网络标记数据（GND、VCC 等标签）
+ */
+export interface RawNetLabel {
+	primitiveId: string;
+	netName: string;
+	x: number;
+	y: number;
+	type: 'netflag' | 'netport';
+	schematicPageUuid?: string;
+}
+
+/**
  * 采集的原始数据快照
  */
 export interface CollectedData {
@@ -122,6 +134,7 @@ export interface CollectedData {
 	nets: RawNet[];
 	texts?: RawText[];
 	buses?: RawBus[];
+	netLabels?: RawNetLabel[]; // 网络标记（GND、VCC 等）
 	netlistRaw?: string; // 原始网表字符串
 	timestamp: number;
 	meta?: CollectionMeta;
