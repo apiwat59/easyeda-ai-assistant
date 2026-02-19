@@ -126,7 +126,19 @@ export class ChatSession {
 			parts.push({ type: 'text', text: userMsg.text });
 		}
 
-		return parts;
+		// 如果有多个部分（图片+文本），返回数组；否则返回纯文本
+		if (parts.length > 1) {
+			return parts;
+		}
+		else if (parts.length === 1 && parts[0].type === 'text') {
+			return parts[0].text || '';
+		}
+		else if (parts.length === 1) {
+			return parts;
+		}
+
+		// 兜底：返回空字符串（不应该发生）
+		return '';
 	}
 }
 
