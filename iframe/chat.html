@@ -1313,14 +1313,10 @@
          * 处理 AI 完整响应（请求结束后的最终文本）
          */
         function handleAIResponse(data) {
-            console.warn('[前端] handleAIResponse 收到完整响应, requestId:', data.requestId, 'content 长度:', (data.content || '').length);
-
             if (!data || !data.content) {
-                console.warn('[前端] handleAIResponse 缺少 content，跳过');
                 return;
             }
             if (!data.requestId || !data.sessionId) {
-                console.warn('[前端] handleAIResponse 缺少 requestId 或 sessionId，跳过');
                 return;
             }
 
@@ -1331,21 +1327,17 @@
 
             var pending = pendingRequests[data.requestId];
             if (!pending) {
-                console.warn('[前端] handleAIResponse pending 不存在, requestId:', data.requestId);
                 return;
             }
             if (pending.sessionId !== currentSessionId) {
-                console.warn('[前端] handleAIResponse pending.sessionId 不匹配，删除 pending');
                 delete pendingRequests[data.requestId];
                 return;
             }
             if (data.sessionId !== pending.sessionId) {
-                console.warn('[前端] handleAIResponse data.sessionId 不匹配，删除 pending');
                 delete pendingRequests[data.requestId];
                 return;
             }
 
-            console.warn('[前端] handleAIResponse 删除 pending, requestId:', data.requestId);
             delete pendingRequests[data.requestId];
             finishPendingRequest(data.requestId);
 
@@ -1399,8 +1391,6 @@
          * 处理 AI Thinking 流式块
          */
         function handleAIThinking(data) {
-            console.warn('[前端] handleAIThinking 收到事件:', data.type, 'requestId:', data.requestId, 'sessionId:', data.sessionId);
-
             // 只记录 START 和 COMPLETE 事件，不记录每个 DELTA
             if (data.type === 'THINKING_START' || data.type === 'THINKING_COMPLETE') {
                 addDebugLog('info', 'Thinking 事件: ' + (data.type || 'unknown'), {
@@ -1413,7 +1403,6 @@
             }
 
             if (!data || !data.requestId || !data.sessionId) {
-                console.warn('[前端] handleAIThinking 缺少必要字段，跳过');
                 addDebugLog('warn', 'Thinking 事件缺少必要字段', data);
                 return;
             }
@@ -1422,7 +1411,6 @@
             // 因为 AI_RESPONSE 可能先到，导致 pending 被清理
             // 只要 sessionId 匹配就处理事件
             if (data.sessionId !== currentSessionId) {
-                console.warn('[前端] handleAIThinking sessionId 不匹配，跳过. 当前:', currentSessionId, '事件:', data.sessionId);
                 addDebugLog('warn', 'Thinking sessionId 不匹配', {
                     currentSessionId: currentSessionId,
                     eventSessionId: data.sessionId
@@ -1432,11 +1420,9 @@
 
             var msg = getOrCreateStreamingMessage(data.requestId);
             var thinkingBlock = findBlockByType(msg, 'thinking');
-            console.warn('[前端] handleAIThinking 找到 thinkingBlock:', !!thinkingBlock);
 
             switch (data.type) {
                 case 'THINKING_START':
-                    console.warn('[前端] 处理 THINKING_START');
                     if (!thinkingBlock) {
                         thinkingBlock = {
                             id: 'thinking-' + data.requestId,
@@ -1447,13 +1433,11 @@
                             startTime: Date.now()
                         };
                         msg.blocks.push(thinkingBlock);
-                        console.warn('[前端] 创建新的 thinkingBlock, id:', thinkingBlock.id);
                         renderMessages(); // 首次需要完整渲染以插入 DOM
                     }
                     break;
 
                 case 'THINKING_DELTA':
-                    console.warn('[前端] 处理 THINKING_DELTA, accumulatedContent 长度:', (data.accumulatedContent || '').length);
                     if (thinkingBlock) {
                         thinkingBlock.content = data.accumulatedContent || '';
                         thinkingBlock.thinkingMs = Date.now() - (thinkingBlock.startTime || Date.now());
@@ -1465,13 +1449,10 @@
                             thinkingBlock.startTime,
                             thinkingBlock.thinkingMs
                         );
-                    } else {
-                        console.warn('[前端] THINKING_DELTA 但 thinkingBlock 不存在');
                     }
                     break;
 
                 case 'THINKING_COMPLETE':
-                    console.warn('[前端] 处理 THINKING_COMPLETE, status:', data.status);
                     if (thinkingBlock) {
                         thinkingBlock.content = data.accumulatedContent || thinkingBlock.content;
                         thinkingBlock.thinkingMs = Date.now() - (thinkingBlock.startTime || Date.now());
@@ -1484,16 +1465,11 @@
                             thinkingBlock.startTime,
                             thinkingBlock.thinkingMs
                         );
-                    } else {
-                        console.warn('[前端] THINKING_COMPLETE 但 thinkingBlock 不存在');
                     }
                     // 注意：paused 状态不在此清理 pending，
                     // 后端会先发 THINKING_COMPLETE 再发 TEXT_COMPLETE，
                     // 清理推迟到 TEXT_COMPLETE(paused) 统一处理
                     break;
-
-                default:
-                    console.warn('[前端] handleAIThinking 未知事件类型:', data.type);
             }
         }
 
@@ -1501,8 +1477,6 @@
          * 处理 AI Text 流式块
          */
         function handleAIText(data) {
-            console.warn('[前端] handleAIText 收到事件:', data.type, 'requestId:', data.requestId, 'sessionId:', data.sessionId);
-
             // 只记录 START 和 COMPLETE 事件，不记录每个 DELTA
             if (data.type === 'TEXT_START' || data.type === 'TEXT_COMPLETE') {
                 addDebugLog('info', 'Text 事件: ' + (data.type || 'unknown'), {
@@ -1515,7 +1489,6 @@
             }
 
             if (!data || !data.requestId || !data.sessionId) {
-                console.warn('[前端] handleAIText 缺少必要字段，跳过');
                 addDebugLog('warn', 'Text 事件缺少必要字段', data);
                 return;
             }
@@ -1534,11 +1507,9 @@
 
             var msg = getOrCreateStreamingMessage(data.requestId);
             var textBlock = findBlockByType(msg, 'text');
-            console.warn('[前端] handleAIText 找到 textBlock:', !!textBlock);
 
             switch (data.type) {
                 case 'TEXT_START':
-                    console.warn('[前端] 处理 TEXT_START');
                     if (!textBlock) {
                         textBlock = {
                             id: 'text-' + data.requestId,
@@ -1547,13 +1518,11 @@
                             status: 'streaming'
                         };
                         msg.blocks.push(textBlock);
-                        console.warn('[前端] 创建新的 textBlock, id:', textBlock.id);
                         renderMessages(); // 首次需要完整渲染以插入 DOM
                     }
                     break;
 
                 case 'TEXT_DELTA':
-                    console.warn('[前端] 处理 TEXT_DELTA, accumulatedContent 长度:', (data.accumulatedContent || '').length);
                     if (textBlock) {
                         textBlock.content = data.accumulatedContent || '';
                         StreamManager.updateBlock(
@@ -1562,13 +1531,10 @@
                             'text',
                             'streaming'
                         );
-                    } else {
-                        console.warn('[前端] TEXT_DELTA 但 textBlock 不存在');
                     }
                     break;
 
                 case 'TEXT_COMPLETE':
-                    console.warn('[前端] 处理 TEXT_COMPLETE, status:', data.status);
                     if (textBlock) {
                         textBlock.content = data.accumulatedContent || textBlock.content;
                         textBlock.status = data.status === 'paused' ? 'paused' : 'success';
@@ -1578,19 +1544,13 @@
                             'text',
                             textBlock.status
                         );
-                    } else {
-                        console.warn('[前端] TEXT_COMPLETE 但 textBlock 不存在');
                     }
                     // paused 状态需要清理 thinking 状态
                     if (data.status === 'paused') {
-                        console.warn('[前端] TEXT_COMPLETE(paused), 清理 pending');
                         finishPendingRequest(data.requestId);
                         renderMessages(); // 确保 DOM 更新
                     }
                     break;
-
-                default:
-                    console.warn('[前端] handleAIText 未知事件类型:', data.type);
             }
         }
 
