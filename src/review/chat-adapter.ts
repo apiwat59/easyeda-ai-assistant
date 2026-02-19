@@ -43,10 +43,26 @@ export class ChatSession {
 	private history: ChatMessage[] = [];
 	private schematicContext: string = '';
 
-	constructor(schematicChunks: any[]) {
-		if (schematicChunks.length > 0) {
+	constructor(schematicChunks: any[] = []) {
+		if (Array.isArray(schematicChunks) && schematicChunks.length > 0) {
 			this.schematicContext = JSON.stringify(schematicChunks[0]);
 		}
+	}
+
+	/**
+	 * 设置原理图上下文（用于更新数据）
+	 */
+	setSchematicContext(schematicChunks: any[]): void {
+		if (Array.isArray(schematicChunks) && schematicChunks.length > 0) {
+			this.schematicContext = JSON.stringify(schematicChunks[0]);
+		}
+	}
+
+	/**
+	 * 重置会话（清空历史）
+	 */
+	reset(): void {
+		this.history = [];
 	}
 
 	/**
@@ -85,14 +101,10 @@ export class ChatSession {
 		const result = await callOpenAICompatibleChat(messages, config, onBlock, signal);
 
 		// 将 AI 回复加入历史
-		const assistantContent = result.reasoningContent && result.textContent
+		const assistantContent = result.reasoningContent
 			? `${result.reasoningContent}\n\n${result.textContent}`
-			: result.reasoningContent || result.textContent;
-
-		// 只有在有内容时才加入历史
-		if (assistantContent) {
-			this.history.push({ role: 'assistant', content: assistantContent });
-		}
+			: result.textContent;
+		this.history.push({ role: 'assistant', content: assistantContent });
 
 		return result.textContent;
 	}
@@ -126,19 +138,7 @@ export class ChatSession {
 			parts.push({ type: 'text', text: userMsg.text });
 		}
 
-		// 如果有多个部分（图片+文本），返回数组；否则返回纯文本
-		if (parts.length > 1) {
-			return parts;
-		}
-		else if (parts.length === 1 && parts[0].type === 'text') {
-			return parts[0].text || '';
-		}
-		else if (parts.length === 1) {
-			return parts;
-		}
-
-		// 兜底：返回空字符串（不应该发生）
-		return '';
+		return parts;
 	}
 }
 
@@ -158,7 +158,8 @@ ${schematicContext || '（暂无数据）'}
 function normalizeChunkText(text: unknown): string {
 	if (typeof text !== 'string')
 		return '';
-	return text.trim();
+	// 不要 trim，保留空白和换行，避免文本粘连
+	return text;
 }
 
 // ============ AI API 调用 ============
@@ -442,7 +443,7 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 		const thinkMatches = textContent.match(thinkTagRegex);
 		if (thinkMatches && thinkMatches.length > 0) {
 			reasoningContent = thinkMatches.map((match) => {
-				return match.replace(/<\/?think(?:ing|thought)>/gi, '').trim();
+				return match.replace(/<\/?(?:think|thought|thinking)>/gi, '').trim();
 			}).join('\n\n');
 			textContent = textContent.replace(thinkTagRegex, '').trim();
 		}
