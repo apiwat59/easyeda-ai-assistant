@@ -537,12 +537,13 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 	logDebug('info', 'SSE 解析完成（累积阶段）', {
 		textLength: textContent.length,
 		reasoningLength: reasoningContent.length,
+		textPreview: textContent.substring(0, 500),
 	});
 
 	// 第二阶段：提取标签
 	if (!reasoningContent && textContent) {
-		// 提取 <think> 标签
-		const thinkTagRegex = /<think>[\s\S]*?<\/think>|<thought>[\s\S]*?<\/thought>|<thinking>[\s\S]*?<\/thinking>/gi;
+		// 提取 <think> 标签（贪婪匹配，确保提取完整内容）
+		const thinkTagRegex = /<think>[\s\S]*<\/think>|<thought>[\s\S]*<\/thought>|<thinking>[\s\S]*<\/thinking>/gi;
 		const thinkMatches = textContent.match(thinkTagRegex);
 		if (thinkMatches && thinkMatches.length > 0) {
 			reasoningContent = thinkMatches.map((match) => {
@@ -551,6 +552,14 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 			textContent = textContent.replace(thinkTagRegex, '').trim();
 			logDebug('info', '从 <think> 标签提取 reasoning', {
 				extractedLength: reasoningContent.length,
+				matchCount: thinkMatches.length,
+				firstMatchPreview: thinkMatches[0].substring(0, 200),
+			});
+		}
+		else {
+			logDebug('warn', '未找到完整的 <think> 标签', {
+				hasOpenTag: textContent.includes('<think>'),
+				hasCloseTag: textContent.includes('</think>'),
 			});
 		}
 	}
