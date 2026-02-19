@@ -240,7 +240,9 @@ async function collectComponents(
 ): Promise<RawComponent[]> {
 	const { allSchematicPages = false, schematicPageUuid } = options;
 
+	const t0 = Date.now();
 	const primitives = await eda.sch_PrimitiveComponent.getAll(undefined, allSchematicPages);
+	log('info', `[采集] getAll 返回 ${primitives.length} 个原始器件对象 (allSchematicPages=${allSchematicPages}, 耗时 ${Date.now() - t0}ms)`);
 
 	// 第一阶段：仅获取 componentType 进行过滤（减少不必要的 API 调用）
 	const filterTasks = primitives.map(primitive => async () => ({
@@ -248,12 +250,23 @@ async function collectComponents(
 		componentType: await primitive.getState_ComponentType(),
 	}));
 
+	const t1 = Date.now();
 	const filtered = await promiseAllWithLimit(filterTasks, 100); // 提高并发限制
+	log('info', `[采集] 获取 componentType 完成 (耗时 ${Date.now() - t1}ms)`);
+
+	// 统计各类型器件数量
+	const typeCount = new Map<string, number>();
+	for (const item of filtered) {
+		const count = typeCount.get(item.componentType) || 0;
+		typeCount.set(item.componentType, count + 1);
+	}
+	log('info', `[采集] 器件类型统计: ${JSON.stringify(Object.fromEntries(typeCount))}`);
 
 	// 过滤掉网络标记类器件（NET_FLAG/NET_PORT）
 	const validPrimitives = filtered.filter(
 		item => item.componentType !== 'netflag' && item.componentType !== 'netport',
 	);
+	log('info', `[采集] 过滤后剩余 ${validPrimitives.length} 个有效器件 (过滤掉 ${filtered.length - validPrimitives.length} 个网络标记)`);
 
 	// 第二阶段：仅对有效器件获取详细信息
 	const componentTasks = validPrimitives.map(({ primitive }) => async () => {
@@ -302,7 +315,9 @@ async function collectComponents(
 		};
 	});
 
+	const t2 = Date.now();
 	const results = await promiseAllWithLimit(componentTasks, 50); // 提高并发限制
+	log('info', `[采集] 获取器件详细信息完成 (耗时 ${Date.now() - t2}ms)`);
 	return results;
 }
 
