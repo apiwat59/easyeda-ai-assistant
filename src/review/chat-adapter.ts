@@ -7,7 +7,8 @@
  * 3. 确保事件顺序正确：THINKING 完成后才开始 TEXT
  */
 
-import type { ConfigStore, UserMessage } from './types';
+import type { CollectedData, ConfigStore, UserMessage } from './types';
+import { chunkData } from './chunker';
 import { ChunkType, ErrorCode, ReviewError } from './types';
 
 /**
@@ -43,18 +44,22 @@ export class ChatSession {
 	private history: ChatMessage[] = [];
 	private schematicContext: string = '';
 
-	constructor(schematicChunks: any[] = []) {
-		if (Array.isArray(schematicChunks) && schematicChunks.length > 0) {
-			this.schematicContext = JSON.stringify(schematicChunks[0]);
+	constructor(schematicData?: CollectedData) {
+		if (schematicData) {
+			const chunks = chunkData(schematicData, { maxPinsPerChunk: 1200 });
+			if (chunks.length > 0) {
+				this.schematicContext = JSON.stringify(chunks[0]);
+			}
 		}
 	}
 
 	/**
 	 * 设置原理图上下文（用于更新数据）
 	 */
-	setSchematicContext(schematicChunks: any[]): void {
-		if (Array.isArray(schematicChunks) && schematicChunks.length > 0) {
-			this.schematicContext = JSON.stringify(schematicChunks[0]);
+	setSchematicContext(data: CollectedData): void {
+		const chunks = chunkData(data, { maxPinsPerChunk: 1200 });
+		if (chunks.length > 0) {
+			this.schematicContext = JSON.stringify(chunks[0]);
 		}
 	}
 
