@@ -773,64 +773,23 @@ export function parseNetlist(netlistRaw: string | undefined): Map<string, string
 		return map;
 
 	try {
-		// 检测网表格式
+		// 诊断日志：显示网表前500字符（帮助确认格式）
+		const preview = netlistRaw.substring(0, 500).replace(/\n/g, '\\n');
+		log('info', `[采集] 网表预览 (前500字符): ${preview}`);
+
+		// 策略1：JLCEDA_PRO 格式（关键字 "NET:"）
 		if (netlistRaw.includes('NET:')) {
-			// JLCEDA_PRO 格式示例：
-			// NET: VCC_3V3
-			//   U1-1
-			//   C1-1
-			const lines = netlistRaw.split('\n');
-			let currentNet = '';
-
-			for (const line of lines) {
-				const trimmed = line.trim();
-				if (trimmed.startsWith('NET:')) {
-					currentNet = trimmed.substring(4).trim();
-				}
-				else if (currentNet && trimmed.includes('-')) {
-					const [designator, pinNumber] = trimmed.split('-');
-					if (designator && pinNumber) {
-						map.set(`${designator.trim()}_${pinNumber.trim()}`, currentNet);
-					}
-				}
-			}
+			parseNetlistJlcedaPro(netlistRaw, map);
 		}
-		else if (netlistRaw.includes('[') || netlistRaw.startsWith('(')) {
-			// Protel2 格式示例：
-			// ( { Component List }
-			//   ( U1
-			//     ( 1 VCC_3V3 )
-			//     ( 2 GND )
-			//   )
-			// )
-			const lines = netlistRaw.split('\n');
-			let currentComponent = '';
 
-			for (const line of lines) {
-				const trimmed = line.trim();
+		// 策略2：Protel2 标准格式（关键字 "Net List" 或 "Component List"）
+		if (map.size === 0 && (netlistRaw.includes('Net List') || netlistRaw.includes('Component List'))) {
+			parseNetlistProtel2Standard(netlistRaw, map);
+		}
 
-				// 匹配器件名称：( U1
-				const componentMatch = trimmed.match(/^\(\s*([A-Z]+\d+)\s*$/);
-				if (componentMatch) {
-					currentComponent = componentMatch[1];
-					continue;
-				}
-
-				// 匹配引脚-网络：( 1 VCC_3V3 )
-				if (currentComponent) {
-					const pinMatch = trimmed.match(/^\(\s*(\d+)\s+([^\s)]+)\s*\)$/);
-					if (pinMatch) {
-						const pinNumber = pinMatch[1];
-						const netName = pinMatch[2];
-						map.set(`${currentComponent}_${pinNumber}`, netName);
-					}
-				}
-
-				// 器件结束：)
-				if (trimmed === ')' && currentComponent) {
-					currentComponent = '';
-				}
-			}
+		// 策略3：通用 Designator-Pin 格式（使用正则全局匹配）
+		if (map.size === 0) {
+			parseNetlistGeneric(netlistRaw, map);
 		}
 
 		log('info', `[采集] 网表解析完成: ${map.size} 个 pin-net 映射`);
@@ -840,6 +799,157 @@ export function parseNetlist(netlistRaw: string | undefined): Map<string, string
 	}
 
 	return map;
+}
+
+/**
+ * 解析 JLCEDA_PRO 格式网表
+ *
+ * 格式：
+ * NET: VCC_3V3
+ *   U1-1
+ *   C1-1
+ */
+function parseNetlistJlcedaPro(netlistRaw: string, map: Map<string, string>): void {
+	const lines = netlistRaw.split('\n');
+	let currentNet = '';
+
+	for (const line of lines) {
+		const trimmed = line.trim();
+		if (trimmed.startsWith('NET:')) {
+			currentNet = trimmed.substring(4).trim();
+		}
+		else if (currentNet && trimmed.includes('-')) {
+			const dashIdx = trimmed.indexOf('-');
+			const designator = trimmed.substring(0, dashIdx).trim();
+			const pinNumber = trimmed.substring(dashIdx + 1).trim();
+			if (designator && pinNumber && /^[A-Z]/.test(designator)) {
+				map.set(`${designator}_${pinNumber}`, currentNet);
+			}
+		}
+	}
+}
+
+/**
+ * 解析 Protel2 标准格式网表
+ *
+ * 结构包含两个部分：
+ * ( { Component List }
+ *   ( U1 LQFP-48 )
+ *   ( C1 C0402 )
+ * )
+ * ( { Net List }
+ *   ( GND
+ *     U1-14
+ *     C1-2
+ *   )
+ *   ( VCC_3V3
+ *     U1-1
+ *     C1-1
+ *   )
+ * )
+ */
+function parseNetlistProtel2Standard(netlistRaw: string, map: Map<string, string>): void {
+	const lines = netlistRaw.split('\n');
+	let inNetListSection = false;
+	let currentNet = '';
+
+	for (const line of lines) {
+		const trimmed = line.trim();
+
+		// 检测 Net List 部分开始
+		if (trimmed.includes('Net List')) {
+			inNetListSection = true;
+			currentNet = '';
+			continue;
+		}
+
+		// 检测 Component List 部分（跳过）
+		if (trimmed.includes('Component List')) {
+			inNetListSection = false;
+			currentNet = '';
+			continue;
+		}
+
+		if (!inNetListSection)
+			continue;
+
+		// 匹配网络名称行：( GND 或 ( VCC_3V3 或 ( NET_LCD_DE
+		// 网络名在 "(" 之后，可能独占一行或者和 "(" 在同一行
+		const netOpenMatch = trimmed.match(/^\(\s*([^\s)]+)\s*$/);
+		if (netOpenMatch && !trimmed.endsWith(')')) {
+			const candidate = netOpenMatch[1];
+			// 排除明显不是网络名的行（如大括号注释）
+			if (candidate && !candidate.startsWith('{') && !candidate.startsWith('(')) {
+				currentNet = candidate;
+				continue;
+			}
+		}
+
+		// 匹配引脚连接行：U1-14 或 R1-2 或 J1-3
+		// Designator 格式：字母+数字，Pin 格式：数字（可能包含字母如 A1）
+		if (currentNet) {
+			const pinMatch = trimmed.match(/^([A-Z][A-Z0-9]*\d)-(\S+)\s*$/);
+			if (pinMatch) {
+				map.set(`${pinMatch[1]}_${pinMatch[2]}`, currentNet);
+				continue;
+			}
+		}
+
+		// 网络结束：单独的 )
+		if (trimmed === ')') {
+			currentNet = '';
+		}
+	}
+
+	if (map.size > 0) {
+		log('info', `[采集] 使用 Protel2 标准格式解析器`);
+	}
+}
+
+/**
+ * 通用网表解析器（正则全局匹配）
+ *
+ * 在整个网表文本中搜索 Designator-Pin 模式，
+ * 结合上下文推断网络名称。
+ * 支持多种变体格式。
+ */
+function parseNetlistGeneric(netlistRaw: string, map: Map<string, string>): void {
+	const lines = netlistRaw.split('\n');
+	let currentNet = '';
+	let lastOpenParen = '';
+
+	for (const line of lines) {
+		const trimmed = line.trim();
+
+		// 跟踪 "(" 开始的块——可能是网络名
+		const parenMatch = trimmed.match(/^\(\s*([^\s)]+)\s*$/);
+		if (parenMatch) {
+			const content = parenMatch[1];
+			// 如果内容不是大括号注释也不是 Designator-Pin 格式
+			if (!content.startsWith('{') && !content.match(/^[A-Z]\S*-\d/)) {
+				lastOpenParen = content;
+			}
+			continue;
+		}
+
+		// 匹配 Designator-Pin 模式（宽松）
+		const pinMatch = trimmed.match(/^([A-Z][A-Z0-9]*\d)-(\S+)$/);
+		if (pinMatch && lastOpenParen) {
+			currentNet = lastOpenParen;
+			map.set(`${pinMatch[1]}_${pinMatch[2]}`, currentNet);
+			continue;
+		}
+
+		// 单独的 ) 结束当前块
+		if (trimmed === ')') {
+			lastOpenParen = '';
+			currentNet = '';
+		}
+	}
+
+	if (map.size > 0) {
+		log('info', `[采集] 使用通用格式解析器`);
+	}
 }
 
 /**
