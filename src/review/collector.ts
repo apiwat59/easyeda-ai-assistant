@@ -483,8 +483,8 @@ async function collectNetlist(): Promise<string | undefined> {
 		const startTime = Date.now();
 		log('info', `[采集] 开始获取网表...`);
 
-		// 尝试 JLCEDA_PRO 格式（可能包含 pin-net 映射）
-		const netlistPromise = eda.sch_Netlist.getNetlist(ESYS_NetlistType.JLCEDA_PRO);
+		// 使用 PROTEL2 格式（实际返回 PROTEL NETLIST 2.0 格式）
+		const netlistPromise = eda.sch_Netlist.getNetlist(ESYS_NetlistType.PROTEL2);
 
 		// 保存到全局状态，供后续查询
 		backgroundNetlistState = {
@@ -525,7 +525,7 @@ async function collectNetlist(): Promise<string | undefined> {
 			log('warn', `[采集] 网表获取超时 (${NETLIST_TIMEOUT_MS}ms)，跳过网表绑定（后台继续获取中...）`);
 		}
 		else {
-			log('info', `[采集] 网表格式: JLCEDA_PRO, 大小: ${result.length} 字符 (耗时 ${Date.now() - startTime}ms)`);
+			log('info', `[采集] 网表格式: Protel2, 大小: ${result.length} 字符 (耗时 ${Date.now() - startTime}ms)`);
 		}
 
 		return result;
