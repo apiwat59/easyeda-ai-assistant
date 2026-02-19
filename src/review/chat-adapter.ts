@@ -50,6 +50,8 @@ export class ChatSession {
 	/**
 	 * 发送用户消息并获取AI回复
 	 *
+	 * @param userMsg 用户消息对象
+	 * @param config AI 配置
 	 * @param onBlock 可选的流式分块回调，接收 thinking/text 事件
 	 * @param signal 可选的 AbortSignal，用于取消请求
 	 */
@@ -171,6 +173,141 @@ async function callOpenAICompatibleChat(
 }
 
 /**
+ * 真正的流式读取（逐块读取 ReadableStream）
+ */
+async function readStreamingResponse(
+	body: ReadableStream<Uint8Array>,
+	onBlock: MessageBlockHandler | undefined,
+	signal: AbortSignal | undefined,
+	url: string,
+): Promise<ChatCompletionResult> {
+	const reader = body.getReader();
+	const decoder = new TextDecoder();
+	let buffer = '';
+	let textContent = '';
+	let reasoningContent = '';
+
+	try {
+		while (true) {
+			if (signal?.aborted) {
+				reader.cancel();
+				throw createAbortReviewError('请求已取消', url, signal.reason);
+			}
+
+			const { done, value } = await reader.read();
+			if (done)
+				break;
+
+			// 解码新数据块
+			buffer += decoder.decode(value, { stream: true });
+
+			// 按行分割处理 SSE 事件
+			const lines = buffer.split('\n');
+			buffer = lines.pop() || ''; // 保留最后一个不完整的行
+
+			for (const line of lines) {
+				if (!line.trim() || line.startsWith(':'))
+					continue;
+
+				if (line.startsWith('data: ')) {
+					const data = line.slice(6);
+					if (data === '[DONE]')
+						continue;
+
+					try {
+						const parsed = JSON.parse(data);
+						const delta = parsed.choices?.[0]?.delta;
+						if (!delta)
+							continue;
+
+						let reasoning = delta.reasoning_content || '';
+						let content = delta.content || '';
+
+						// Grok 格式检测和分离
+						if (!reasoning && content) {
+							const hasGrokMarkers = /\[(?:Agent\s+\d+|Grok)\]\[/.test(content) || /browse_page\s*\{/.test(content);
+							if (hasGrokMarkers) {
+								const contentLines = content.split('\n');
+								const thinkingLines: string[] = [];
+								const textLines: string[] = [];
+
+								for (const l of contentLines) {
+									const trimmed = l.trim();
+									if (trimmed.match(/^\[(?:Agent\s+\d+|Grok)\]\[/) || trimmed.startsWith('browse_page')) {
+										thinkingLines.push(l);
+									}
+									else if (trimmed.length > 0) {
+										textLines.push(l);
+									}
+								}
+
+								if (thinkingLines.length > 0) {
+									reasoning = thinkingLines.join('\n').trim();
+									content = textLines.join('\n').trim();
+								}
+							}
+						}
+
+						// 累积内容
+						if (reasoning)
+							reasoningContent += reasoning;
+						if (content)
+							textContent += content;
+
+						// 实时发送增量更新
+						if (onBlock) {
+							if (reasoning) {
+								onBlock({
+									type: ChunkType.THINKING_DELTA,
+									content: reasoning,
+									accumulatedContent: reasoningContent,
+								});
+							}
+							if (content) {
+								onBlock({
+									type: ChunkType.TEXT_DELTA,
+									content,
+									accumulatedContent: textContent,
+								});
+							}
+						}
+					}
+					catch {
+						// 忽略解析错误，继续处理下一行
+					}
+				}
+			}
+		}
+
+		// 发送完成事件
+		if (onBlock) {
+			if (reasoningContent) {
+				onBlock({
+					type: ChunkType.THINKING_COMPLETE,
+					content: '',
+					accumulatedContent: reasoningContent,
+					status: 'success',
+				});
+			}
+			if (textContent) {
+				onBlock({
+					type: ChunkType.TEXT_COMPLETE,
+					content: '',
+					accumulatedContent: textContent,
+					status: 'success',
+				});
+			}
+		}
+
+		return { textContent, reasoningContent };
+	}
+	catch (error) {
+		reader.cancel();
+		throw error;
+	}
+}
+
+/**
  * 发送HTTP请求
  */
 async function makeRequest(
@@ -241,6 +378,12 @@ async function makeRequest(
 		const contentType = response.headers.get('content-type') || '';
 		const isSSE = contentType.includes('text/event-stream') || contentType.includes('text/plain');
 
+		// 尝试真正的流式读取（如果支持 ReadableStream）
+		if (isSSE && response.body && typeof response.body.getReader === 'function') {
+			return await readStreamingResponse(response.body, onBlock, signal, url);
+		}
+
+		// 降级：等待完整响应
 		const responseText = await response.text();
 
 		if (signal?.aborted) {
