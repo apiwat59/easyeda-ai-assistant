@@ -5,6 +5,19 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.1.2] - 2026-02-20
+
+### 修复的问题 🐛
+
+- 🐛 **修复 Markdown 库加载失败（关键修复）** - marked.js 和 highlight.js 的 CDN 路径错误导致库加载失败，所有 Markdown 语法（包括表格）都无法渲染
+  - 根本原因：marked@17.0.1 的 CDN 路径从 `/marked.min.js` 变为 `/lib/marked.umd.js`，highlight.js npm 包不含浏览器构建文件
+  - 解决方案：实现 CDN + 本地双重加载策略，先尝试 CDN（快速），失败时自动回退到本地 vendor/ 文件
+  - 添加详细的调试日志到 UI 调试面板，记录库加载状态和 Markdown 解析过程
+  - 本地备份文件（~224KB）：marked、marked-footnote、DOMPurify、highlight.js 及 7 种语言包
+  - 现在支持完整的 GFM 语法：表格、脚注、任务列表、代码高亮、嵌套格式等
+
+---
+
 ## [1.1.1] - 2026-02-20
 
 ### 新增功能 ✨
@@ -33,11 +46,6 @@
 - 🐛 **修复重复回答问题** - 代理服务器对同一请求发送两次时，第二次响应会被正确忽略
 - 🐛 **修复按钮间距** - 齿轮和调试按钮现在紧挨着（gap: 6px）
 - 🐛 **修复 Markdown 渲染错误** - 优化 DOMPurify 白名单配置，确保 `### 1. **标题内粗体**` 等复杂语法正确显示
-- 🐛 **修复 Markdown 库加载失败（关键修复）** - marked.js 和 highlight.js 的 CDN 路径错误导致库加载失败，所有 Markdown 语法（包括表格）都无法渲染
-  - 根本原因：marked@17.0.1 的 CDN 路径从 `/marked.min.js` 变为 `/lib/marked.umd.js`，highlight.js npm 包不含浏览器构建文件
-  - 解决方案：实现 CDN + 本地双重加载策略，先尝试 CDN（快速），失败时自动回退到本地 vendor/ 文件
-  - 添加详细的调试日志到 UI 调试面板，记录库加载状态和 Markdown 解析过程
-  - 本地备份文件（~224KB）：marked、marked-footnote、DOMPurify、highlight.js 及 7 种语言包
 
 ---
 
