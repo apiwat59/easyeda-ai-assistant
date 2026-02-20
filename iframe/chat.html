@@ -682,8 +682,19 @@
         .message-content a:hover { text-decoration: underline; }
     </style>
     <!-- Markdown 渲染库 -->
-    <script src="https://cdn.jsdelivr.net/npm/marked@11.0.0/marked.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@17.0.1/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.11/dist/purify.min.js"></script>
+    <!-- 代码高亮库 -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/styles/github-dark.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/highlight.min.js"></script>
+    <!-- 常用语言支持 -->
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/languages/javascript.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/languages/python.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/languages/typescript.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/languages/json.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/languages/bash.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/languages/cpp.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/languages/c.min.js"></script>
 </head>
 <body>
     <div id="sidebar">
@@ -2147,13 +2158,29 @@
 
         /**
          * 解析 Markdown 文本为安全 HTML
-         * 使用 marked.js 解析 + DOMPurify 净化 XSS
+         * 使用 marked.js 解析 + DOMPurify 净化 XSS + highlight.js 代码高亮
          * 降级：如果 CDN 库未加载，使用简单正则替换
          */
         function parseMarkdown(text) {
             if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
                 try {
-                    var rawHtml = marked.parse(text, { breaks: true });
+                    // 配置 marked 选项
+                    marked.setOptions({
+                        breaks: true,
+                        gfm: true,
+                        highlight: function(code, lang) {
+                            // 如果 highlight.js 可用，进行语法高亮
+                            if (typeof hljs !== 'undefined' && lang && hljs.getLanguage(lang)) {
+                                try {
+                                    return hljs.highlight(code, { language: lang }).value;
+                                } catch (e) {
+                                    console.warn('代码高亮失败:', e);
+                                }
+                            }
+                            return code; // 降级：返回原始代码
+                        }
+                    });
+                    var rawHtml = marked.parse(text);
                     return DOMPurify.sanitize(rawHtml);
                 } catch (e) {
                     console.warn('Markdown 解析失败，使用降级渲染:', e);
