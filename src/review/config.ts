@@ -20,6 +20,8 @@ const DEFAULT_CONFIG: ConfigStore = {
 	apiUrl: 'https://api.openai.com/v1/chat/completions',
 	maxPinsPerChunk: 1200,
 	timeout: 120,
+	windowWidth: 960,
+	windowHeight: 700,
 };
 
 /**

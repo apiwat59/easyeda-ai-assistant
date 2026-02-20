@@ -88,9 +88,17 @@ export function isCollectionInProgress(): boolean {
  * 启动AI对话面板
  */
 export async function startAIChat(): Promise<void> {
+	// 从配置读取窗口尺寸
+	const config = loadConfig();
+	const width = config.windowWidth || 960;
+	const height = config.windowHeight || 700;
+
 	// 打开IFrame面板（不阻塞，不立即采集数据）
 	try {
-		await eda.sys_IFrame.openIFrame('/iframe/chat.html', 960, 700, 'ai-sch-chat');
+		await eda.sys_IFrame.openIFrame('/iframe/chat.html', width, height, 'ai-sch-chat', {
+			maximizeButton: true,
+			minimizeButton: true,
+		});
 	}
 	catch {
 		throw new ReviewError(ErrorCode.UI_IFRAME_FAILED, '无法打开对话面板');
@@ -480,6 +488,8 @@ function setupChatListeners(): void {
 			apiUrl: config.apiUrl,
 			apiKey: config.apiKey || '',
 			model: config.model,
+			windowWidth: config.windowWidth || 960,
+			windowHeight: config.windowHeight || 700,
 		});
 	});
 
@@ -566,6 +576,8 @@ function setupChatListeners(): void {
 			apiUrl: result.config.apiUrl,
 			apiKey: result.config.apiKey || '',
 			model: result.config.model,
+			windowWidth: result.config.windowWidth || 960,
+			windowHeight: result.config.windowHeight || 700,
 		});
 	});
 

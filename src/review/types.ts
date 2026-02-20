@@ -212,6 +212,8 @@ export interface ConfigStore {
 	apiUrl?: string; // 自定义API地址
 	maxPinsPerChunk?: number; // 默认1200
 	timeout?: number; // 请求超时（秒），默认120
+	windowWidth?: number; // 窗口宽度，默认960
+	windowHeight?: number; // 窗口高度，默认700
 }
 
 // ============ 对话模式通信协议 ============

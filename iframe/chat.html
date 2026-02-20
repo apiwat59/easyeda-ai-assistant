@@ -760,6 +760,15 @@
                 <label class="form-label">模型名称</label>
                 <input type="text" class="form-control" id="cfg-model" value="gpt-4o">
             </div>
+            <div class="form-group">
+                <label class="form-label">窗口尺寸</label>
+                <div style="display: flex; gap: 10px;">
+                    <input type="number" class="form-control" id="cfg-window-width" placeholder="960" min="600" max="2000" style="flex: 1;">
+                    <span style="line-height: 32px;">×</span>
+                    <input type="number" class="form-control" id="cfg-window-height" placeholder="700" min="400" max="1200" style="flex: 1;">
+                </div>
+                <div class="form-hint">窗口宽度和高度（像素），下次打开时生效</div>
+            </div>
             <div class="modal-actions">
                 <button class="btn btn-secondary" id="btn-cancel-config">取消</button>
                 <button class="btn" id="btn-save-config">保存</button>
@@ -2355,16 +2364,22 @@
             document.getElementById('cfg-apiurl').value = currentConfig.apiUrl || 'https://api.openai.com/v1/chat/completions';
             document.getElementById('cfg-apikey').value = currentConfig.apiKey || '';
             document.getElementById('cfg-model').value = currentConfig.model || 'gpt-4o';
+            document.getElementById('cfg-window-width').value = currentConfig.windowWidth || 960;
+            document.getElementById('cfg-window-height').value = currentConfig.windowHeight || 700;
         }
 
         function closeConfigModal() { configModal.classList.remove('active'); }
 
         function saveConfig() {
+            var widthVal = parseInt(document.getElementById('cfg-window-width').value, 10);
+            var heightVal = parseInt(document.getElementById('cfg-window-height').value, 10);
             var config = {
                 provider: 'openai_compatible',
                 apiUrl: document.getElementById('cfg-apiurl').value,
                 apiKey: document.getElementById('cfg-apikey').value.trim(),
-                model: document.getElementById('cfg-model').value
+                model: document.getElementById('cfg-model').value,
+                windowWidth: (widthVal >= 600 && widthVal <= 2000) ? widthVal : 960,
+                windowHeight: (heightVal >= 400 && heightVal <= 1200) ? heightVal : 700
             };
             publishMessage('ai-chat/config-update', config);
             closeConfigModal();
