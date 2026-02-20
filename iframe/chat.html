@@ -776,11 +776,17 @@
             <div class="form-group">
                 <label class="form-label">窗口尺寸</label>
                 <div style="display: flex; gap: 10px; align-items: center;">
-                    <input type="number" class="form-control" id="cfg-window-width" placeholder="960" min="600" max="2000" style="flex: 1;">
+                    <div style="flex: 1;">
+                        <input type="number" class="form-control" id="cfg-window-width" placeholder="960" min="400" max="3840" style="width: 100%;">
+                        <div class="form-hint" style="margin-top: 2px;">宽度 (400-3840)</div>
+                    </div>
                     <span style="color: var(--text-secondary);">×</span>
-                    <input type="number" class="form-control" id="cfg-window-height" placeholder="700" min="400" max="1200" style="flex: 1;">
+                    <div style="flex: 1;">
+                        <input type="number" class="form-control" id="cfg-window-height" placeholder="700" min="300" max="2160" style="width: 100%;">
+                        <div class="form-hint" style="margin-top: 2px;">高度 (300-2160)</div>
+                    </div>
                 </div>
-                <div class="form-hint">宽度 × 高度（像素），保存后下次打开生效</div>
+                <div class="form-hint">保存后下次打开生效</div>
             </div>
             <div class="modal-actions">
                 <button class="btn btn-secondary" id="btn-cancel-ui-settings">取消</button>
@@ -2414,8 +2420,8 @@
             var widthVal = parseInt(document.getElementById('cfg-window-width').value, 10);
             var heightVal = parseInt(document.getElementById('cfg-window-height').value, 10);
             var config = {
-                windowWidth: (widthVal >= 600 && widthVal <= 2000) ? widthVal : 960,
-                windowHeight: (heightVal >= 400 && heightVal <= 1200) ? heightVal : 700
+                windowWidth: (widthVal >= 400 && widthVal <= 3840) ? widthVal : 960,
+                windowHeight: (heightVal >= 300 && heightVal <= 2160) ? heightVal : 700
             };
             publishMessage('ai-chat/config-update', config);
             closeUISettingsModal();
