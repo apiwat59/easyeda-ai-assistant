@@ -710,21 +710,157 @@
         /* 图片在消息内的适配 */
         .message-content img { max-width: 100%; height: auto; border-radius: var(--radius-sm); }
     </style>
-    <!-- Markdown 渲染库 -->
-    <script src="https://cdn.jsdelivr.net/npm/marked@17.0.1/lib/marked.umd.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked-footnote@1.4.0/dist/index.umd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.11/dist/purify.min.js"></script>
-    <!-- 代码高亮库（使用 highlightjs 官方 CDN 发布包） -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/styles/github-dark.min.css">
-    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/highlight.min.js"></script>
-    <!-- 常用语言支持 -->
-    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/languages/javascript.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/languages/python.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/languages/typescript.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/languages/json.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/languages/bash.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/languages/cpp.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/languages/c.min.js"></script>
+    <!-- Markdown 渲染库：动态加载（CDN 优先，失败时回退到本地） -->
+    <script>
+        (function() {
+            // 动态加载脚本（CDN 优先，失败时回退到本地）
+            function loadScript(cdnUrl, localUrl, name) {
+                return new Promise((resolve, reject) => {
+                    var script = document.createElement('script');
+                    script.src = cdnUrl;
+                    script.onload = function() {
+                        console.log('[Vendor] ' + name + ' 从 CDN 加载成功');
+                        resolve('cdn');
+                    };
+                    script.onerror = function() {
+                        console.warn('[Vendor] ' + name + ' CDN 加载失败，尝试本地文件');
+                        var localScript = document.createElement('script');
+                        localScript.src = localUrl;
+                        localScript.onload = function() {
+                            console.log('[Vendor] ' + name + ' 从本地加载成功');
+                            resolve('local');
+                        };
+                        localScript.onerror = function() {
+                            console.error('[Vendor] ' + name + ' CDN 和本地都加载失败');
+                            reject(new Error(name + ' 加载失败'));
+                        };
+                        document.head.appendChild(localScript);
+                    };
+                    document.head.appendChild(script);
+                });
+            }
+
+            // 动态加载 CSS（CDN 优先，失败时回退到本地）
+            function loadCSS(cdnUrl, localUrl, name) {
+                return new Promise((resolve, reject) => {
+                    var link = document.createElement('link');
+                    link.rel = 'stylesheet';
+                    link.href = cdnUrl;
+                    link.onload = function() {
+                        console.log('[Vendor] ' + name + ' CSS 从 CDN 加载成功');
+                        resolve('cdn');
+                    };
+                    link.onerror = function() {
+                        console.warn('[Vendor] ' + name + ' CSS CDN 加载失败，尝试本地文件');
+                        var localLink = document.createElement('link');
+                        localLink.rel = 'stylesheet';
+                        localLink.href = localUrl;
+                        localLink.onload = function() {
+                            console.log('[Vendor] ' + name + ' CSS 从本地加载成功');
+                            resolve('local');
+                        };
+                        localLink.onerror = function() {
+                            console.error('[Vendor] ' + name + ' CSS CDN 和本地都加载失败');
+                            reject(new Error(name + ' CSS 加载失败'));
+                        };
+                        document.head.appendChild(localLink);
+                    };
+                    document.head.appendChild(link);
+                });
+            }
+
+            // 按顺序加载所有库
+            Promise.resolve()
+                // 1. marked.js
+                .then(function() {
+                    return loadScript(
+                        'https://cdn.jsdelivr.net/npm/marked@17.0.1/lib/marked.umd.js',
+                        'vendor/marked.umd.js',
+                        'marked'
+                    );
+                })
+                // 2. marked-footnote
+                .then(function() {
+                    return loadScript(
+                        'https://cdn.jsdelivr.net/npm/marked-footnote@1.4.0/dist/index.umd.min.js',
+                        'vendor/marked-footnote.umd.min.js',
+                        'marked-footnote'
+                    );
+                })
+                // 3. DOMPurify
+                .then(function() {
+                    return loadScript(
+                        'https://cdn.jsdelivr.net/npm/dompurify@3.0.11/dist/purify.min.js',
+                        'vendor/purify.min.js',
+                        'DOMPurify'
+                    );
+                })
+                // 4. highlight.js CSS
+                .then(function() {
+                    return loadCSS(
+                        'https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/styles/github-dark.min.css',
+                        'vendor/github-dark.min.css',
+                        'highlight.js'
+                    );
+                })
+                // 5. highlight.js 核心
+                .then(function() {
+                    return loadScript(
+                        'https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/highlight.min.js',
+                        'vendor/highlight.min.js',
+                        'highlight.js'
+                    );
+                })
+                // 6. 语言包（并行加载）
+                .then(function() {
+                    return Promise.all([
+                        loadScript(
+                            'https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/languages/javascript.min.js',
+                            'vendor/hljs-javascript.min.js',
+                            'hljs-javascript'
+                        ),
+                        loadScript(
+                            'https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/languages/python.min.js',
+                            'vendor/hljs-python.min.js',
+                            'hljs-python'
+                        ),
+                        loadScript(
+                            'https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/languages/typescript.min.js',
+                            'vendor/hljs-typescript.min.js',
+                            'hljs-typescript'
+                        ),
+                        loadScript(
+                            'https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/languages/json.min.js',
+                            'vendor/hljs-json.min.js',
+                            'hljs-json'
+                        ),
+                        loadScript(
+                            'https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/languages/bash.min.js',
+                            'vendor/hljs-bash.min.js',
+                            'hljs-bash'
+                        ),
+                        loadScript(
+                            'https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/languages/cpp.min.js',
+                            'vendor/hljs-cpp.min.js',
+                            'hljs-cpp'
+                        ),
+                        loadScript(
+                            'https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/languages/c.min.js',
+                            'vendor/hljs-c.min.js',
+                            'hljs-c'
+                        )
+                    ]);
+                })
+                .then(function() {
+                    console.log('[Vendor] 所有库加载完成');
+                    // 触发自定义事件，通知页面库已加载完成
+                    window.dispatchEvent(new Event('vendorLibsLoaded'));
+                })
+                .catch(function(error) {
+                    console.error('[Vendor] 库加载失败:', error);
+                });
+        })();
+    </script>
 </head>
 <body>
     <div id="sidebar">
