@@ -2,9 +2,13 @@
  * AI原理图审查 - MCP 工具编排器
  *
  * 职责：
- * 1. 拉取可用工具列表（Gateway -> /tools/list）
- * 2. 执行工具调用（Gateway -> /tools/call）
+ * 1. 拉取可用工具列表（Gateway -> /tools/list 或 JSON-RPC tools/list）
+ * 2. 执行工具调用（Gateway -> /tools/call 或 JSON-RPC tools/call）
  * 3. 向 IFrame 发出可观测的工具事件
+ *
+ * 支持两种 Gateway 模式：
+ * - REST Gateway: 自定义 REST API（/tools/list, /tools/call）
+ * - MCP Streamable HTTP: JSON-RPC 2.0 协议（单一端点，如 /mcp）
  */
 import type {
 	ChatToolCall,
@@ -24,6 +28,9 @@ interface ToolListResponseShape {
 	result?: {
 		tools?: unknown;
 	};
+	// JSON-RPC 格式
+	jsonrpc?: string;
+	id?: number | string;
 }
 
 interface ToolCallResponseShape {
@@ -32,6 +39,41 @@ interface ToolCallResponseShape {
 	output?: unknown;
 	isError?: boolean;
 	error?: unknown;
+	// JSON-RPC 格式
+	jsonrpc?: string;
+	id?: number | string;
+}
+
+/**
+ * Gateway 类型
+ */
+enum GatewayType {
+	REST = 'rest', // 自定义 REST API
+	JSON_RPC = 'json-rpc', // MCP Streamable HTTP (JSON-RPC 2.0)
+}
+
+/**
+ * JSON-RPC 请求
+ */
+interface JsonRpcRequest {
+	jsonrpc: '2.0';
+	method: string;
+	params?: unknown;
+	id: number;
+}
+
+/**
+ * JSON-RPC 响应（预留类型定义，暂未直接使用）
+ */
+interface _JsonRpcResponse {
+	jsonrpc: '2.0';
+	result?: unknown;
+	error?: {
+		code: number;
+		message: string;
+		data?: unknown;
+	};
+	id: number | string;
 }
 
 /**
@@ -39,6 +81,8 @@ interface ToolCallResponseShape {
  */
 export class ToolOrchestrator {
 	private readonly gatewayBaseUrl: string;
+	private readonly gatewayType: GatewayType;
+	private jsonRpcIdCounter = 1;
 
 	constructor(
 		private readonly config: ConfigStore,
@@ -46,6 +90,7 @@ export class ToolOrchestrator {
 		private readonly emitEvent: (event: ToolEventMessage) => void,
 	) {
 		this.gatewayBaseUrl = normalizeGatewayBaseUrl(config.mcpGatewayUrl || '');
+		this.gatewayType = detectGatewayType(this.gatewayBaseUrl);
 	}
 
 	isEnabled(): boolean {
@@ -64,14 +109,33 @@ export class ToolOrchestrator {
 		});
 
 		try {
-			const response = await this.postJson<ToolListResponseShape>(
-				'/tools/list',
-				{
-					sessionId: this.context.sessionId,
-					requestId: this.context.requestId,
-				},
-				signal,
-			);
+			let response: ToolListResponseShape;
+
+			if (this.gatewayType === GatewayType.JSON_RPC) {
+				// MCP Streamable HTTP (JSON-RPC)
+				const jsonRpcRequest: JsonRpcRequest = {
+					jsonrpc: '2.0',
+					method: 'tools/list',
+					id: this.jsonRpcIdCounter++,
+				};
+				response = await this.postJson<ToolListResponseShape>(
+					'',
+					jsonRpcRequest,
+					signal,
+				);
+			}
+			else {
+				// REST Gateway
+				response = await this.postJson<ToolListResponseShape>(
+					'/tools/list',
+					{
+						sessionId: this.context.sessionId,
+						requestId: this.context.requestId,
+					},
+					signal,
+				);
+			}
+
 			const tools = normalizeToolDefinitions(response);
 
 			this.emit({
@@ -119,18 +183,40 @@ export class ToolOrchestrator {
 
 			try {
 				const parsedArguments = parseToolArguments(toolCall.function.arguments);
-				const response = await this.postJson<ToolCallResponseShape>(
-					'/tools/call',
-					{
-						sessionId: this.context.sessionId,
-						requestId: this.context.requestId,
-						name: toolName,
-						toolName,
-						arguments: parsedArguments,
-						autoApprove: this.config.mcpAutoApprove !== false,
-					},
-					signal,
-				);
+				let response: ToolCallResponseShape;
+
+				if (this.gatewayType === GatewayType.JSON_RPC) {
+					// MCP Streamable HTTP (JSON-RPC)
+					const jsonRpcRequest: JsonRpcRequest = {
+						jsonrpc: '2.0',
+						method: 'tools/call',
+						params: {
+							name: toolName,
+							arguments: parsedArguments,
+						},
+						id: this.jsonRpcIdCounter++,
+					};
+					response = await this.postJson<ToolCallResponseShape>(
+						'',
+						jsonRpcRequest,
+						signal,
+					);
+				}
+				else {
+					// REST Gateway
+					response = await this.postJson<ToolCallResponseShape>(
+						'/tools/call',
+						{
+							sessionId: this.context.sessionId,
+							requestId: this.context.requestId,
+							name: toolName,
+							toolName,
+							arguments: parsedArguments,
+							autoApprove: this.config.mcpAutoApprove !== false,
+						},
+						signal,
+					);
+				}
 
 				const content = coerceToolResultToText(response);
 				const isError = detectToolError(response);
@@ -222,7 +308,7 @@ export class ToolOrchestrator {
 				'POST',
 				JSON.stringify(payload),
 				{
-					headers: buildGatewayHeaders(this.config),
+					headers: buildGatewayHeaders(this.config, this.gatewayType),
 				},
 			) as Promise<unknown>;
 
@@ -240,6 +326,11 @@ export class ToolOrchestrator {
 			const rawText = await response.text();
 			if (!rawText) {
 				return {} as T;
+			}
+
+			// MCP Streamable HTTP 使用 SSE 格式
+			if (this.gatewayType === GatewayType.JSON_RPC && rawText.startsWith('event:')) {
+				return parseSSEResponse(rawText) as T;
 			}
 
 			try {
@@ -272,21 +363,59 @@ export class ToolOrchestrator {
 
 // ============ 辅助函数 ============
 
-function buildGatewayHeaders(config: ConfigStore): Record<string, string> {
+function buildGatewayHeaders(config: ConfigStore, gatewayType: GatewayType): Record<string, string> {
 	const headers: Record<string, string> = {
 		'Content-Type': 'application/json',
 	};
 
+	// MCP Streamable HTTP 需要同时接受 JSON 和 SSE
+	if (gatewayType === GatewayType.JSON_RPC) {
+		headers.Accept = 'application/json, text/event-stream';
+	}
+
 	if (config.mcpGatewayApiKey && config.mcpGatewayApiKey.trim().length > 0) {
 		headers.Authorization = `Bearer ${config.mcpGatewayApiKey.trim()}`;
 	}
-	headers['X-MCP-Auto-Approve'] = config.mcpAutoApprove === false ? 'false' : 'true';
+
+	// REST Gateway 专用头
+	if (gatewayType === GatewayType.REST) {
+		headers['X-MCP-Auto-Approve'] = config.mcpAutoApprove === false ? 'false' : 'true';
+	}
+
 	return headers;
 }
 
 function normalizeGatewayBaseUrl(url: string): string {
 	const normalized = url.trim().replace(/\/+$/, '');
 	return normalized;
+}
+
+/**
+ * 检测 Gateway 类型
+ *
+ * 规则：
+ * - 如果 URL 以 /mcp、/sse、/http 等 MCP 传输层路径结尾，判定为 JSON-RPC
+ * - 否则判定为 REST Gateway
+ */
+function detectGatewayType(url: string): GatewayType {
+	const lowerUrl = url.toLowerCase();
+
+	// MCP Streamable HTTP 常见端点模式
+	const jsonRpcPatterns = [
+		'/mcp',
+		'/sse',
+		'/http',
+		'/streamable',
+		'/jsonrpc',
+	];
+
+	for (const pattern of jsonRpcPatterns) {
+		if (lowerUrl.endsWith(pattern)) {
+			return GatewayType.JSON_RPC;
+		}
+	}
+
+	return GatewayType.REST;
 }
 
 function normalizeToolDefinitions(payload: unknown): ChatToolDefinition[] {
@@ -323,12 +452,25 @@ function extractRawTools(payload: unknown): unknown[] {
 	if (!isRecord(payload))
 		return [];
 
+	// JSON-RPC 响应格式：{ jsonrpc: "2.0", result: { tools: [...] }, id: 1 }
+	if (payload.jsonrpc === '2.0' && isRecord(payload.result)) {
+		if (Array.isArray(payload.result.tools)) {
+			return payload.result.tools;
+		}
+		// 有些实现直接返回 result: [...]
+		if (Array.isArray(payload.result)) {
+			return payload.result;
+		}
+	}
+
+	// REST 响应格式：{ tools: [...] } 或 { result: { tools: [...] } }
 	if (Array.isArray(payload.tools)) {
 		return payload.tools;
 	}
 	if (isRecord(payload.result) && Array.isArray(payload.result.tools)) {
 		return payload.result.tools;
 	}
+
 	return [];
 }
 
@@ -349,21 +491,42 @@ function coerceToolResultToText(response: unknown): string {
 		return stringifyUnknown(response);
 	}
 
+	// JSON-RPC 错误响应：{ jsonrpc: "2.0", error: {...}, id: 1 }
+	if (response.jsonrpc === '2.0' && isRecord(response.error)) {
+		const error = response.error;
+		const message = typeof error.message === 'string' ? error.message : '';
+		const code = typeof error.code === 'number' ? error.code : '';
+		return `JSON-RPC Error ${code}: ${message}`;
+	}
+
+	// JSON-RPC 成功响应：{ jsonrpc: "2.0", result: {...}, id: 1 }
+	if (response.jsonrpc === '2.0' && response.result !== undefined) {
+		return coerceToolResultToText(response.result);
+	}
+
+	// 递归处理嵌套的 result
 	if (isRecord(response.result)) {
 		return coerceToolResultToText(response.result);
 	}
+
+	// MCP 标准 content 数组格式
 	if (Array.isArray(response.content)) {
 		return extractTextFromContentArray(response.content);
 	}
+
+	// 简单字符串 content
 	if (typeof response.content === 'string') {
 		return response.content;
 	}
+
+	// 其他字段
 	if (response.output !== undefined) {
 		return stringifyUnknown(response.output);
 	}
 	if (response.error !== undefined) {
 		return stringifyUnknown(response.error);
 	}
+
 	return stringifyUnknown(response);
 }
 
@@ -404,11 +567,41 @@ function isRecord(value: unknown): value is Record<string, any> {
 }
 
 /**
+ * 解析 SSE 响应（MCP Streamable HTTP）
+ *
+ * 格式：
+ * event: message
+ * data: {"jsonrpc":"2.0","result":{...},"id":1}
+ */
+function parseSSEResponse(text: string): unknown {
+	const lines = text.split(/\r?\n/);
+	let dataLine = '';
+
+	for (const line of lines) {
+		if (line.startsWith('data:')) {
+			dataLine = line.substring(5).trim();
+			break;
+		}
+	}
+
+	if (!dataLine) {
+		throw new Error('SSE 响应中未找到 data 字段');
+	}
+
+	try {
+		return JSON.parse(dataLine);
+	}
+	catch (error) {
+		throw new Error(`SSE data 解析失败: ${error instanceof Error ? error.message : String(error)}`);
+	}
+}
+
+/**
  * 递归检测工具响应中的错误状态
  *
- * 按 MCP 规范：
- * - 工具执行错误：result.isError = true
- * - 协议级错误：顶层 error 字段（非空对象或非空字符串）
+ * 支持两种格式：
+ * 1. JSON-RPC 2.0: { jsonrpc: "2.0", error: {...}, id: 1 }
+ * 2. MCP 规范: { result: { isError: true } } 或 { error: "..." }
  *
  * 递归检查所有嵌套的 result 层级，避免深层错误漏检
  */
@@ -422,6 +615,11 @@ function detectToolError(response: unknown, visited = new Set<any>()): boolean {
 		return false;
 	}
 	visited.add(response);
+
+	// JSON-RPC 错误响应
+	if (response.jsonrpc === '2.0' && response.error !== undefined) {
+		return true;
+	}
 
 	// 检查顶层 isError
 	if (response.isError === true) {
