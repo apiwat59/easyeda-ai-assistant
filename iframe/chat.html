@@ -2181,7 +2181,12 @@
                         }
                     });
                     var rawHtml = marked.parse(text);
-                    return DOMPurify.sanitize(rawHtml);
+                    // DOMPurify 配置：保留所有 Markdown 常用标签和属性
+                    return DOMPurify.sanitize(rawHtml, {
+                        ALLOWED_TAGS: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'br', 'strong', 'em', 'code', 'pre', 'a', 'ul', 'ol', 'li', 'blockquote', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'hr', 'del', 'span', 'div', 'img'],
+                        ALLOWED_ATTR: ['href', 'title', 'target', 'rel', 'class', 'id', 'src', 'alt', 'width', 'height'],
+                        ALLOW_DATA_ATTR: false
+                    });
                 } catch (e) {
                     console.warn('Markdown 解析失败，使用降级渲染:', e);
                 }
