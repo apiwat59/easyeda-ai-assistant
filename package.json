@@ -31,6 +31,9 @@
 		"fix": "eslint --fix",
 		"build": "npm run compile && ts-node ./build/packaged.ts"
 	},
+	"dependencies": {
+		"marked-footnote": "^1.4.0"
+	},
 	"devDependencies": {
 		"@antfu/eslint-config": "^5.4.1",
 		"@jlceda/pro-api-types": "^0.1.175",

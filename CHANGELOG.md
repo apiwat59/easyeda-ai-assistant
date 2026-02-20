@@ -20,6 +20,11 @@
   - 升级 DOMPurify: 3.0.6 → 3.0.11（最新安全版本）
   - 启用 GFM（GitHub Flavored Markdown）支持
   - 优化 DOMPurify 配置，防止误删标题内粗体等内容
+  - 新增脚注支持（marked-footnote 1.4.0）- 支持 `[^1]` 和 `[^复杂脚注]` 语法
+  - 新增脚注区域样式（分隔线+缩小字号+辅助色）
+  - 新增任务列表样式（checkbox 勾选框）
+  - 新增删除线、水平线、嵌套块引用、图片自适应样式
+  - 使用 Marked 实例 API（`new marked.Marked().use()`）替代全局 `marked.setOptions()`
 
 ### 修复的问题 🐛
 

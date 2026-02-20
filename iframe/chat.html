@@ -680,9 +680,39 @@
         .message-content p { margin: 0.5em 0; }
         .message-content a { color: var(--accent-color); text-decoration: none; }
         .message-content a:hover { text-decoration: underline; }
+
+        /* 脚注样式 */
+        .message-content .footnotes { margin-top: 1.5em; padding-top: 0.8em; border-top: 1px solid var(--border-color); font-size: 0.85em; }
+        .message-content .footnotes ol { padding-left: 1.5em; }
+        .message-content .footnotes li { margin: 0.4em 0; color: var(--text-secondary); }
+        .message-content .footnotes li p { margin: 0.2em 0; }
+        .message-content sup a { color: var(--accent-color); text-decoration: none; font-weight: 600; }
+        .message-content sup a:hover { text-decoration: underline; }
+
+        /* 任务列表样式 */
+        .message-content li input[type="checkbox"] {
+            margin-right: 0.4em; vertical-align: middle; cursor: default;
+            accent-color: var(--accent-color);
+        }
+
+        /* 删除线 */
+        .message-content del { text-decoration: line-through; color: var(--text-secondary); }
+
+        /* 水平线 */
+        .message-content hr { border: none; border-top: 1px solid var(--border-color); margin: 1em 0; }
+
+        /* 嵌套块引用 */
+        .message-content blockquote blockquote {
+            border-left-color: var(--text-secondary);
+            margin-left: 0;
+        }
+
+        /* 图片在消息内的适配 */
+        .message-content img { max-width: 100%; height: auto; border-radius: var(--radius-sm); }
     </style>
     <!-- Markdown 渲染库 -->
     <script src="https://cdn.jsdelivr.net/npm/marked@17.0.1/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked-footnote@1.4.0/dist/index.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.11/dist/purify.min.js"></script>
     <!-- 代码高亮库 -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/styles/github-dark.min.css">
@@ -2164,29 +2194,83 @@
         function parseMarkdown(text) {
             if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
                 try {
-                    // 配置 marked 选项
-                    marked.setOptions({
-                        breaks: true,
-                        gfm: true,
-                        highlight: function(code, lang) {
-                            // 如果 highlight.js 可用，进行语法高亮
-                            if (typeof hljs !== 'undefined' && lang && hljs.getLanguage(lang)) {
+                    // 创建 marked 实例并配置扩展（只配置一次）
+                    if (!window._markedInstance) {
+                        window._markedInstance = new marked.Marked({
+                            breaks: true,
+                            gfm: true
+                        });
+
+                        // 添加脚注扩展（如果可用）
+                        if (typeof markedFootnote !== 'undefined') {
+                            window._markedInstance.use(markedFootnote());
+                        }
+                    }
+
+                    var rawHtml = window._markedInstance.parse(text);
+
+                    // DOMPurify 配置：保留所有 Markdown 常用标签和属性（包括脚注）
+                    var safeHtml = DOMPurify.sanitize(rawHtml, {
+                        ALLOWED_TAGS: [
+                            'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+                            'p', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'del', 'mark',
+                            'code', 'pre', 'kbd', 'samp', 'var',
+                            'a', 'ul', 'ol', 'li', 'blockquote',
+                            'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td',
+                            'hr', 'span', 'div', 'img',
+                            'sup', 'sub', 'abbr', 'cite', 'q', 'dfn', 'time',
+                            'input', 'section'  // section 用于脚注
+                        ],
+                        ALLOWED_ATTR: [
+                            'href', 'title', 'target', 'rel', 'class', 'id',
+                            'src', 'alt', 'width', 'height',
+                            'colspan', 'rowspan', 'start', 'type',
+                            'align', 'valign', 'lang', 'dir',
+                            'checked', 'disabled',
+                            'data-footnote-id', 'data-footnote-backref'  // 脚注属性
+                        ],
+                        ALLOW_DATA_ATTR: false
+                    });
+
+                    // 渲染后使用 highlight.js 高亮代码块
+                    if (typeof hljs !== 'undefined') {
+                        // 创建临时容器解析 HTML
+                        var tempDiv = document.createElement('div');
+                        tempDiv.innerHTML = safeHtml;
+
+                        // 查找所有 code 块并高亮
+                        var codeBlocks = tempDiv.querySelectorAll('pre code');
+                        for (var i = 0; i < codeBlocks.length; i++) {
+                            var block = codeBlocks[i];
+                            // 检测语言（从 class="language-xxx" 中提取）
+                            var className = block.className || '';
+                            var langMatch = className.match(/language-(\w+)/);
+                            var lang = langMatch ? langMatch[1] : '';
+
+                            if (lang && hljs.getLanguage(lang)) {
                                 try {
-                                    return hljs.highlight(code, { language: lang }).value;
+                                    var highlighted = hljs.highlight(block.textContent, { language: lang });
+                                    block.innerHTML = highlighted.value;
+                                    block.className = 'hljs ' + className;
                                 } catch (e) {
                                     console.warn('代码高亮失败:', e);
                                 }
+                            } else {
+                                // 自动检测语言
+                                try {
+                                    var result = hljs.highlightAuto(block.textContent);
+                                    block.innerHTML = result.value;
+                                    block.className = 'hljs';
+                                } catch (e) {
+                                    console.warn('代码自动高亮失败:', e);
+                                }
                             }
-                            return code; // 降级：返回原始代码
                         }
-                    });
-                    var rawHtml = marked.parse(text);
-                    // DOMPurify 配置：保留所有 Markdown 常用标签和属性
-                    return DOMPurify.sanitize(rawHtml, {
-                        ALLOWED_TAGS: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'br', 'strong', 'em', 'code', 'pre', 'a', 'ul', 'ol', 'li', 'blockquote', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'hr', 'del', 'span', 'div', 'img'],
-                        ALLOWED_ATTR: ['href', 'title', 'target', 'rel', 'class', 'id', 'src', 'alt', 'width', 'height'],
-                        ALLOW_DATA_ATTR: false
-                    });
+
+                        return tempDiv.innerHTML;
+                    }
+
+                    return safeHtml;
                 } catch (e) {
                     console.warn('Markdown 解析失败，使用降级渲染:', e);
                 }
