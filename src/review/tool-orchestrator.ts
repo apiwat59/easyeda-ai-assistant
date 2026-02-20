@@ -83,6 +83,8 @@ export class ToolOrchestrator {
 	private readonly gatewayBaseUrl: string;
 	private readonly gatewayType: GatewayType;
 	private jsonRpcIdCounter = 1;
+	private mcpSessionId: string | null = null;
+	private initializePromise: Promise<void> | null = null;
 
 	constructor(
 		private readonly config: ConfigStore,
@@ -109,6 +111,11 @@ export class ToolOrchestrator {
 		});
 
 		try {
+			// JSON-RPC 模式需要先初始化会话
+			if (this.gatewayType === GatewayType.JSON_RPC) {
+				await this.ensureInitialized(signal);
+			}
+
 			let response: ToolListResponseShape;
 
 			if (this.gatewayType === GatewayType.JSON_RPC) {
@@ -182,6 +189,11 @@ export class ToolOrchestrator {
 			});
 
 			try {
+				// JSON-RPC 模式需要先初始化会话
+				if (this.gatewayType === GatewayType.JSON_RPC) {
+					await this.ensureInitialized(signal);
+				}
+
 				const parsedArguments = parseToolArguments(toolCall.function.arguments);
 				let response: ToolCallResponseShape;
 
@@ -266,10 +278,64 @@ export class ToolOrchestrator {
 		return results;
 	}
 
+	/**
+	 * 确保 MCP 会话已初始化（仅 JSON-RPC 模式需要）
+	 */
+	private async ensureInitialized(signal?: AbortSignal): Promise<void> {
+		if (this.mcpSessionId) {
+			return; // 已初始化
+		}
+
+		// 防止并发初始化
+		if (this.initializePromise) {
+			return this.initializePromise;
+		}
+
+		this.initializePromise = this.performInitialize(signal);
+		try {
+			await this.initializePromise;
+		}
+		finally {
+			this.initializePromise = null;
+		}
+	}
+
+	/**
+	 * 执行 MCP initialize 握手
+	 */
+	private async performInitialize(signal?: AbortSignal): Promise<void> {
+		const initRequest: JsonRpcRequest = {
+			jsonrpc: '2.0',
+			method: 'initialize',
+			params: {
+				protocolVersion: '2025-03-26',
+				capabilities: {},
+				clientInfo: {
+					name: 'easyeda-ai-assistant',
+					version: '1.1.2',
+				},
+			},
+			id: this.jsonRpcIdCounter++,
+		};
+
+		await this.postJson<any>(
+			'',
+			initRequest,
+			signal,
+			true, // skipSessionHeader = true（初始化时不带 session ID）
+		);
+
+		// 从响应中提取 session ID（已在 postJson 中设置到 this.mcpSessionId）
+		if (!this.mcpSessionId) {
+			throw new Error('MCP initialize 未返回 session ID');
+		}
+	}
+
 	private async postJson<T>(
 		path: string,
 		payload: unknown,
 		signal?: AbortSignal,
+		skipSessionHeader = false,
 	): Promise<T> {
 		if (signal?.aborted) {
 			throw new Error('请求已取消');
@@ -303,13 +369,18 @@ export class ToolOrchestrator {
 			: undefined;
 
 		try {
+			const headers = buildGatewayHeaders(this.config, this.gatewayType);
+
+			// JSON-RPC 模式：添加 MCP session ID（除非是 initialize 请求）
+			if (this.gatewayType === GatewayType.JSON_RPC && !skipSessionHeader && this.mcpSessionId) {
+				headers['Mcp-Session-Id'] = this.mcpSessionId;
+			}
+
 			const requestPromise = eda.sys_ClientUrl.request(
 				url,
 				'POST',
 				JSON.stringify(payload),
-				{
-					headers: buildGatewayHeaders(this.config, this.gatewayType),
-				},
+				{ headers },
 			) as Promise<unknown>;
 
 			const raceTasks: Array<Promise<unknown>> = [requestPromise, timeoutPromise];
@@ -321,6 +392,14 @@ export class ToolOrchestrator {
 			if (!response.ok) {
 				const text = await response.text();
 				throw new Error(`Gateway HTTP ${response.status}: ${truncateText(text, 500)}`);
+			}
+
+			// JSON-RPC 模式：提取 MCP session ID（仅在 initialize 时）
+			if (this.gatewayType === GatewayType.JSON_RPC && skipSessionHeader) {
+				const sessionId = response.headers.get('mcp-session-id');
+				if (sessionId) {
+					this.mcpSessionId = sessionId;
+				}
 			}
 
 			const rawText = await response.text();
