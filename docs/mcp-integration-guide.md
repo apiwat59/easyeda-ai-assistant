@@ -338,18 +338,43 @@ npx -y supergateway \
 
 ## 可用的 MCP Server
 
-### Grok-search（推荐）
+### GrokSearch（推荐 - Grok + Tavily 双引擎）
 
-### Tavily Web Search（推荐）
+**项目地址**：https://github.com/GuDaStudio/GrokSearch/tree/grok-with-tavily
 
-Web 搜索、内容提取、网站爬取工具（通过 Tavily API）：
+**架构**：Grok 负责 AI 搜索，Tavily 负责网页抓取与站点映射，Firecrawl 托底
 
 **获取 API Key**：
-1. 访问 https://app.tavily.com/sign-in 注册账号
-2. 免费额度：1000 credits/月（每次搜索约消耗 1 credit）
-3. 在控制台生成 API Key（格式：`tvly-...`）
+1. **Grok API**（必需）：访问 https://x.ai/ 或使用 OpenAI 兼容的 Grok 镜像站
+2. **Tavily API**（可选，推荐）：https://app.tavily.com/sign-in（免费 1000 credits/月）
+3. **Firecrawl API**（可选）：https://firecrawl.dev/
 
 **启动方式**：
+```bash
+# 配置环境变量
+export GROK_API_URL="https://your-grok-api-endpoint.com/v1"
+export GROK_API_KEY="your-grok-api-key"
+export TAVILY_API_KEY="tvly-your-tavily-key"  # 可选
+
+# 启动 Gateway
+npx -y supergateway \
+  --stdio "uvx --from git+https://github.com/GuDaStudio/GrokSearch@grok-with-tavily grok-search" \
+  --outputTransport streamableHttp \
+  --port 8000 \
+  --stateful
+```
+
+**提供的工具（8 个）**：
+- `web_search` - AI 驱动的网络搜索（Grok）
+- `get_sources` - 获取搜索信源列表
+- `web_fetch` - 网页内容抓取（Tavily → Firecrawl 自动降级）
+- `web_map` - 网站结构映射（Tavily）
+- `get_config_info` / `switch_model` / `toggle_builtin_tools` / `search_planning`
+
+### Tavily（备选 - 纯 Tavily）
+
+如果不需要 Grok AI 搜索，可以使用纯 Tavily MCP Server：
+
 ```bash
 export TAVILY_API_KEY="tvly-your-key-here"
 
@@ -359,27 +384,6 @@ npx -y supergateway \
   --port 8000 \
   --stateful
 ```
-
-**提供的工具**：
-- `tavily_search` - Web 搜索（支持时间范围、深度控制、域名过滤）
-- `tavily_extract` - 提取 URL 内容（Markdown/Text 格式）
-- `tavily_crawl` - 网站爬取（可配置深度和广度）
-- `tavily_map` - 网站结构映射
-- `tavily_research` - 综合研究（多源聚合）
-
-### Grok-search（备选）
-
-如果你有 Grok API 访问权限，可以使用 grok-search MCP Server：
-
-```bash
-npx -y supergateway \
-  --stdio "npx -y @guda-studio/mcp-server-grok-search" \
-  --outputTransport streamableHttp \
-  --port 8000 \
-  --stateful
-```
-
-提供 8 个搜索工具（web_search、get_sources、web_fetch、web_map 等）
 
 ### Filesystem
 
