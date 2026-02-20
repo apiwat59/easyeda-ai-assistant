@@ -366,13 +366,13 @@
         #send-btn:hover:not(:disabled) { background: var(--accent-hover); }
         #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-        #config-modal {
+        #config-modal, #ui-settings-modal {
             display: none;
             position: fixed; top: 0; left: 0; right: 0; bottom: 0;
             background: rgba(0,0,0,0.3); z-index: 1000;
             align-items: center; justify-content: center;
         }
-        #config-modal.active { display: flex; }
+        #config-modal.active, #ui-settings-modal.active { display: flex; }
         .modal-content {
             background: var(--bg-panel); border: 1px solid var(--border-color);
             width: 400px; max-width: 90%; border-radius: var(--radius-md);
@@ -722,6 +722,7 @@
                 <span class="status-dot" id="status-dot"></span>
                 <span id="status-text">就绪</span>
             </div>
+            <button class="header-debug-btn" id="header-ui-settings-btn" title="界面设置">⚙️</button>
             <button class="header-debug-btn" id="header-debug-btn" title="打开调试日志 (Ctrl+D)">🐛</button>
         </div>
 
@@ -760,18 +761,28 @@
                 <label class="form-label">模型名称</label>
                 <input type="text" class="form-control" id="cfg-model" value="gpt-4o">
             </div>
-            <div class="form-group">
-                <label class="form-label">窗口尺寸</label>
-                <div style="display: flex; gap: 10px;">
-                    <input type="number" class="form-control" id="cfg-window-width" placeholder="960" min="600" max="2000" style="flex: 1;">
-                    <span style="line-height: 32px;">×</span>
-                    <input type="number" class="form-control" id="cfg-window-height" placeholder="700" min="400" max="1200" style="flex: 1;">
-                </div>
-                <div class="form-hint">窗口宽度和高度（像素），下次打开时生效</div>
-            </div>
             <div class="modal-actions">
                 <button class="btn btn-secondary" id="btn-cancel-config">取消</button>
                 <button class="btn" id="btn-save-config">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="ui-settings-modal">
+        <div class="modal-content">
+            <div class="modal-header">界面设置</div>
+            <div class="form-group">
+                <label class="form-label">窗口尺寸</label>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <input type="number" class="form-control" id="cfg-window-width" placeholder="960" min="600" max="2000" style="flex: 1;">
+                    <span style="color: var(--text-secondary);">×</span>
+                    <input type="number" class="form-control" id="cfg-window-height" placeholder="700" min="400" max="1200" style="flex: 1;">
+                </div>
+                <div class="form-hint">宽度 × 高度（像素），保存后下次打开生效</div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="btn-cancel-ui-settings">取消</button>
+                <button class="btn" id="btn-save-ui-settings">保存</button>
             </div>
         </div>
     </div>
@@ -1230,6 +1241,9 @@
             document.getElementById('btn-config').addEventListener('click', openConfigModal);
             document.getElementById('btn-cancel-config').addEventListener('click', closeConfigModal);
             document.getElementById('btn-save-config').addEventListener('click', saveConfig);
+            document.getElementById('header-ui-settings-btn').addEventListener('click', openUISettingsModal);
+            document.getElementById('btn-cancel-ui-settings').addEventListener('click', closeUISettingsModal);
+            document.getElementById('btn-save-ui-settings').addEventListener('click', saveUISettings);
             document.getElementById('btn-new-chat').addEventListener('click', newChat);
             document.getElementById('btn-close-error-modal').addEventListener('click', closeErrorModal);
             document.getElementById('btn-debug-log').addEventListener('click', openDebugModal);
@@ -2364,25 +2378,45 @@
             document.getElementById('cfg-apiurl').value = currentConfig.apiUrl || 'https://api.openai.com/v1/chat/completions';
             document.getElementById('cfg-apikey').value = currentConfig.apiKey || '';
             document.getElementById('cfg-model').value = currentConfig.model || 'gpt-4o';
-            document.getElementById('cfg-window-width').value = currentConfig.windowWidth || 960;
-            document.getElementById('cfg-window-height').value = currentConfig.windowHeight || 700;
         }
 
         function closeConfigModal() { configModal.classList.remove('active'); }
 
         function saveConfig() {
-            var widthVal = parseInt(document.getElementById('cfg-window-width').value, 10);
-            var heightVal = parseInt(document.getElementById('cfg-window-height').value, 10);
             var config = {
                 provider: 'openai_compatible',
                 apiUrl: document.getElementById('cfg-apiurl').value,
                 apiKey: document.getElementById('cfg-apikey').value.trim(),
-                model: document.getElementById('cfg-model').value,
+                model: document.getElementById('cfg-model').value
+            };
+            publishMessage('ai-chat/config-update', config);
+            closeConfigModal();
+        }
+
+        // ============ UI 设置管理 ============
+
+        function openUISettingsModal() {
+            var uiSettingsModal = document.getElementById('ui-settings-modal');
+            uiSettingsModal.classList.add('active');
+            publishMessage('ai-chat/request-config', {});
+            document.getElementById('cfg-window-width').value = currentConfig.windowWidth || 960;
+            document.getElementById('cfg-window-height').value = currentConfig.windowHeight || 700;
+        }
+
+        function closeUISettingsModal() {
+            var uiSettingsModal = document.getElementById('ui-settings-modal');
+            uiSettingsModal.classList.remove('active');
+        }
+
+        function saveUISettings() {
+            var widthVal = parseInt(document.getElementById('cfg-window-width').value, 10);
+            var heightVal = parseInt(document.getElementById('cfg-window-height').value, 10);
+            var config = {
                 windowWidth: (widthVal >= 600 && widthVal <= 2000) ? widthVal : 960,
                 windowHeight: (heightVal >= 400 && heightVal <= 1200) ? heightVal : 700
             };
             publishMessage('ai-chat/config-update', config);
-            closeConfigModal();
+            closeUISettingsModal();
         }
 
         function newChat() {
