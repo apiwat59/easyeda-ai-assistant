@@ -86,16 +86,19 @@ data: {"jsonrpc":"2.0","id":1,"result":{"tools":[...]}}
 **1. 启动 SuperGateway**
 
 ```bash
-# Stateful 模式（需要 session 管理）
+# 设置 Tavily API Key（必需）
+export TAVILY_API_KEY="tvly-your-key-here"
+
+# Stateful 模式（推荐，支持 session 管理）
 npx -y supergateway \
-  --stdio "npx -y @modelcontextprotocol/server-grok-search" \
+  --stdio "npx -y tavily-mcp@latest" \
   --outputTransport streamableHttp \
   --port 8000 \
   --stateful
 
-# Stateless 模式（不需要 session 管理）
+# Stateless 模式（无 session，每次请求独立）
 npx -y supergateway \
-  --stdio "npx -y @modelcontextprotocol/server-grok-search" \
+  --stdio "npx -y tavily-mcp@latest" \
   --outputTransport streamableHttp \
   --port 8000
 ```
@@ -337,25 +340,46 @@ npx -y supergateway \
 
 ### Grok-search（推荐）
 
-提供 8 个强大的搜索工具：
+### Tavily Web Search（推荐）
 
-1. **web_search** - 深度网络搜索（带 Grok AI 回答）
-2. **get_sources** - 获取搜索来源列表
-3. **web_fetch** - 抓取完整网页内容（Markdown 格式）
-4. **web_map** - 网站结构图谱遍历
-5. **get_config_info** - 查看配置
-6. **switch_model** - 切换 Grok 模型
-7. **toggle_builtin_tools** - 控制内置工具
-8. **search_planning** - 搜索规划脚手架
+Web 搜索、内容提取、网站爬取工具（通过 Tavily API）：
 
-**启动方式：**
+**获取 API Key**：
+1. 访问 https://app.tavily.com/sign-in 注册账号
+2. 免费额度：1000 credits/月（每次搜索约消耗 1 credit）
+3. 在控制台生成 API Key（格式：`tvly-...`）
+
+**启动方式**：
 ```bash
+export TAVILY_API_KEY="tvly-your-key-here"
+
 npx -y supergateway \
-  --stdio "npx -y @modelcontextprotocol/server-grok-search" \
+  --stdio "npx -y tavily-mcp@latest" \
   --outputTransport streamableHttp \
   --port 8000 \
   --stateful
 ```
+
+**提供的工具**：
+- `tavily_search` - Web 搜索（支持时间范围、深度控制、域名过滤）
+- `tavily_extract` - 提取 URL 内容（Markdown/Text 格式）
+- `tavily_crawl` - 网站爬取（可配置深度和广度）
+- `tavily_map` - 网站结构映射
+- `tavily_research` - 综合研究（多源聚合）
+
+### Grok-search（备选）
+
+如果你有 Grok API 访问权限，可以使用 grok-search MCP Server：
+
+```bash
+npx -y supergateway \
+  --stdio "npx -y @guda-studio/mcp-server-grok-search" \
+  --outputTransport streamableHttp \
+  --port 8000 \
+  --stateful
+```
+
+提供 8 个搜索工具（web_search、get_sources、web_fetch、web_map 等）
 
 ### Filesystem
 
