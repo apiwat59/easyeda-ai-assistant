@@ -40,6 +40,14 @@
 3. 配置 AI API（API URL 和 API Key）
 4. 开始与 AI 对话
 
+## 开源地址
+
+本项目完全开源，欢迎贡献代码和反馈问题：
+
+- **GitHub 仓库**：[https://github.com/jifengshandian/easyeda-ai-assistant](https://github.com/jifengshandian/easyeda-ai-assistant)
+- **问题反馈**：[https://github.com/jifengshandian/easyeda-ai-assistant/issues](https://github.com/jifengshandian/easyeda-ai-assistant/issues)
+- **完整文档**：[https://github.com/jifengshandian/easyeda-ai-assistant/blob/main/README.md](https://github.com/jifengshandian/easyeda-ai-assistant/blob/main/README.md)
+
 ## 许可证
 
 本项目采用 Apache 2.0 许可证。
