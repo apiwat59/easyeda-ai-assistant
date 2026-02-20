@@ -7,3 +7,18 @@
 /.eslintcache
 debug.log
 .ace-tool/
+
+# 环境变量和配置
+.env
+.env.*
+!.env.template
+!.env.example
+
+# API Keys 和凭证
+*secret*
+*credential*
+config.json
+
+# 日志文件
+*.log
+gateway.log
