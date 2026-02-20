@@ -22,6 +22,11 @@ const DEFAULT_CONFIG: ConfigStore = {
 	timeout: 120,
 	windowWidth: 960,
 	windowHeight: 700,
+	mcpEnabled: false,
+	mcpGatewayUrl: '',
+	mcpGatewayApiKey: '',
+	mcpAutoApprove: true,
+	mcpTimeout: 30,
 };
 
 /**
@@ -76,6 +81,23 @@ export function validateConfig(config: ConfigStore): string | null {
 	if (!config.apiUrl || config.apiUrl.trim().length === 0) {
 		return 'API URL未配置';
 	}
+
+	// MCP 启用时验证 Gateway URL
+	if (config.mcpEnabled) {
+		if (!config.mcpGatewayUrl || config.mcpGatewayUrl.trim().length === 0) {
+			return 'MCP Gateway URL未配置';
+		}
+		try {
+			const gatewayUrl = new URL(config.mcpGatewayUrl);
+			if (gatewayUrl.protocol !== 'http:' && gatewayUrl.protocol !== 'https:') {
+				return 'MCP Gateway URL必须是http或https协议';
+			}
+		}
+		catch {
+			return 'MCP Gateway URL格式无效';
+		}
+	}
+
 	return null;
 }
 

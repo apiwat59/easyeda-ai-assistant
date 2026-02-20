@@ -214,6 +214,11 @@ export interface ConfigStore {
 	timeout?: number; // 请求超时（秒），默认120
 	windowWidth?: number; // 窗口宽度，默认960
 	windowHeight?: number; // 窗口高度，默认700
+	mcpEnabled?: boolean; // 是否启用 MCP 工具调用
+	mcpGatewayUrl?: string; // MCP Gateway 地址
+	mcpGatewayApiKey?: string; // MCP Gateway 鉴权 token（可选）
+	mcpAutoApprove?: boolean; // 是否默认自动批准工具调用
+	mcpTimeout?: number; // MCP Gateway 请求超时（秒），默认30
 }
 
 // ============ 对话模式通信协议 ============
@@ -226,6 +231,7 @@ export const CHAT_TOPICS = {
 	REQUEST_DATA: 'ai-chat/request-data',
 	REQUEST_CONFIG: 'ai-chat/request-config',
 	REQUEST_HISTORY: 'ai-chat/request-history',
+	REQUEST_TOOLS: 'ai-chat/request-tools',
 	USER_MESSAGE: 'ai-chat/user-message',
 	ABORT_REQUEST: 'ai-chat/abort-request',
 	REGENERATE_REQUEST: 'ai-chat/regenerate-request',
@@ -238,9 +244,11 @@ export const CHAT_TOPICS = {
 	SCHEMATIC_DATA: 'ai-chat/schematic-data',
 	CONFIG_DATA: 'ai-chat/config-data',
 	HISTORY_DATA: 'ai-chat/history-data',
+	TOOLS_DATA: 'ai-chat/tools-data',
 	AI_RESPONSE: 'ai-chat/ai-response',
 	AI_THINKING: 'ai-chat/ai-thinking',
 	AI_TEXT: 'ai-chat/ai-text',
+	TOOL_EVENT: 'ai-chat/tool-event',
 	ERROR: 'ai-chat/error',
 } as const;
 
@@ -315,6 +323,66 @@ export interface MessageBlock {
 export interface AIBlockResponse extends MessageBlock {
 	requestId: string;
 	sessionId: string;
+}
+
+// ============ MCP 工具调用类型 ============
+
+/**
+ * Chat Completions - 可供模型调用的工具定义（OpenAI function calling 格式）
+ */
+export interface ChatToolDefinition {
+	type: 'function';
+	function: {
+		name: string;
+		description?: string;
+		parameters?: Record<string, unknown>;
+	};
+}
+
+/**
+ * Chat Completions - 模型发起的工具调用
+ */
+export interface ChatToolCall {
+	id: string;
+	type: 'function';
+	function: {
+		name: string;
+		arguments: string; // JSON 字符串
+	};
+}
+
+/**
+ * 工具执行返回给模型的消息
+ */
+export interface ToolExecutionResultMessage {
+	toolCallId: string;
+	toolName: string;
+	content: string;
+	isError?: boolean;
+}
+
+/** 工具事件状态 */
+export type ToolEventStatus = 'pending' | 'running' | 'success' | 'error' | 'skipped';
+
+/** 工具事件阶段 */
+export type ToolEventStage = 'tools-list' | 'tool-call';
+
+/**
+ * 工具运行事件（主扩展 -> IFrame）
+ */
+export interface ToolEventMessage {
+	requestId: string;
+	sessionId: string;
+	eventId: string;
+	stage: ToolEventStage;
+	status: ToolEventStatus;
+	title: string;
+	toolName?: string;
+	toolCallId?: string;
+	detail?: string;
+	resultPreview?: string;
+	error?: string;
+	timestamp: number;
 }
 
 /**

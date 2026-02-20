@@ -40,19 +40,32 @@ export type MessageBlockHandler = (block: {
 }) => void;
 
 /**
+ * sendMessage 选项
+ */
+export interface SendMessageOptions {
+	tools?: import('./types').ChatToolDefinition[];
+	onToolCalls?: (toolCalls: import('./types').ChatToolCall[]) => Promise<import('./types').ToolExecutionResultMessage[]>;
+	maxToolRounds?: number;
+}
+
+/**
  * Chat 完成结果
  */
 export interface ChatCompletionResult {
 	textContent: string;
 	reasoningContent: string;
+	toolCalls: import('./types').ChatToolCall[];
 }
 
 /**
  * Chat 消息
  */
 export interface ChatMessage {
-	role: 'system' | 'user' | 'assistant';
-	content: string | Array<{ type: string; text?: string; image_url?: { url: string } }>;
+	role: 'system' | 'user' | 'assistant' | 'tool';
+	content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> | null;
+	tool_calls?: import('./types').ChatToolCall[];
+	tool_call_id?: string;
+	name?: string;
 }
 
 /**
@@ -95,61 +108,119 @@ export class ChatSession {
 	 * @param config AI 配置
 	 * @param onBlock 可选的分块回调，用于模拟流式体验（实际是一次性发送）
 	 * @param signal 可选的 AbortSignal，用于取消请求
+	 * @param options 可选的工具调用选项
 	 */
 	async sendMessage(
 		userMsg: UserMessage,
 		config: ConfigStore,
 		onBlock?: MessageBlockHandler,
 		signal?: AbortSignal,
+		options?: SendMessageOptions,
 	): Promise<string> {
 		if (signal?.aborted) {
 			throw createAbortReviewError('请求在发送前已取消', undefined, signal.reason);
 		}
 
 		const systemPrompt = buildChatSystemPrompt(this.schematicContext);
+		const initialHistoryLength = this.history.length;
 
 		// 构建用户消息内容
 		const userContent = this.buildUserContent(userMsg);
 
-		// 将用户消息加入历史（保存引用用于精确回滚）
-		const userHistoryEntry: ChatMessage = { role: 'user', content: userContent };
-		this.history.push(userHistoryEntry);
+		// 将用户消息加入历史
+		this.history.push({ role: 'user', content: userContent });
 
-		// 构建完整消息列表
-		const messages: ChatMessage[] = [
-			{ role: 'system', content: systemPrompt },
-			...this.history,
-		];
+		const availableTools = options?.tools && options.tools.length > 0
+			? options.tools
+			: undefined;
+		const maxToolRounds = Math.max(1, options?.maxToolRounds || 4);
 
-		// 调用 AI API
 		try {
-			const result = await callOpenAICompatibleChat(messages, config, onBlock, signal);
+			for (let round = 1; round <= maxToolRounds; round++) {
+				if (signal?.aborted) {
+					throw createAbortReviewError('请求已取消', undefined, signal.reason);
+				}
 
-			// 将 AI 回复加入历史
-			const assistantContent = result.reasoningContent
-				? `${result.reasoningContent}\n\n${result.textContent}`
-				: result.textContent;
-			this.history.push({ role: 'assistant', content: assistantContent });
+				// 每轮都基于最新历史重建消息
+				const messages: ChatMessage[] = [
+					{ role: 'system', content: systemPrompt },
+					...this.history,
+				];
 
-			return result.textContent;
+				const result = await callOpenAICompatibleChat(messages, config, onBlock, signal, availableTools);
+
+				// 若模型要求调用工具，进入工具执行分支
+				if (result.toolCalls.length > 0) {
+					this.history.push({
+						role: 'assistant',
+						content: result.textContent || null,
+						tool_calls: result.toolCalls,
+					});
+
+					if (!options?.onToolCalls) {
+						// 无工具执行器时回退成普通文本提示，避免死循环
+						const fallbackText = result.textContent || '模型请求了工具调用，但当前未启用工具执行。';
+						this.history.pop();
+						this.history.push({
+							role: 'assistant',
+							content: fallbackText,
+						});
+						return fallbackText;
+					}
+
+					const toolResults = await options.onToolCalls(result.toolCalls);
+					if (!toolResults || toolResults.length === 0) {
+						const firstCall = result.toolCalls[0];
+						this.history.push({
+							role: 'tool',
+							tool_call_id: firstCall.id,
+							name: firstCall.function.name,
+							content: '工具执行器未返回结果。',
+						});
+						continue;
+					}
+
+					for (const toolResult of toolResults) {
+						this.history.push({
+							role: 'tool',
+							tool_call_id: toolResult.toolCallId,
+							name: toolResult.toolName,
+							content: toolResult.content,
+						});
+					}
+					continue;
+				}
+
+				// 普通文本回答结束
+				const assistantContent = result.reasoningContent
+					? `${result.reasoningContent}\n\n${result.textContent}`
+					: result.textContent;
+				this.history.push({ role: 'assistant', content: assistantContent });
+				return result.textContent;
+			}
+
+			throw new Error(`工具调用轮次超过限制（>${maxToolRounds}）`);
 		}
 		catch (error) {
-			// 失败时精确移除刚加入的用户消息（防止并发场景下误删）
-			const rollbackIndex = this.history.lastIndexOf(userHistoryEntry);
-			if (rollbackIndex >= 0) {
-				this.history.splice(rollbackIndex, 1);
-			}
+			// 出错回滚到本轮请求前状态，避免残留半成品 tool message
+			this.history.splice(initialHistoryLength);
 			throw error;
 		}
 	}
 
 	/**
 	 * 清除最后一轮对话（用于重新生成）
+	 *
+	 * 工具调用场景下一轮对话可能包含多条消息：
+	 *   user → assistant(tool_calls) → tool × N → assistant(final)
+	 * 因此从末尾向前找到最后一条 user 消息，将其及之后的所有消息一并移除。
 	 */
 	clear(): void {
-		if (this.history.length >= 2) {
-			this.history.pop(); // 移除 assistant
-			this.history.pop(); // 移除 user
+		for (let i = this.history.length - 1; i >= 0; i--) {
+			if (this.history[i].role === 'user') {
+				this.history.splice(i);
+				return;
+			}
 		}
 	}
 
@@ -214,19 +285,38 @@ async function callOpenAICompatibleChat(
 	config: ConfigStore,
 	onBlock?: MessageBlockHandler,
 	signal?: AbortSignal,
+	tools?: import('./types').ChatToolDefinition[],
 ): Promise<ChatCompletionResult> {
 	const url = config.apiUrl || 'https://api.openai.com/v1/chat/completions';
 
-	const body = {
+	const body: Record<string, unknown> = {
 		model: config.model,
-		messages: messages.map(m => ({
-			role: m.role,
-			content: m.content,
-		})),
+		messages: messages.map((m) => {
+			const messageBody: Record<string, unknown> = {
+				role: m.role,
+				content: m.content,
+			};
+
+			if (m.tool_calls && m.tool_calls.length > 0) {
+				messageBody.tool_calls = m.tool_calls;
+			}
+			if (m.tool_call_id) {
+				messageBody.tool_call_id = m.tool_call_id;
+			}
+			if (m.name) {
+				messageBody.name = m.name;
+			}
+			return messageBody;
+		}),
 		temperature: 0.4,
 		stream: true, // 需要流式模式才能获取 reasoning_content（Grok 等模型）
 		...getReasoningParams(config.model, 'medium'), // 🆕 添加模型特定的 reasoning 参数
 	};
+
+	if (tools && tools.length > 0) {
+		body.tools = tools;
+		body.tool_choice = 'auto';
+	}
 
 	return await makeRequest(url, config, body, onBlock, signal);
 }
@@ -359,22 +449,24 @@ async function makeRequest(
 			);
 		}
 
-		// 提取 text 和 reasoning 内容
+		// 提取 text、reasoning 和 tool_calls 内容
 		const textContent = extractResponseText(data);
 		const reasoningContent = extractReasoningText(data);
+		const toolCalls = extractToolCalls(data);
 
 		logDebug('info', '原始提取结果', {
 			textLength: textContent.length,
 			reasoningLength: reasoningContent.length,
 			textPreview: textContent.substring(0, 100),
 			reasoningPreview: reasoningContent.substring(0, 100),
+			toolCallCount: toolCalls.length,
 			hasThinkTag: /<think/i.test(textContent),
 		});
 
-		if (!textContent && !reasoningContent) {
+		if (!textContent && !reasoningContent && toolCalls.length === 0) {
 			throw new ReviewError(
 				ErrorCode.AI_INVALID_RESPONSE,
-				'AI响应中既没有 content 也没有 reasoning_content',
+				'AI响应中既没有 content/reasoning_content，也没有 tool_calls',
 				{
 					url,
 					responseBody: JSON.stringify(data).substring(0, 2000),
@@ -392,12 +484,13 @@ async function makeRequest(
 			finalTextLength: finalText.length,
 			finalReasoningLength: finalReasoning.length,
 			reasoningSource: hasNonWhitespace(reasoningContent) ? 'API字段' : (extractedReasoning ? '<think>标签' : '无'),
+			toolCallCount: toolCalls.length,
 		});
 
 		// 发送事件
 		emitCompleteBlocks(finalText, finalReasoning, onBlock);
 
-		return { textContent: finalText, reasoningContent: finalReasoning };
+		return { textContent: finalText, reasoningContent: finalReasoning, toolCalls };
 	}
 	catch (error) {
 		if (isAbortLikeError(error)) {
@@ -479,6 +572,7 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 
 	let textContent = '';
 	let reasoningContent = '';
+	const toolCallsBuffer = new Map<number, { id: string; name: string; argumentsText: string }>();
 	let currentEventData: string[] = [];
 
 	// 第一阶段：解析所有 SSE 事件，累积内容
@@ -523,6 +617,9 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 			const delta = chunk?.choices?.[0]?.delta;
 			if (!delta)
 				return;
+
+			// 累积 SSE 中的 tool_calls delta
+			appendSseToolCalls(delta.tool_calls, toolCallsBuffer);
 
 			// 🆕 使用统一的 reasoning 提取函数（支持所有模型）
 			const reasoning = normalizeChunkText(extractReasoningFromDelta(delta));
@@ -573,17 +670,20 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 	logDebug('info', 'SSE 最终提取结果', {
 		textLength: textContent.length,
 		reasoningLength: reasoningContent.length,
+		toolCallCount: toolCallsBuffer.size,
 		reasoningSource: reasoningContent ? 'SSE delta' : '无',
 	});
+
+	const toolCalls = buildToolCallsFromBuffer(toolCallsBuffer);
 
 	// 第三阶段：按正确顺序发送事件
 	emitCompleteBlocks(textContent, reasoningContent, onBlock);
 
-	if (!textContent && !reasoningContent) {
+	if (!textContent && !reasoningContent && toolCalls.length === 0) {
 		throw new ReviewError(ErrorCode.AI_INVALID_RESPONSE, '无法从SSE响应中提取内容');
 	}
 
-	return { textContent, reasoningContent };
+	return { textContent, reasoningContent, toolCalls };
 }
 
 // ============ 辅助函数 ============
@@ -690,6 +790,10 @@ function extractReasoningText(data: any): string {
 	);
 }
 
+function extractToolCalls(data: any): import('./types').ChatToolCall[] {
+	return normalizeToolCalls(data?.choices?.[0]?.message?.tool_calls);
+}
+
 function createAbortReviewError(message: string, url?: string, reason?: unknown): ReviewError {
 	return new ReviewError(
 		ErrorCode.AI_ABORTED,
@@ -778,4 +882,110 @@ function coerceToString(value: unknown): string {
 		}
 	}
 	return String(value);
+}
+
+// ============ Tool Calls 辅助函数 ============
+
+function normalizeToolCalls(rawToolCalls: unknown): import('./types').ChatToolCall[] {
+	if (!Array.isArray(rawToolCalls)) {
+		return [];
+	}
+
+	const calls: import('./types').ChatToolCall[] = [];
+	for (let i = 0; i < rawToolCalls.length; i++) {
+		const rawCall = rawToolCalls[i];
+		if (!isRecord(rawCall))
+			continue;
+		if (rawCall.type !== 'function')
+			continue;
+
+		const rawFunction = isRecord(rawCall.function) ? rawCall.function : null;
+		const name = rawFunction && typeof rawFunction.name === 'string'
+			? rawFunction.name
+			: '';
+		if (!name)
+			continue;
+
+		const argumentsText = rawFunction && typeof rawFunction.arguments === 'string'
+			? rawFunction.arguments
+			: '{}';
+		const id = typeof rawCall.id === 'string' && rawCall.id
+			? rawCall.id
+			: `tool_call_${i + 1}`;
+
+		calls.push({
+			id,
+			type: 'function',
+			function: {
+				name,
+				arguments: argumentsText,
+			},
+		});
+	}
+	return calls;
+}
+
+function appendSseToolCalls(
+	rawDeltaToolCalls: unknown,
+	buffer: Map<number, { id: string; name: string; argumentsText: string }>,
+): void {
+	if (!Array.isArray(rawDeltaToolCalls)) {
+		return;
+	}
+
+	for (let i = 0; i < rawDeltaToolCalls.length; i++) {
+		const rawToolCall = rawDeltaToolCalls[i];
+		if (!isRecord(rawToolCall))
+			continue;
+
+		const index = typeof rawToolCall.index === 'number'
+			? rawToolCall.index
+			: i;
+		const existing = buffer.get(index) || {
+			id: '',
+			name: '',
+			argumentsText: '',
+		};
+
+		if (typeof rawToolCall.id === 'string' && rawToolCall.id) {
+			existing.id = rawToolCall.id;
+		}
+
+		const rawFunction = isRecord(rawToolCall.function) ? rawToolCall.function : null;
+		if (rawFunction) {
+			if (typeof rawFunction.name === 'string' && rawFunction.name) {
+				existing.name = rawFunction.name;
+			}
+			if (typeof rawFunction.arguments === 'string') {
+				existing.argumentsText += rawFunction.arguments;
+			}
+		}
+
+		buffer.set(index, existing);
+	}
+}
+
+function buildToolCallsFromBuffer(buffer: Map<number, { id: string; name: string; argumentsText: string }>): import('./types').ChatToolCall[] {
+	const calls: import('./types').ChatToolCall[] = [];
+	const entries = Array.from(buffer.entries()).sort((a, b) => a[0] - b[0]);
+
+	for (const [index, value] of entries) {
+		if (!value.name) {
+			continue;
+		}
+		calls.push({
+			id: value.id || `tool_call_${index + 1}`,
+			type: 'function',
+			function: {
+				name: value.name,
+				arguments: value.argumentsText || '{}',
+			},
+		});
+	}
+
+	return calls;
+}
+
+function isRecord(value: unknown): value is Record<string, any> {
+	return typeof value === 'object' && value !== null;
 }

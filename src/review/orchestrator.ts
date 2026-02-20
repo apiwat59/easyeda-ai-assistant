@@ -1,13 +1,15 @@
+import type { SendMessageOptions } from './chat-adapter';
 /**
  * AI原理图审查 - 对话模式编排器
  *
  * 管理IFrame面板与AI对话的完整生命周期
  * 按 sessionId 隔离对话会话，支持流式 thinking/text 推送
  */
-import type { AbortRequest, AIBlockResponse, CollectedData, MessageBlock, RegenerateRequest, UserMessage } from './types';
+import type { AbortRequest, AIBlockResponse, ChatToolCall, CollectedData, MessageBlock, RegenerateRequest, ToolEventMessage, UserMessage } from './types';
 import { ChatSession, setDebugLog } from './chat-adapter';
 import { clearBackgroundNetlistState, collectSchematicData, getBackgroundNetlistState, parseNetlist, setLogToIFrame } from './collector';
 import { loadChatHistory, loadConfig, saveChatHistory, saveConfig, validateConfig } from './config';
+import { ToolOrchestrator } from './tool-orchestrator';
 import { CHAT_TOPICS, ChunkType, ErrorCode, ReviewError } from './types';
 
 // 初始化 collector 的日志发送函数
@@ -490,6 +492,11 @@ function setupChatListeners(): void {
 			model: config.model,
 			windowWidth: config.windowWidth || 960,
 			windowHeight: config.windowHeight || 700,
+			mcpEnabled: !!config.mcpEnabled,
+			mcpGatewayUrl: config.mcpGatewayUrl || '',
+			mcpGatewayApiKey: config.mcpGatewayApiKey || '',
+			mcpAutoApprove: config.mcpAutoApprove !== false,
+			mcpTimeout: config.mcpTimeout || 30,
 		});
 	});
 
@@ -497,6 +504,48 @@ function setupChatListeners(): void {
 	subscribe(CHAT_TOPICS.REQUEST_HISTORY, () => {
 		const history = loadChatHistory();
 		publishToIFrame(CHAT_TOPICS.HISTORY_DATA, { messages: history });
+	});
+
+	// 监听IFrame请求工具列表
+	subscribe(CHAT_TOPICS.REQUEST_TOOLS, async (data: any) => {
+		const requestId = typeof data?.requestId === 'string'
+			? data.requestId
+			: `tool-preview-${Date.now()}`;
+		const sessionId = typeof data?.sessionId === 'string'
+			? data.sessionId
+			: 'tool-preview';
+
+		const config = loadConfig();
+		// 使用 no-op emitter 避免预览事件污染对话流
+		const noopEmitter = (): void => { /* 预览模式不发送工具事件 */ };
+		const toolOrchestrator = new ToolOrchestrator(
+			config,
+			{ requestId, sessionId },
+			noopEmitter,
+		);
+
+		if (!toolOrchestrator.isEnabled()) {
+			publishToIFrame(CHAT_TOPICS.TOOLS_DATA, { enabled: false, tools: [] });
+			return;
+		}
+
+		try {
+			const tools = await toolOrchestrator.listTools();
+			publishToIFrame(CHAT_TOPICS.TOOLS_DATA, {
+				enabled: true,
+				tools: tools.map(tool => ({
+					name: tool.function.name,
+					description: tool.function.description || '',
+				})),
+			});
+		}
+		catch (error) {
+			publishToIFrame(CHAT_TOPICS.TOOLS_DATA, {
+				enabled: true,
+				tools: [],
+				error: error instanceof Error ? error.message : String(error),
+			});
+		}
 	});
 
 	// 监听用户消息
@@ -545,6 +594,26 @@ function setupChatListeners(): void {
 			console.warn('无效的 model');
 			return;
 		}
+		if (data.mcpEnabled !== undefined && typeof data.mcpEnabled !== 'boolean') {
+			console.warn('无效的 mcpEnabled');
+			return;
+		}
+		if (data.mcpAutoApprove !== undefined && typeof data.mcpAutoApprove !== 'boolean') {
+			console.warn('无效的 mcpAutoApprove');
+			return;
+		}
+		if (data.mcpTimeout !== undefined && (typeof data.mcpTimeout !== 'number' || data.mcpTimeout < 5 || data.mcpTimeout > 120)) {
+			console.warn('无效的 mcpTimeout');
+			return;
+		}
+		if (data.mcpGatewayUrl && (typeof data.mcpGatewayUrl !== 'string' || data.mcpGatewayUrl.length > 500)) {
+			console.warn('无效的 mcpGatewayUrl');
+			return;
+		}
+		if (data.mcpGatewayApiKey && (typeof data.mcpGatewayApiKey !== 'string' || data.mcpGatewayApiKey.length > 500)) {
+			console.warn('无效的 mcpGatewayApiKey');
+			return;
+		}
 
 		// 验证 URL 格式
 		if (data.apiUrl) {
@@ -557,6 +626,19 @@ function setupChatListeners(): void {
 			}
 			catch {
 				console.warn('apiUrl 格式无效');
+				return;
+			}
+		}
+		if (typeof data.mcpGatewayUrl === 'string' && data.mcpGatewayUrl.trim().length > 0) {
+			try {
+				const gatewayUrl = new URL(data.mcpGatewayUrl);
+				if (gatewayUrl.protocol !== 'http:' && gatewayUrl.protocol !== 'https:') {
+					console.warn('mcpGatewayUrl 必须是 http 或 https 协议');
+					return;
+				}
+			}
+			catch {
+				console.warn('mcpGatewayUrl 格式无效');
 				return;
 			}
 		}
@@ -578,6 +660,11 @@ function setupChatListeners(): void {
 			model: result.config.model,
 			windowWidth: result.config.windowWidth || 960,
 			windowHeight: result.config.windowHeight || 700,
+			mcpEnabled: !!result.config.mcpEnabled,
+			mcpGatewayUrl: result.config.mcpGatewayUrl || '',
+			mcpGatewayApiKey: result.config.mcpGatewayApiKey || '',
+			mcpAutoApprove: result.config.mcpAutoApprove !== false,
+			mcpTimeout: result.config.mcpTimeout || 30,
 		});
 	});
 
@@ -798,6 +885,44 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		// 按 sessionId 获取或创建会话（核心隔离机制）
 		const session = getOrCreateChatSession(msg.sessionId);
 
+		// 创建工具编排器
+		const toolOrchestrator = new ToolOrchestrator(
+			config,
+			{ requestId: msg.requestId, sessionId: msg.sessionId },
+			publishToolEvent,
+		);
+
+		// 如果启用 MCP，拉取工具列表
+		let availableTools: import('./types').ChatToolDefinition[] = [];
+		if (toolOrchestrator.isEnabled()) {
+			try {
+				availableTools = await toolOrchestrator.listTools(abortController.signal);
+			}
+			catch (toolListError) {
+				publishToolEvent({
+					requestId: msg.requestId,
+					sessionId: msg.sessionId,
+					eventId: `tool-list-error-${Date.now()}`,
+					stage: 'tools-list',
+					status: 'error',
+					title: '加载工具清单失败，继续纯文本对话',
+					error: toolListError instanceof Error ? toolListError.message : String(toolListError),
+					timestamp: Date.now(),
+				});
+			}
+		}
+
+		// 构建 sendMessage 选项
+		const sendOptions: SendMessageOptions | undefined = toolOrchestrator.isEnabled()
+			? {
+					tools: availableTools,
+					onToolCalls: async (toolCalls: ChatToolCall[]) => {
+						return await toolOrchestrator.executeToolCalls(toolCalls, abortController.signal);
+					},
+					maxToolRounds: 6,
+				}
+			: undefined;
+
 		console.warn(`[handleUserMessage] 调用 session.sendMessage, requestId=${msg.requestId}`);
 
 		const reply = await session.sendMessage(
@@ -819,6 +944,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 				publishMessageBlock(msg.requestId, msg.sessionId, block);
 			},
 			abortController.signal,
+			sendOptions,
 		);
 
 		if (abortController.signal.aborted) {
@@ -1140,6 +1266,13 @@ function publishMessageBlock(
 	};
 
 	publishToIFrame(topic, payload);
+}
+
+/**
+ * 推送工具运行事件到 IFrame
+ */
+function publishToolEvent(event: ToolEventMessage): void {
+	publishToIFrame(CHAT_TOPICS.TOOL_EVENT, event);
 }
 
 /**

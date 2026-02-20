@@ -312,6 +312,95 @@
         @keyframes thinking-pulse { 0%,100%{opacity:0.6} 50%{opacity:1} }
         .thinking-container.streaming .thinking-status-text { animation: thinking-pulse 1.5s infinite; }
 
+        /* --- Tool Block 样式（紫色主题） --- */
+        .tool-container {
+            margin-bottom: 8px;
+            border: 1px solid rgba(156, 39, 176, 0.3);
+            border-radius: 6px;
+            background: rgba(156, 39, 176, 0.05);
+            overflow: hidden;
+        }
+        .tool-container.streaming {
+            border-color: rgba(156, 39, 176, 0.5);
+            background: rgba(156, 39, 176, 0.08);
+        }
+        .tool-container.error {
+            border-color: var(--error-color);
+            background: rgba(245, 108, 108, 0.08);
+        }
+        .tool-header {
+            display: flex;
+            align-items: center;
+            padding: 6px 10px;
+            font-size: 12px;
+            color: #9c27b0;
+            font-weight: 600;
+            cursor: pointer;
+            user-select: none;
+            background: rgba(156, 39, 176, 0.1);
+            border-bottom: 1px solid rgba(156, 39, 176, 0.2);
+            transition: background 0.15s;
+        }
+        .tool-header:hover { background: rgba(156, 39, 176, 0.15); }
+        .tool-toggle-icon {
+            margin-right: 6px;
+            font-size: 10px;
+            transition: transform 0.2s ease;
+            display: inline-block;
+        }
+        .tool-container.expanded .tool-toggle-icon { transform: rotate(90deg); }
+        .tool-title { flex: 1; }
+        .tool-status {
+            font-size: 11px;
+            margin-left: 8px;
+            opacity: 0.8;
+        }
+        .tool-content {
+            display: none;
+            padding: 8px 10px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+        .tool-container.expanded .tool-content { display: block; }
+        .tool-entry {
+            padding: 6px 8px;
+            margin-bottom: 6px;
+            border-radius: var(--radius-sm);
+            background: rgba(0, 0, 0, 0.02);
+            border-left: 3px solid #9c27b0;
+        }
+        .tool-entry:last-child { margin-bottom: 0; }
+        .tool-entry.error { border-left-color: var(--error-color); background: rgba(245, 108, 108, 0.05); }
+        .tool-entry-name {
+            font-family: Consolas, Monaco, monospace;
+            color: #9c27b0;
+            font-weight: 600;
+            margin-bottom: 3px;
+        }
+        .tool-entry-detail {
+            color: var(--text-secondary);
+            font-size: 11px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .tool-entry-result {
+            margin-top: 4px;
+            padding: 6px 8px;
+            border-radius: var(--radius-sm);
+            background: rgba(0, 0, 0, 0.04);
+            color: var(--text-primary);
+            font-family: Consolas, Monaco, monospace;
+            font-size: 11px;
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .tool-entry.error .tool-entry-result {
+            color: var(--error-color);
+        }
+
         .typing-indicator { display: flex; gap: 4px; padding: 8px 12px; }
         .typing-dot {
             width: 6px; height: 6px; border-radius: 50%;
@@ -873,6 +962,7 @@
                 <div class="info-value" id="info-components">器件: 采集中...</div>
                 <div class="info-value" id="info-pins">引脚: 采集中...</div>
                 <div class="info-value" id="info-nets">网络: 采集中...</div>
+                <div class="info-value" id="info-tools">MCP: 未启用</div>
             </div>
             <div class="info-section">
                 <button class="btn" id="btn-config">配置 AI</button>
@@ -939,6 +1029,36 @@
             <div class="form-group">
                 <label class="form-label">模型名称</label>
                 <input type="text" class="form-control" id="cfg-model" value="gpt-4o">
+            </div>
+            <div class="form-group">
+                <label class="form-label">MCP 工具网关</label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-primary);margin-bottom:6px;">
+                    <input type="checkbox" id="cfg-mcp-enabled">
+                    启用 MCP 工具调用
+                </label>
+                <input type="text" class="form-control" id="cfg-mcp-gateway-url" placeholder="https://mcp-gateway.example.com">
+                <div class="form-hint">用于代理 tools/list 与 tools/call 的 Gateway 地址</div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Gateway API Key（可选）</label>
+                <input type="password" class="form-control" id="cfg-mcp-gateway-apikey" placeholder="可选">
+            </div>
+            <div class="form-group">
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-primary);margin-bottom:6px;">
+                    <input type="checkbox" id="cfg-mcp-auto-approve" checked>
+                    默认自动批准工具调用
+                </label>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <div style="width:120px;">
+                        <input type="number" class="form-control" id="cfg-mcp-timeout" min="5" max="120" value="30">
+                    </div>
+                    <span style="font-size:12px;color:var(--text-secondary);">超时(秒)</span>
+                </div>
+                <div class="form-hint">建议范围 5-120 秒</div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">工具预览</label>
+                <div class="form-hint" id="cfg-tools-preview">尚未加载工具列表</div>
             </div>
             <div class="modal-actions">
                 <button class="btn btn-secondary" id="btn-cancel-config">取消</button>
@@ -1017,6 +1137,7 @@
         var pendingRequests = {};    // 待处理的请求 {requestId: {sessionId, timestamp}}
         var saveHistoryTimer = null; // 历史保存节流定时器
         var activeRequestId = null;  // 当前正在进行的请求ID（用于 abort）
+        var availableTools = [];     // MCP 工具清单
 
         // 不触发历史保存的系统错误（避免错误循环）
         var NON_PERSIST_SYSTEM_ERROR = {
@@ -1132,6 +1253,10 @@
             publishMessage('ai-chat/request-data', {});
             publishMessage('ai-chat/request-config', {});
             publishMessage('ai-chat/request-history', {});
+            publishMessage('ai-chat/request-tools', {
+                requestId: 'bootstrap-tools',
+                sessionId: 'bootstrap'
+            });
         }
 
         // ============ 流式更新管理器（参考 Cherry Studio StreamManager） ============
@@ -1488,9 +1613,11 @@
                 eda.sys_MessageBus.subscribePublic('ai-chat/schematic-data', handleSchematicData);
                 eda.sys_MessageBus.subscribePublic('ai-chat/config-data', handleConfigData);
                 eda.sys_MessageBus.subscribePublic('ai-chat/history-data', handleHistoryData);
+                eda.sys_MessageBus.subscribePublic('ai-chat/tools-data', handleToolsData);
                 eda.sys_MessageBus.subscribePublic('ai-chat/ai-response', handleAIResponse);
                 eda.sys_MessageBus.subscribePublic('ai-chat/ai-thinking', handleAIThinking);
                 eda.sys_MessageBus.subscribePublic('ai-chat/ai-text', handleAIText);
+                eda.sys_MessageBus.subscribePublic('ai-chat/tool-event', handleToolEvent);
                 eda.sys_MessageBus.subscribePublic('ai-chat/error', handleError);
                 eda.sys_MessageBus.subscribePublic('ai-chat/debug-log', handleDebugLog);
             }
@@ -1529,11 +1656,79 @@
         function handleConfigData(data) {
             if (!data) return;
             currentConfig = data;
+            updateToolInfoText();
+            updateToolsPreviewText();
             if (configModal.classList.contains('active')) {
                 document.getElementById('cfg-apiurl').value = data.apiUrl || 'https://api.openai.com/v1/chat/completions';
                 document.getElementById('cfg-apikey').value = data.apiKey || '';
                 document.getElementById('cfg-model').value = data.model || 'gpt-4o';
+                document.getElementById('cfg-mcp-enabled').checked = !!data.mcpEnabled;
+                document.getElementById('cfg-mcp-gateway-url').value = data.mcpGatewayUrl || '';
+                document.getElementById('cfg-mcp-gateway-apikey').value = data.mcpGatewayApiKey || '';
+                document.getElementById('cfg-mcp-auto-approve').checked = data.mcpAutoApprove !== false;
+                document.getElementById('cfg-mcp-timeout').value = data.mcpTimeout || 30;
             }
+            if (data.mcpEnabled) {
+                publishMessage('ai-chat/request-tools', {
+                    requestId: 'refresh-tools-' + Date.now(),
+                    sessionId: currentSessionId || 'config-refresh'
+                });
+            }
+        }
+
+        function updateToolInfoText() {
+            var toolsInfoEl = document.getElementById('info-tools');
+            if (!toolsInfoEl) return;
+            if (!currentConfig.mcpEnabled) {
+                toolsInfoEl.textContent = 'MCP: 未启用';
+                return;
+            }
+            if (!currentConfig.mcpGatewayUrl) {
+                toolsInfoEl.textContent = 'MCP: 未配置网关';
+                return;
+            }
+            if (availableTools.length > 0) {
+                toolsInfoEl.textContent = 'MCP: 已启用 (' + availableTools.length + ' 个工具)';
+            } else {
+                toolsInfoEl.textContent = 'MCP: 已启用 (工具加载中)';
+            }
+        }
+
+        function updateToolsPreviewText() {
+            var previewEl = document.getElementById('cfg-tools-preview');
+            if (!previewEl) return;
+            if (!currentConfig.mcpEnabled) {
+                previewEl.textContent = '未启用 MCP 工具';
+                return;
+            }
+            if (availableTools.length === 0) {
+                previewEl.textContent = '工具列表为空或尚未加载';
+                return;
+            }
+            var names = availableTools.map(function(tool) { return tool.name; }).join(', ');
+            previewEl.textContent = '已加载: ' + names.substring(0, 180);
+        }
+
+        function handleToolsData(data) {
+            if (!data) return;
+            availableTools = Array.isArray(data.tools) ? data.tools : [];
+
+            if (data.error) {
+                addDebugLog('warn', '工具列表加载失败', {
+                    error: data.error
+                });
+            } else {
+                addDebugLog('info', '工具列表更新', {
+                    enabled: !!data.enabled,
+                    count: availableTools.length
+                });
+            }
+
+            if (currentConfig && typeof currentConfig === 'object') {
+                currentConfig.mcpEnabled = !!data.enabled;
+            }
+            updateToolInfoText();
+            updateToolsPreviewText();
         }
 
         function handleHistoryData(data) {
@@ -1543,6 +1738,84 @@
             if (messages.length === 0 && historySessions.length > 0) {
                 loadSession(historySessions[0].id);
             }
+        }
+
+        function handleToolEvent(data) {
+            if (!data || !data.requestId || !data.sessionId) return;
+            if (data.sessionId !== currentSessionId) return;
+
+            addDebugLog(data.status === 'error' ? 'error' : 'info', '工具事件: ' + (data.title || ''), {
+                requestId: data.requestId,
+                toolName: data.toolName,
+                status: data.status,
+                detail: data.detail
+            });
+
+            var msg = getOrCreateStreamingMessage(data.requestId);
+            var toolBlock = findBlockByType(msg, 'tool');
+            if (!toolBlock) {
+                toolBlock = {
+                    id: 'tool-' + data.requestId,
+                    type: 'tool',
+                    status: 'streaming',
+                    entries: []
+                };
+
+                // 插在 thinking 之后
+                var insertIndex = msg.blocks.length;
+                for (var i = 0; i < msg.blocks.length; i++) {
+                    if (msg.blocks[i].type === 'thinking') {
+                        insertIndex = i + 1;
+                    }
+                }
+                msg.blocks.splice(insertIndex, 0, toolBlock);
+            }
+
+            if (!Array.isArray(toolBlock.entries)) {
+                toolBlock.entries = [];
+            }
+
+            var entryId = data.toolCallId || data.eventId || ('tool-event-' + Date.now());
+            var entry = null;
+            for (var j = 0; j < toolBlock.entries.length; j++) {
+                if (toolBlock.entries[j].id === entryId) {
+                    entry = toolBlock.entries[j];
+                    break;
+                }
+            }
+
+            if (!entry) {
+                entry = {
+                    id: entryId,
+                    toolName: data.toolName || (data.stage === 'tools-list' ? '工具清单' : '工具调用'),
+                    status: data.status || 'pending',
+                    detail: '',
+                    resultPreview: '',
+                    error: ''
+                };
+                toolBlock.entries.push(entry);
+            }
+
+            entry.status = data.status || entry.status;
+            entry.detail = data.detail || data.title || entry.detail;
+            entry.resultPreview = data.resultPreview || entry.resultPreview;
+            entry.error = data.error || entry.error;
+
+            toolBlock.status = computeToolBlockStatus(toolBlock.entries);
+            renderMessages();
+        }
+
+        function computeToolBlockStatus(entries) {
+            var hasError = false;
+            var hasRunning = false;
+            for (var i = 0; i < entries.length; i++) {
+                var st = entries[i].status;
+                if (st === 'error') hasError = true;
+                if (st === 'running' || st === 'pending') hasRunning = true;
+            }
+            if (hasError) return 'error';
+            if (hasRunning) return 'streaming';
+            return 'success';
         }
 
         /**
@@ -1592,6 +1865,16 @@
                     }
                     if (streamMsg.blocks[i].type === 'thinking') {
                         streamMsg.blocks[i].status = 'success';
+                    }
+                    if (streamMsg.blocks[i].type === 'tool') {
+                        streamMsg.blocks[i].status = streamMsg.blocks[i].status === 'error' ? 'error' : 'success';
+                        if (Array.isArray(streamMsg.blocks[i].entries)) {
+                            streamMsg.blocks[i].entries.forEach(function(entry) {
+                                if (entry.status === 'running' || entry.status === 'pending') {
+                                    entry.status = 'success';
+                                }
+                            });
+                        }
                     }
                 }
                 if (!hasTextBlock) {
@@ -1822,6 +2105,16 @@
         }
 
         function findBlockByType(msg, type) {
+            if (!msg || !Array.isArray(msg.blocks)) return null;
+            for (var i = 0; i < msg.blocks.length; i++) {
+                if (msg.blocks[i].type === type) {
+                    return msg.blocks[i];
+                }
+            }
+            return null;
+        }
+
+        function findBlockByType(msg, type) {
             if (!msg.blocks) return null;
             for (var i = 0; i < msg.blocks.length; i++) {
                 if (msg.blocks[i].type === type) return msg.blocks[i];
@@ -1857,6 +2150,14 @@
                         errorDetails: data.details || null,
                         status: 'error'
                     });
+                    for (var k = 0; k < streamMsg.blocks.length; k++) {
+                        if (streamMsg.blocks[k].type === 'tool') {
+                            streamMsg.blocks[k].status = 'error';
+                            if (Array.isArray(streamMsg.blocks[k].entries)) {
+                                streamMsg.blocks[k].entries.forEach(function(entry) { entry.status = 'error'; });
+                            }
+                        }
+                    }
                     streamMsg.status = 'error';
                 } else {
                     messages.push({
@@ -2096,7 +2397,7 @@
             if (msg.blocks && msg.blocks.length > 0) {
                 // 按类型排序：thinking block 始终在 text block 前面
                 var sortedBlocks = msg.blocks.slice().sort(function(a, b) {
-                    var order = { 'thinking': 0, 'text': 1, 'error': 2 };
+                    var order = { 'thinking': 0, 'tool': 1, 'text': 2, 'error': 3 };
                     var aOrder = order[a.type] !== undefined ? order[a.type] : 99;
                     var bOrder = order[b.type] !== undefined ? order[b.type] : 99;
 
@@ -2124,6 +2425,8 @@
                     var block = sortedBlocks[i];
                     if (block.type === 'thinking') {
                         bodyDiv.appendChild(createThinkingBlockElement(block));
+                    } else if (block.type === 'tool') {
+                        bodyDiv.appendChild(createToolBlockElement(block));
                     } else if (block.type === 'text') {
                         bodyDiv.appendChild(createTextBlockElement(block, msg.role));
                     } else if (block.type === 'error') {
@@ -2269,6 +2572,101 @@
             container.appendChild(header);
             container.appendChild(contentDiv);
             return container;
+        }
+
+        function getToolStatusText(status) {
+            switch (status) {
+                case 'pending': return '待执行';
+                case 'running': return '执行中';
+                case 'success': return '已完成';
+                case 'error': return '失败';
+                case 'skipped': return '已跳过';
+                default: return '未知';
+            }
+        }
+
+        function createToolBlockElement(block) {
+            var card = document.createElement('div');
+            card.className = 'tool-container';
+            card.id = block.id;
+            if (block.status === 'streaming') card.className += ' streaming';
+            if (block.status === 'error') card.className += ' error';
+
+            var header = document.createElement('div');
+            header.className = 'tool-header';
+
+            var icon = document.createElement('span');
+            icon.className = 'tool-toggle-icon';
+            icon.textContent = '\u25B6';
+
+            var title = document.createElement('span');
+            title.className = 'tool-title';
+            if (block.status === 'streaming') {
+                title.textContent = '工具调用中...';
+            } else if (block.status === 'error') {
+                title.textContent = '工具调用完成（含错误）';
+            } else {
+                title.textContent = '工具调用完成';
+            }
+
+            header.appendChild(icon);
+            header.appendChild(title);
+
+            header.addEventListener('click', function() {
+                var isExpanded = card.className.indexOf('expanded') !== -1;
+                if (isExpanded) {
+                    card.className = card.className.replace(' expanded', '');
+                } else {
+                    card.className += ' expanded';
+                }
+            });
+
+            card.appendChild(header);
+
+            var content = document.createElement('div');
+            content.className = 'tool-content';
+
+            var entries = Array.isArray(block.entries) ? block.entries : [];
+            if (entries.length === 0) {
+                var empty = document.createElement('div');
+                empty.style.padding = '8px';
+                empty.style.color = 'var(--text-secondary)';
+                empty.textContent = '暂无工具调用记录';
+                content.appendChild(empty);
+            } else {
+                for (var i = 0; i < entries.length; i++) {
+                    var entry = entries[i];
+                    var item = document.createElement('div');
+                    item.className = 'tool-entry';
+                    if (entry.status === 'error') item.className += ' error';
+
+                    var entryName = document.createElement('div');
+                    entryName.className = 'tool-entry-name';
+                    entryName.textContent = (entry.toolName || '未知工具') + ' - ' + getToolStatusText(entry.status || 'success');
+
+                    item.appendChild(entryName);
+
+                    if (entry.detail) {
+                        var detail = document.createElement('div');
+                        detail.className = 'tool-entry-detail';
+                        detail.textContent = entry.detail;
+                        item.appendChild(detail);
+                    }
+
+                    var resultText = entry.error || entry.resultPreview;
+                    if (resultText) {
+                        var resultDiv = document.createElement('div');
+                        resultDiv.className = 'tool-entry-result';
+                        resultDiv.textContent = resultText;
+                        item.appendChild(resultDiv);
+                    }
+
+                    content.appendChild(item);
+                }
+            }
+
+            card.appendChild(content);
+            return card;
         }
 
         /**
@@ -2694,18 +3092,34 @@
             document.getElementById('cfg-apiurl').value = currentConfig.apiUrl || 'https://api.openai.com/v1/chat/completions';
             document.getElementById('cfg-apikey').value = currentConfig.apiKey || '';
             document.getElementById('cfg-model').value = currentConfig.model || 'gpt-4o';
+            document.getElementById('cfg-mcp-enabled').checked = !!currentConfig.mcpEnabled;
+            document.getElementById('cfg-mcp-gateway-url').value = currentConfig.mcpGatewayUrl || '';
+            document.getElementById('cfg-mcp-gateway-apikey').value = currentConfig.mcpGatewayApiKey || '';
+            document.getElementById('cfg-mcp-auto-approve').checked = currentConfig.mcpAutoApprove !== false;
+            document.getElementById('cfg-mcp-timeout').value = currentConfig.mcpTimeout || 30;
+            updateToolsPreviewText();
         }
 
         function closeConfigModal() { configModal.classList.remove('active'); }
 
         function saveConfig() {
+            var timeoutVal = parseInt(document.getElementById('cfg-mcp-timeout').value, 10);
             var config = {
                 provider: 'openai_compatible',
                 apiUrl: document.getElementById('cfg-apiurl').value,
                 apiKey: document.getElementById('cfg-apikey').value.trim(),
-                model: document.getElementById('cfg-model').value
+                model: document.getElementById('cfg-model').value,
+                mcpEnabled: !!document.getElementById('cfg-mcp-enabled').checked,
+                mcpGatewayUrl: document.getElementById('cfg-mcp-gateway-url').value.trim(),
+                mcpGatewayApiKey: document.getElementById('cfg-mcp-gateway-apikey').value.trim(),
+                mcpAutoApprove: !!document.getElementById('cfg-mcp-auto-approve').checked,
+                mcpTimeout: (timeoutVal >= 5 && timeoutVal <= 120) ? timeoutVal : 30
             };
             publishMessage('ai-chat/config-update', config);
+            publishMessage('ai-chat/request-tools', {
+                requestId: 'config-tools-' + Date.now(),
+                sessionId: currentSessionId || 'config-refresh'
+            });
             closeConfigModal();
         }
 
