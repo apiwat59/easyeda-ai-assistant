@@ -1019,6 +1019,11 @@
                                 contentEl.textContent = update.content;
                             } else {
                                 // 完成后使用 Markdown 渲染
+                                addDebugLog('info', '[Thinking Block] 调用 parseMarkdown', {
+                                    blockId: update.blockId,
+                                    status: update.status,
+                                    contentLength: update.content ? update.content.length : 0
+                                });
                                 var html = parseMarkdown(update.content);
                                 contentEl.innerHTML = html;
                             }
@@ -1060,6 +1065,12 @@
                             }
                         } else {
                             // 完成阶段：全量渲染（Markdown + 高亮）
+                            addDebugLog('info', '[Text Block] 调用 parseMarkdown', {
+                                blockId: update.blockId,
+                                status: update.status,
+                                contentLength: update.content ? update.content.length : 0,
+                                contentPreview: update.content ? update.content.substring(0, 100) : ''
+                            });
                             var html = parseMarkdown(update.content);
                             el.innerHTML = html;
                             highlightReferencesDOM(el);
@@ -2144,6 +2155,13 @@
                 div.textContent = block.content || '';
             } else {
                 // 完成阶段：全量渲染
+                addDebugLog('info', '[createTextBlockElement] 调用 parseMarkdown', {
+                    blockId: block.id,
+                    status: block.status,
+                    role: role,
+                    contentLength: block.content ? block.content.length : 0,
+                    contentPreview: block.content ? block.content.substring(0, 100) : ''
+                });
                 var html = parseMarkdown(block.content || '');
                 div.innerHTML = html;
                 highlightReferencesDOM(div);
@@ -2192,10 +2210,21 @@
          * 降级：如果 CDN 库未加载，使用简单正则替换
          */
         function parseMarkdown(text) {
+            // 调试日志：记录输入和库加载状态
+            addDebugLog('info', '[Markdown] 开始解析', {
+                textLength: text ? text.length : 0,
+                textPreview: text ? text.substring(0, 100) : '',
+                markedLoaded: typeof marked !== 'undefined',
+                DOMPurifyLoaded: typeof DOMPurify !== 'undefined',
+                markedFootnoteLoaded: typeof markedFootnote !== 'undefined',
+                hljsLoaded: typeof hljs !== 'undefined'
+            });
+
             if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
                 try {
                     // 创建 marked 实例并配置扩展（只配置一次）
                     if (!window._markedInstance) {
+                        addDebugLog('info', '[Markdown] 创建 marked 实例');
                         window._markedInstance = new marked.Marked({
                             breaks: true,
                             gfm: true
@@ -2203,11 +2232,16 @@
 
                         // 添加脚注扩展（如果可用）
                         if (typeof markedFootnote !== 'undefined') {
+                            addDebugLog('info', '[Markdown] 添加 markedFootnote 扩展');
                             window._markedInstance.use(markedFootnote());
                         }
                     }
 
                     var rawHtml = window._markedInstance.parse(text);
+                    addDebugLog('info', '[Markdown] marked.parse() 完成', {
+                        rawHtmlLength: rawHtml.length,
+                        rawHtmlPreview: rawHtml.substring(0, 300)
+                    });
 
                     // DOMPurify 配置：保留所有 Markdown 常用标签和属性（包括脚注）
                     var safeHtml = DOMPurify.sanitize(rawHtml, {
@@ -2231,15 +2265,21 @@
                         ],
                         ALLOW_DATA_ATTR: false
                     });
+                    addDebugLog('info', '[Markdown] DOMPurify.sanitize() 完成', {
+                        safeHtmlLength: safeHtml.length,
+                        safeHtmlPreview: safeHtml.substring(0, 300)
+                    });
 
                     // 渲染后使用 highlight.js 高亮代码块
                     if (typeof hljs !== 'undefined') {
+                        addDebugLog('info', '[Markdown] 开始代码高亮');
                         // 创建临时容器解析 HTML
                         var tempDiv = document.createElement('div');
                         tempDiv.innerHTML = safeHtml;
 
                         // 查找所有 code 块并高亮
                         var codeBlocks = tempDiv.querySelectorAll('pre code');
+                        addDebugLog('info', '[Markdown] 找到代码块数量: ' + codeBlocks.length);
                         for (var i = 0; i < codeBlocks.length; i++) {
                             var block = codeBlocks[i];
                             // 检测语言（从 class="language-xxx" 中提取）
@@ -2253,7 +2293,7 @@
                                     block.innerHTML = highlighted.value;
                                     block.className = 'hljs ' + className;
                                 } catch (e) {
-                                    console.warn('代码高亮失败:', e);
+                                    addDebugLog('warn', '[Markdown] 代码高亮失败: ' + e.message);
                                 }
                             } else {
                                 // 自动检测语言
@@ -2262,25 +2302,41 @@
                                     block.innerHTML = result.value;
                                     block.className = 'hljs';
                                 } catch (e) {
-                                    console.warn('代码自动高亮失败:', e);
+                                    addDebugLog('warn', '[Markdown] 代码自动高亮失败: ' + e.message);
                                 }
                             }
                         }
 
+                        addDebugLog('info', '[Markdown] 代码高亮完成，返回结果');
                         return tempDiv.innerHTML;
                     }
 
+                    addDebugLog('info', '[Markdown] 无 hljs，直接返回 safeHtml');
                     return safeHtml;
                 } catch (e) {
-                    console.warn('Markdown 解析失败，使用降级渲染:', e);
+                    addDebugLog('error', '[Markdown] 解析失败，使用降级渲染', {
+                        error: e.message,
+                        stack: e.stack,
+                        textPreview: text ? text.substring(0, 100) : ''
+                    });
                 }
+            } else {
+                addDebugLog('warn', '[Markdown] marked 或 DOMPurify 未加载，使用降级渲染', {
+                    markedLoaded: typeof marked !== 'undefined',
+                    DOMPurifyLoaded: typeof DOMPurify !== 'undefined'
+                });
             }
             // 降级渲染
+            addDebugLog('info', '[Markdown] 执行降级渲染');
             var t = escapeHtml(text);
             t = t.replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
             t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
             t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
             t = t.replace(/\n/g, '<br>');
+            addDebugLog('info', '[Markdown] 降级渲染完成', {
+                resultLength: t.length,
+                resultPreview: t.substring(0, 300)
+            });
             return t;
         }
 
