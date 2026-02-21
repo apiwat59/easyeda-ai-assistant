@@ -81,7 +81,7 @@ data: {"jsonrpc":"2.0","id":1,"result":{"tools":[...]}}
 
 ## 配置方法
 
-### 使用 SuperGateway（推荐）
+### 使用 SuperGateway + Tavily（快速验证）
 
 **1. 启动 SuperGateway**
 
@@ -309,13 +309,24 @@ curl -X POST http://your-gateway.com/api/tools/list \
 
 **原因：** Gateway 未配置 CORS。
 
-**解决：** 在 SuperGateway 启动时添加 `--cors` 标志：
-```bash
-npx -y supergateway \
-  --stdio "..." \
-  --outputTransport streamableHttp \
-  --port 8000 \
-  --cors
+**解决：** `--cors` 主要适用于 `sse` / `ws` 输出传输模式。若使用 `streamableHttp`，请在反向代理（如 Nginx）层配置 CORS：
+```nginx
+# Nginx 示例
+location /mcp {
+    # 处理 OPTIONS 预检请求
+    if ($request_method = OPTIONS) {
+        add_header Access-Control-Allow-Origin *;
+        add_header Access-Control-Allow-Methods "GET, POST, OPTIONS";
+        add_header Access-Control-Allow-Headers "Content-Type, Accept, Mcp-Session-Id";
+        add_header Access-Control-Max-Age 86400;
+        return 204;
+    }
+
+    proxy_pass http://localhost:8000;
+    add_header Access-Control-Allow-Origin *;
+    add_header Access-Control-Allow-Methods "GET, POST, OPTIONS";
+    add_header Access-Control-Allow-Headers "Content-Type, Accept, Mcp-Session-Id";
+}
 ```
 
 ## 重要说明
@@ -338,7 +349,7 @@ npx -y supergateway \
 
 ## 可用的 MCP Server
 
-### GrokSearch（推荐 - Grok + Tavily 双引擎）
+### GrokSearch（生产推荐 - Grok + Tavily 双引擎）
 
 **项目地址**：https://github.com/GuDaStudio/GrokSearch/tree/grok-with-tavily
 
@@ -439,7 +450,7 @@ bd21d3b feat: 实现 MCP (Model Context Protocol) 工具调用集成
 - [MCP 官方规范](https://modelcontextprotocol.io/specification/2025-03-26)
 - [SuperGateway GitHub](https://github.com/supercorp-ai/supergateway)
 - [MCP Registry](https://modelcontextprotocol.io/registry)
-- [Grok-search MCP Server](https://github.com/guda-studio/mcp-server-grok-search)
+- [GrokSearch MCP Server](https://github.com/GuDaStudio/GrokSearch/tree/grok-with-tavily)
 
 ## 贡献
 

@@ -14,10 +14,11 @@ debug.log
 !.env.template
 !.env.example
 
-# API Keys 和凭证
-*secret*
-*credential*
-config.json
+# API Keys 和凭证（避免误伤正常源码/文档）
+/secrets/
+*.secrets.json
+*.credentials.json
+/config.local.json
 
 # 日志文件
 *.log
