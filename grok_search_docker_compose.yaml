@@ -1,0 +1,30 @@
+services:
+  supergateway-grok:
+    image: supercorp/supergateway:uvx
+    container_name: supergateway-grok
+    restart: unless-stopped
+    env_file:
+      - .env
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - 5783:5783
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >
+        echo "Installing system dependencies..."
+
+        # 关键修改：安装 build-base 和 linux-headers 以支持 Python 库的编译
+
+        apk add --no-cache git build-base python3-dev linux-headers libffi-dev
+
+        echo "Starting Supergateway..."
+
+        exec supergateway \
+          --port 5783 \
+          --host 0.0.0.0 \
+          --outputTransport streamableHttp \
+          --stateful \
+          --sessionTimeout 300000 \
+          --stdio "uvx --from git+https://github.com/GuDaStudio/GrokSearch@grok-with-tavily grok-search"
