@@ -9,7 +9,7 @@ import type { AbortRequest, AIBlockResponse, ChatToolCall, CollectedData, Messag
 import { ChatSession, setDebugLog } from './chat-adapter';
 import { clearBackgroundNetlistState, collectSchematicData, getBackgroundNetlistState, parseNetlist, setLogToIFrame } from './collector';
 import { loadChatHistory, loadConfig, saveChatHistory, saveConfig, validateConfig } from './config';
-import { ToolOrchestrator } from './tool-orchestrator';
+import { clearSessionCache, ToolOrchestrator } from './tool-orchestrator';
 import { CHAT_TOPICS, ChunkType, ErrorCode, ReviewError } from './types';
 
 // 初始化 collector 的日志发送函数
@@ -26,6 +26,11 @@ setDebugLog((level: string, message: string, data?: any) => {
  * 按 sessionId 维护对话会话（替代单一全局 chatSession）
  */
 const chatSessions = new Map<string, ChatSession>();
+
+/**
+ * 按 sessionId 维护 ToolOrchestrator 实例（避免重复创建和 initialize）
+ */
+const toolOrchestratorsBySession = new Map<string, ToolOrchestrator>();
 
 /**
  * 进行中请求的状态（按 requestId 隔离）
@@ -69,6 +74,17 @@ let cachedSchematicData: CollectedData | null = null;
  * MessageBus订阅引用
  */
 const subscriptions: Array<{ cancel: () => void }> = [];
+
+/**
+ * MCP 工具列表缓存（避免重复 initialize 请求）
+ */
+let toolListCache: { tools: Array<{ name: string; description: string }>; timestamp: number } | null = null;
+const TOOL_CACHE_TTL_MS = 10_000; // 10 秒缓存有效期
+
+/**
+ * 正在进行的工具列表请求（用于合并并发请求）
+ */
+let toolListInflight: Promise<Array<{ name: string; description: string }>> | null = null;
 
 /**
  * 后台采集 single-flight 调度状态
@@ -507,38 +523,99 @@ function setupChatListeners(): void {
 
 	// 监听IFrame请求工具列表
 	subscribe(CHAT_TOPICS.REQUEST_TOOLS, async (data: any) => {
+		const config = loadConfig();
+		const incomingRequestId = typeof data?.requestId === 'string' ? data.requestId : '(none)';
+
+		// 快速判断是否启用 MCP
+		if (!config.mcpEnabled || !config.mcpGatewayUrl) {
+			publishToIFrame(CHAT_TOPICS.TOOLS_DATA, { enabled: false, tools: [] });
+			return;
+		}
+
+		// 1. 命中缓存则直接返回
+		if (toolListCache && (Date.now() - toolListCache.timestamp < TOOL_CACHE_TTL_MS)) {
+			publishToIFrame('ai-chat/debug-log', {
+				level: 'info',
+				message: `[REQUEST_TOOLS] 缓存命中，直接返回 ${toolListCache.tools.length} 个工具 (requestId=${incomingRequestId})`,
+			});
+			publishToIFrame(CHAT_TOPICS.TOOLS_DATA, {
+				enabled: true,
+				tools: toolListCache.tools,
+			});
+			return;
+		}
+
+		// 2. 合并并发请求：如果已有 in-flight 请求，复用它
+		if (toolListInflight) {
+			publishToIFrame('ai-chat/debug-log', {
+				level: 'info',
+				message: `[REQUEST_TOOLS] 合并到已有 inflight 请求 (requestId=${incomingRequestId})`,
+			});
+			try {
+				const tools = await toolListInflight;
+				publishToIFrame(CHAT_TOPICS.TOOLS_DATA, { enabled: true, tools });
+			}
+			catch (error) {
+				publishToIFrame(CHAT_TOPICS.TOOLS_DATA, {
+					enabled: true,
+					tools: [],
+					error: error instanceof Error ? error.message : String(error),
+				});
+			}
+			return;
+		}
+
+		// 3. 发起新请求
+		publishToIFrame('ai-chat/debug-log', {
+			level: 'info',
+			message: `[REQUEST_TOOLS] 发起新的工具列表请求 (requestId=${incomingRequestId})`,
+		});
 		const requestId = typeof data?.requestId === 'string'
 			? data.requestId
 			: `tool-preview-${Date.now()}`;
 		const sessionId = typeof data?.sessionId === 'string'
 			? data.sessionId
 			: 'tool-preview';
-
-		const config = loadConfig();
-		// 使用 no-op emitter 避免预览事件污染对话流
-		const noopEmitter = (): void => { /* 预览模式不发送工具事件 */ };
+		const debugEmitter = (event: ToolEventMessage): void => {
+			// 预览模式不发送工具 UI 事件，但将 session 日志转发到调试面板
+			if (event.stage === 'mcp-session') {
+				publishToIFrame('ai-chat/debug-log', {
+					level: event.status === 'error' ? 'error' : 'info',
+					message: event.title || '',
+				});
+			}
+		};
 		const toolOrchestrator = new ToolOrchestrator(
 			config,
 			{ requestId, sessionId },
-			noopEmitter,
+			debugEmitter,
 		);
 
-		if (!toolOrchestrator.isEnabled()) {
-			publishToIFrame(CHAT_TOPICS.TOOLS_DATA, { enabled: false, tools: [] });
-			return;
-		}
-
-		try {
-			const tools = await toolOrchestrator.listTools();
-			publishToIFrame(CHAT_TOPICS.TOOLS_DATA, {
-				enabled: true,
-				tools: tools.map(tool => ({
+		toolListInflight = toolOrchestrator.listTools()
+			.then((tools) => {
+				const mapped = tools.map(tool => ({
 					name: tool.function.name,
 					description: tool.function.description || '',
-				})),
-			});
+				}));
+				// 更新缓存
+				toolListCache = { tools: mapped, timestamp: Date.now() };
+				publishToIFrame('ai-chat/debug-log', {
+					level: 'success',
+					message: `[REQUEST_TOOLS] 工具列表拉取成功，已缓存 ${mapped.length} 个工具`,
+				});
+				return mapped;
+			})
+			.finally(() => { toolListInflight = null; });
+
+		try {
+			const tools = await toolListInflight;
+			publishToIFrame(CHAT_TOPICS.TOOLS_DATA, { enabled: true, tools: tools ?? [] });
 		}
 		catch (error) {
+			publishToIFrame('ai-chat/debug-log', {
+				level: 'error',
+				message: `[REQUEST_TOOLS] 工具列表拉取失败: ${error instanceof Error ? error.message : String(error)}`,
+			});
 			publishToIFrame(CHAT_TOPICS.TOOLS_DATA, {
 				enabled: true,
 				tools: [],
@@ -638,6 +715,10 @@ function setupChatListeners(): void {
 			}
 		}
 
+		// 配置变更时清空工具缓存，确保下次请求重新拉取
+		toolListCache = null;
+		clearSessionCache(); // 清空 MCP Session 缓存
+
 		const result = await saveConfig(data);
 
 		if (!result.success) {
@@ -729,6 +810,9 @@ function setupChatListeners(): void {
 				session.reset();
 				chatSessions.delete(sessionId);
 			}
+
+			// 清理该会话的 ToolOrchestrator
+			toolOrchestratorsBySession.delete(sessionId);
 			return;
 		}
 
@@ -879,12 +963,16 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		// 按 sessionId 获取或创建会话（核心隔离机制）
 		const session = getOrCreateChatSession(msg.sessionId);
 
-		// 创建工具编排器
-		const toolOrchestrator = new ToolOrchestrator(
-			config,
-			{ requestId: msg.requestId, sessionId: msg.sessionId },
-			publishToolEvent,
-		);
+		// 获取或创建工具编排器（会话级复用，避免重复 initialize）
+		let toolOrchestrator = toolOrchestratorsBySession.get(msg.sessionId);
+		if (!toolOrchestrator) {
+			toolOrchestrator = new ToolOrchestrator(
+				config,
+				{ requestId: msg.requestId, sessionId: msg.sessionId },
+				publishToolEvent,
+			);
+			toolOrchestratorsBySession.set(msg.sessionId, toolOrchestrator);
+		}
 
 		// 如果启用 MCP，拉取工具列表
 		let availableTools: import('./types').ChatToolDefinition[] = [];
@@ -1066,6 +1154,9 @@ function clearAllChatSessions(): void {
 	}
 	chatSessions.clear();
 	lastUserMessageBySession.clear();
+	toolListCache = null; // 清空工具缓存
+	clearSessionCache(); // 清空 MCP Session 缓存
+	toolOrchestratorsBySession.clear(); // 清空 ToolOrchestrator 缓存
 }
 
 // ============ 中止管理 ============

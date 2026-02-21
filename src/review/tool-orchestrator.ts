@@ -77,6 +77,90 @@ interface _JsonRpcResponse {
 }
 
 /**
+ * 模块级 MCP Session 缓存（避免每次创建 ToolOrchestrator 都重新 initialize）
+ *
+ * 策略：
+ * - 按 gatewayBaseUrl 缓存 session ID 或 stateless 标记
+ * - 30 分钟 TTL，过期自动清理
+ * - 配置变更时清空缓存
+ */
+interface SessionCacheEntry {
+	mode: 'session' | 'stateless';
+	sessionId?: string; // mode=session 时存在
+	timestamp: number;
+}
+
+const sessionCache = new Map<string, SessionCacheEntry>();
+const SESSION_CACHE_TTL_MS = 30 * 60 * 1000; // 30 分钟
+
+/**
+ * Initialize 结果类型
+ */
+interface InitializeResult {
+	mode: 'session' | 'stateless';
+	sessionId?: string; // mode=session 时存在
+}
+
+/**
+ * 获取缓存的 Session ID 或 stateless 标记（如果未过期）
+ */
+function getCachedSessionId(gatewayBaseUrl: string): InitializeResult | null {
+	const entry = sessionCache.get(gatewayBaseUrl);
+	if (!entry) {
+		return null;
+	}
+
+	// 检查是否过期
+	if (Date.now() - entry.timestamp > SESSION_CACHE_TTL_MS) {
+		sessionCache.delete(gatewayBaseUrl);
+		return null;
+	}
+
+	if (entry.mode === 'session' && entry.sessionId) {
+		return { mode: 'session', sessionId: entry.sessionId };
+	}
+	else if (entry.mode === 'stateless') {
+		return { mode: 'stateless' };
+	}
+
+	return null;
+}
+
+/**
+ * 保存 Session ID 或 stateless 标记到缓存
+ */
+function setCachedSessionId(gatewayBaseUrl: string, result: InitializeResult): void {
+	if (result.mode === 'session' && result.sessionId) {
+		sessionCache.set(gatewayBaseUrl, {
+			mode: 'session',
+			sessionId: result.sessionId,
+			timestamp: Date.now(),
+		});
+	}
+	else if (result.mode === 'stateless') {
+		sessionCache.set(gatewayBaseUrl, {
+			mode: 'stateless',
+			timestamp: Date.now(),
+		});
+	}
+}
+
+/**
+ * 模块级 initialize inflight promise（跨实例合并并发 initialize 请求）
+ * 按 gatewayBaseUrl 分桶，避免不同 gateway 的请求互相阻塞
+ */
+const initializeInflight = new Map<string, Promise<InitializeResult | null>>();
+
+/**
+ * 清空所有缓存的 Session ID（配置变更时调用）
+ */
+export function clearSessionCache(): void {
+	sessionCache.clear();
+	// 同时清空模块级 inflight promise
+	initializeInflight.clear();
+}
+
+/**
  * 工具编排器
  */
 export class ToolOrchestrator {
@@ -84,7 +168,6 @@ export class ToolOrchestrator {
 	private readonly gatewayType: GatewayType;
 	private jsonRpcIdCounter = 1;
 	private mcpSessionId: string | null = null;
-	private initializePromise: Promise<void> | null = null;
 
 	constructor(
 		private readonly config: ConfigStore,
@@ -93,6 +176,20 @@ export class ToolOrchestrator {
 	) {
 		this.gatewayBaseUrl = normalizeGatewayBaseUrl(config.mcpGatewayUrl || '');
 		this.gatewayType = detectGatewayType(this.gatewayBaseUrl);
+
+		// 从模块级缓存恢复 Session ID 或 stateless 标记，避免重复 initialize
+		if (this.gatewayType === GatewayType.JSON_RPC) {
+			const cached = getCachedSessionId(this.gatewayBaseUrl);
+			if (cached) {
+				if (cached.mode === 'session' && cached.sessionId) {
+					this.mcpSessionId = cached.sessionId;
+				}
+				else if (cached.mode === 'stateless') {
+					// 无状态模式已初始化，mcpSessionId 保持 null 但不再重复 initialize
+					this.mcpSessionId = null;
+				}
+			}
+		}
 	}
 
 	isEnabled(): boolean {
@@ -280,30 +377,82 @@ export class ToolOrchestrator {
 
 	/**
 	 * 确保 MCP 会话已初始化（仅 JSON-RPC 模式需要）
+	 *
+	 * 使用模块级 inflight promise 合并跨实例的并发 initialize 请求
+	 * 按 gatewayBaseUrl 分桶，避免不同 gateway 的请求互相阻塞
+	 * 支持 stateless 模式：如果 session ID 不可达（CORS），标记为已初始化但无 session ID
 	 */
 	private async ensureInitialized(signal?: AbortSignal): Promise<void> {
-		if (this.mcpSessionId) {
-			return; // 已初始化
+		// 检查缓存：session 模式或 stateless 模式都算已初始化
+		const cached = getCachedSessionId(this.gatewayBaseUrl);
+		if (cached) {
+			if (cached.mode === 'session' && cached.sessionId) {
+				this.mcpSessionId = cached.sessionId;
+				this.emit({
+					stage: 'mcp-session',
+					status: 'success',
+					title: `MCP Session 已缓存 (${cached.sessionId.substring(0, 8)}...)，跳过 initialize`,
+				});
+			}
+			else if (cached.mode === 'stateless') {
+				this.emit({
+					stage: 'mcp-session',
+					status: 'success',
+					title: 'MCP 无状态模式已初始化，跳过 initialize',
+				});
+			}
+			return;
 		}
 
-		// 防止并发初始化
-		if (this.initializePromise) {
-			return this.initializePromise;
+		// 模块级 inflight：如果有其他实例正在 initialize，等待它完成（按 gateway 分桶）
+		const existingInflight = initializeInflight.get(this.gatewayBaseUrl);
+		if (existingInflight) {
+			this.emit({
+				stage: 'mcp-session',
+				status: 'running',
+				title: 'MCP initialize 合并到已有请求，等待中...',
+			});
+			const result = await existingInflight;
+			if (result?.mode === 'session' && result.sessionId) {
+				this.mcpSessionId = result.sessionId;
+			}
+			this.emit({
+				stage: 'mcp-session',
+				status: 'success',
+				title: result?.mode === 'session'
+					? `MCP initialize 完成 (复用 ${result.sessionId!.substring(0, 8)}...)`
+					: 'MCP initialize 完成 (无状态模式)',
+			});
+			return;
 		}
 
-		this.initializePromise = this.performInitialize(signal);
+		// 发起新的 initialize，使用模块级 inflight 防并发（按 gateway 分桶）
+		this.emit({
+			stage: 'mcp-session',
+			status: 'running',
+			title: '发起 MCP initialize 握手...',
+		});
+		const inflightPromise = this.performInitialize(signal);
+		initializeInflight.set(this.gatewayBaseUrl, inflightPromise);
 		try {
-			await this.initializePromise;
+			const result = await inflightPromise;
+			if (result?.mode === 'session' && result.sessionId) {
+				this.mcpSessionId = result.sessionId;
+			}
 		}
 		finally {
-			this.initializePromise = null;
+			initializeInflight.delete(this.gatewayBaseUrl);
 		}
 	}
 
 	/**
 	 * 执行 MCP initialize 握手
+	 *
+	 * 返回 InitializeResult：
+	 * - mode=session: 成功获取 session ID
+	 * - mode=stateless: header 不可达（CORS）但请求成功，降级为无状态模式
 	 */
-	private async performInitialize(signal?: AbortSignal): Promise<void> {
+	private async performInitialize(signal?: AbortSignal): Promise<InitializeResult | null> {
 		const initRequest: JsonRpcRequest = {
 			jsonrpc: '2.0',
 			method: 'initialize',
@@ -325,10 +474,28 @@ export class ToolOrchestrator {
 			true, // skipSessionHeader = true（初始化时不带 session ID）
 		);
 
-		// 从响应中提取 session ID（已在 postJson 中设置到 this.mcpSessionId）
-		if (!this.mcpSessionId) {
-			throw new Error('MCP initialize 未返回 session ID');
+		// 如果成功获取了 session ID，保存到模块级缓存
+		if (this.mcpSessionId) {
+			const result: InitializeResult = { mode: 'session', sessionId: this.mcpSessionId };
+			this.emit({
+				stage: 'mcp-session',
+				status: 'success',
+				title: `MCP initialize 成功，Session ID: ${this.mcpSessionId.substring(0, 8)}...`,
+			});
+			setCachedSessionId(this.gatewayBaseUrl, result);
+			return result;
 		}
+
+		// Session ID 未获取到（CORS 限制等），降级为无状态模式继续工作
+		// 不抛出错误，允许后续请求在没有 session ID 的情况下发送
+		const result: InitializeResult = { mode: 'stateless' };
+		this.emit({
+			stage: 'mcp-session',
+			status: 'success',
+			title: 'MCP initialize 成功，但未获取到 Session ID (CORS?)，降级为无状态模式',
+		});
+		setCachedSessionId(this.gatewayBaseUrl, result);
+		return result;
 	}
 
 	private async postJson<T>(
@@ -381,6 +548,14 @@ export class ToolOrchestrator {
 				: await requestPromise as Response;
 			if (!response.ok) {
 				const text = await response.text();
+
+				// Session 失效（supergateway 重启等场景）：清除缓存，允许后续请求重新 initialize
+				if (this.gatewayType === GatewayType.JSON_RPC && !skipSessionHeader
+					&& (response.status === 404 || response.status === 400 || response.status === 410)) {
+					this.mcpSessionId = null;
+					sessionCache.delete(this.gatewayBaseUrl);
+				}
+
 				throw new Error(`Gateway HTTP ${response.status}: ${truncateText(text, 500)}`);
 			}
 

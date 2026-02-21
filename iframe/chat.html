@@ -1131,6 +1131,9 @@
         var saveHistoryTimer = null; // 历史保存节流定时器
         var activeRequestId = null;  // 当前正在进行的请求ID（用于 abort）
         var availableTools = [];     // MCP 工具清单
+        var _initialized = false;    // init() 幂等保护
+        var _toolsBootstrapped = false; // 工具列表是否已首次加载
+        var _subscriptions = [];     // MessageBus 订阅引用（用于清理）
 
         // 不触发历史保存的系统错误（避免错误循环）
         var NON_PERSIST_SYSTEM_ERROR = {
@@ -1241,15 +1244,14 @@
         }
 
         function init() {
+            if (_initialized) return;
+            _initialized = true;
             setupEventListeners();
             setStatus('ready', '就绪');
             publishMessage('ai-chat/request-data', {});
             publishMessage('ai-chat/request-config', {});
             publishMessage('ai-chat/request-history', {});
-            publishMessage('ai-chat/request-tools', {
-                requestId: 'bootstrap-tools',
-                sessionId: 'bootstrap'
-            });
+            // request-tools 由 handleConfigData 首次收到配置时统一触发，避免重复
         }
 
         // ============ 流式更新管理器（参考 Cherry Studio StreamManager） ============
@@ -1603,18 +1605,32 @@
             }, true); // 使用捕获阶段，确保优先处理
 
             if (typeof eda !== 'undefined' && eda.sys_MessageBus) {
-                eda.sys_MessageBus.subscribePublic('ai-chat/schematic-data', handleSchematicData);
-                eda.sys_MessageBus.subscribePublic('ai-chat/config-data', handleConfigData);
-                eda.sys_MessageBus.subscribePublic('ai-chat/history-data', handleHistoryData);
-                eda.sys_MessageBus.subscribePublic('ai-chat/tools-data', handleToolsData);
-                eda.sys_MessageBus.subscribePublic('ai-chat/ai-response', handleAIResponse);
-                eda.sys_MessageBus.subscribePublic('ai-chat/ai-thinking', handleAIThinking);
-                eda.sys_MessageBus.subscribePublic('ai-chat/ai-text', handleAIText);
-                eda.sys_MessageBus.subscribePublic('ai-chat/tool-event', handleToolEvent);
-                eda.sys_MessageBus.subscribePublic('ai-chat/error', handleError);
-                eda.sys_MessageBus.subscribePublic('ai-chat/debug-log', handleDebugLog);
+                // 先清理旧订阅，防止订阅泄漏
+                _subscriptions.forEach(function(s) { if (s && s.cancel) s.cancel(); });
+                _subscriptions = [];
+
+                _subscriptions.push(eda.sys_MessageBus.subscribePublic('ai-chat/schematic-data', handleSchematicData));
+                _subscriptions.push(eda.sys_MessageBus.subscribePublic('ai-chat/config-data', handleConfigData));
+                _subscriptions.push(eda.sys_MessageBus.subscribePublic('ai-chat/history-data', handleHistoryData));
+                _subscriptions.push(eda.sys_MessageBus.subscribePublic('ai-chat/tools-data', handleToolsData));
+                _subscriptions.push(eda.sys_MessageBus.subscribePublic('ai-chat/ai-response', handleAIResponse));
+                _subscriptions.push(eda.sys_MessageBus.subscribePublic('ai-chat/ai-thinking', handleAIThinking));
+                _subscriptions.push(eda.sys_MessageBus.subscribePublic('ai-chat/ai-text', handleAIText));
+                _subscriptions.push(eda.sys_MessageBus.subscribePublic('ai-chat/tool-event', handleToolEvent));
+                _subscriptions.push(eda.sys_MessageBus.subscribePublic('ai-chat/error', handleError));
+                _subscriptions.push(eda.sys_MessageBus.subscribePublic('ai-chat/debug-log', handleDebugLog));
             }
         }
+
+        // ============ 前端生命周期清理 ============
+
+        function cleanup() {
+            _subscriptions.forEach(function(s) { if (s && s.cancel) s.cancel(); });
+            _subscriptions = [];
+            _initialized = false;
+            _toolsBootstrapped = false;
+        }
+        window.addEventListener('beforeunload', cleanup);
 
         // ============ MessageBus 处理器 ============
 
@@ -1660,10 +1676,12 @@
                 document.getElementById('cfg-mcp-gateway-apikey').value = data.mcpGatewayApiKey || '';
                 document.getElementById('cfg-mcp-auto-approve').checked = data.mcpAutoApprove !== false;
             }
-            if (data.mcpEnabled) {
+            // 仅首次收到配置且 MCP 已启用时触发一次工具列表请求
+            if (data.mcpEnabled && !_toolsBootstrapped) {
+                _toolsBootstrapped = true;
                 publishMessage('ai-chat/request-tools', {
-                    requestId: 'refresh-tools-' + Date.now(),
-                    sessionId: currentSessionId || 'config-refresh'
+                    requestId: 'bootstrap-tools-' + Date.now(),
+                    sessionId: currentSessionId || 'bootstrap'
                 });
             }
         }
@@ -3024,6 +3042,8 @@
                     }
                 };
                 img.onerror = function() {
+                    // 清理 blob URL，防止内存泄漏
+                    URL.revokeObjectURL(img.src);
                     reject(new Error('图片加载失败'));
                 };
                 img.src = URL.createObjectURL(file);
@@ -3104,11 +3124,15 @@
                 mcpGatewayApiKey: document.getElementById('cfg-mcp-gateway-apikey').value.trim(),
                 mcpAutoApprove: !!document.getElementById('cfg-mcp-auto-approve').checked
             };
+            // 重置 bootstrap flag，允许配置变更后重新加载工具列表
+            _toolsBootstrapped = false;
             publishMessage('ai-chat/config-update', config);
             publishMessage('ai-chat/request-tools', {
                 requestId: 'config-tools-' + Date.now(),
                 sessionId: currentSessionId || 'config-refresh'
             });
+            // 立即设置为 true，防止 handleConfigData 再次触发
+            _toolsBootstrapped = true;
             closeConfigModal();
         }
 

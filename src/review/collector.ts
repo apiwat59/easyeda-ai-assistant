@@ -625,9 +625,11 @@ interface BackgroundNetlistState {
 	completed: boolean;
 	result?: string;
 	duration?: number;
+	token: number; // 版本控制：只有 token 匹配的回调才能更新状态
 }
 
 let backgroundNetlistState: BackgroundNetlistState | null = null;
+let backgroundNetlistTokenCounter = 0; // 全局 token 计数器
 
 /**
  * 采集网表（带超时保护 + 后台继续获取）
@@ -647,31 +649,43 @@ async function collectNetlist(): Promise<string | undefined> {
 		// 使用 PROTEL2 格式（实际返回 PROTEL NETLIST 2.0 格式）
 		const netlistPromise = eda.sch_Netlist.getNetlist(ESYS_NetlistType.PROTEL2);
 
+		// 分配新的 token，防止旧任务的回调覆盖新任务
+		const currentToken = ++backgroundNetlistTokenCounter;
+
 		// 保存到全局状态，供后续查询
 		backgroundNetlistState = {
 			promise: netlistPromise.then(
 				(result) => {
 					const duration = Date.now() - startTime;
-					if (backgroundNetlistState) {
+					// 只有 token 匹配才更新状态（防止旧任务覆盖新任务）
+					if (backgroundNetlistState && backgroundNetlistState.token === currentToken) {
 						backgroundNetlistState.completed = true;
 						backgroundNetlistState.result = result;
 						backgroundNetlistState.duration = duration;
+						log('success', `[采集] 网表后台获取成功 (token=${currentToken}, 耗时 ${duration}ms, 大小: ${result.length} 字符)`);
 					}
-					log('success', `[采集] 网表后台获取成功 (耗时 ${duration}ms, 大小: ${result.length} 字符)`);
+					else {
+						log('warn', `[采集] 网表后台获取成功但已过期 (token=${currentToken}, 当前=${backgroundNetlistState?.token})`);
+					}
 					return result;
 				},
 				(error) => {
 					const duration = Date.now() - startTime;
-					if (backgroundNetlistState) {
+					// 只有 token 匹配才更新状态
+					if (backgroundNetlistState && backgroundNetlistState.token === currentToken) {
 						backgroundNetlistState.completed = true;
 						backgroundNetlistState.duration = duration;
+						log('error', `[采集] 网表后台获取失败 (token=${currentToken}, 耗时 ${duration}ms): ${error instanceof Error ? error.message : String(error)}`);
 					}
-					log('error', `[采集] 网表后台获取失败 (耗时 ${duration}ms): ${error instanceof Error ? error.message : String(error)}`);
+					else {
+						log('warn', `[采集] 网表后台获取失败但已过期 (token=${currentToken}, 当前=${backgroundNetlistState?.token})`);
+					}
 					return undefined;
 				},
 			),
 			startTime,
 			completed: false,
+			token: currentToken,
 		};
 
 		// 主流程等待超时
