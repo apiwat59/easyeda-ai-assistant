@@ -9,5 +9,16 @@ export default antfu({
 
 	typescript: true,
 
-	ignores: ['build/dist/', 'coverage/', 'dist/', 'node_modules/', '.eslintcache', 'debug.log', '*.md', '*.html'],
+	ignores: [
+		'build/**',
+		'dist/**',
+		'coverage/**',
+		'node_modules/**',
+		'.eslintcache',
+		'debug.log',
+		'**/*.md',
+		'**/*.html',
+		'iframe/vendor/**',
+		'docs/**',
+	],
 });

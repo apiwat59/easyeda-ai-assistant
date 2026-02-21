@@ -46,18 +46,18 @@
 **数据结构**：
 ```typescript
 interface RawText {
-    primitiveId: string;
-    content: string;
-    x: number;
-    y: number;
-    schematicPageUuid?: string;
+	primitiveId: string;
+	content: string;
+	x: number;
+	y: number;
+	schematicPageUuid?: string;
 }
 
 interface RawBus {
-    primitiveId: string;
-    busName: string;
-    lines: number[][];
-    schematicPageUuid?: string;
+	primitiveId: string;
+	busName: string;
+	lines: number[][];
+	schematicPageUuid?: string;
 }
 ```
 
@@ -86,12 +86,12 @@ interface RawBus {
 **数据结构**：
 ```typescript
 interface RawNetLabel {
-    primitiveId: string;
-    netName: string;
-    x: number;
-    y: number;
-    type: 'netflag' | 'netport';
-    schematicPageUuid?: string;
+	primitiveId: string;
+	netName: string;
+	x: number;
+	y: number;
+	type: 'netflag' | 'netport';
+	schematicPageUuid?: string;
 }
 ```
 
@@ -260,17 +260,18 @@ for each pin:
 **实现细节**：
 ```typescript
 export function activate(status?: 'onStartupFinished', arg?: string): void {
-    // 防止重复初始化
-    if (autoCollectorInitialized) return;
-    autoCollectorInitialized = true;
+	// 防止重复初始化
+	if (autoCollectorInitialized)
+		return;
+	autoCollectorInitialized = true;
 
-    // 启动定时器：每5秒检测文档变化
-    eda.sys_Timer.setIntervalTimer(AUTO_COLLECT_TIMER_ID, 5000, () => {
-        void probeDocumentAndTriggerCollection();
-    });
+	// 启动定时器：每5秒检测文档变化
+	eda.sys_Timer.setIntervalTimer(AUTO_COLLECT_TIMER_ID, 5000, () => {
+		void probeDocumentAndTriggerCollection();
+	});
 
-    // 立即执行一次
-    void probeDocumentAndTriggerCollection();
+	// 立即执行一次
+	void probeDocumentAndTriggerCollection();
 }
 ```
 
@@ -302,18 +303,18 @@ export function activate(status?: 'onStartupFinished', arg?: string): void {
 **实现细节**：
 ```javascript
 function parseMarkdown(text) {
-    if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
-        var rawHtml = marked.parse(text, { breaks: true });
-        return DOMPurify.sanitize(rawHtml);
-    }
-    // 降级渲染
-    return fallbackRender(text);
+	if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
+		const rawHtml = marked.parse(text, { breaks: true });
+		return DOMPurify.sanitize(rawHtml);
+	}
+	// 降级渲染
+	return fallbackRender(text);
 }
 
 function highlightReferencesDOM(containerElement) {
-    // 使用 TreeWalker 遍历文本节点
-    // 跳过 CODE/PRE/A/SPAN 标签（避免误伤代码块）
-    // 高亮器件位号和网络名
+	// 使用 TreeWalker 遍历文本节点
+	// 跳过 CODE/PRE/A/SPAN 标签（避免误伤代码块）
+	// 高亮器件位号和网络名
 }
 ```
 

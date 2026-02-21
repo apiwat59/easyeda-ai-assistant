@@ -66,11 +66,11 @@
 
 ```typescript
 interface BackgroundNetlistState {
-    promise: Promise<string | undefined>;
-    startTime: number;
-    completed: boolean;
-    result?: string;
-    duration?: number;
+	promise: Promise<string | undefined>;
+	startTime: number;
+	completed: boolean;
+	result?: string;
+	duration?: number;
 }
 ```
 
