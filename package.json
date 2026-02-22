@@ -1,6 +1,6 @@
 {
 	"name": "easyeda-ai-assistant",
-	"version": "1.2.2",
+	"version": "1.2.3-beta5",
 	"description": "AI-powered schematic review and chat assistant for EasyEDA Pro",
 	"author": "jifengshandian",
 	"license": "Apache-2.0",

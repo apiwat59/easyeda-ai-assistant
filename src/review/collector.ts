@@ -11,14 +11,32 @@ import { ErrorCode, ReviewError } from './types';
  */
 let logToIFrame: ((level: string, message: string, data?: any) => void) | null = null;
 
+/**
+ * 调试日志开关（默认关闭）
+ */
+const ENABLE_VERBOSE_DEBUG_LOGS = false;
+
 export function setLogToIFrame(fn: (level: string, message: string, data?: any) => void): void {
 	logToIFrame = fn;
 }
 
 function log(level: string, message: string, data?: any): void {
-	console.warn(`[${level.toUpperCase()}] ${message}`, data || '');
+	// debug 级别日志需要开关控制
+	if (level === 'debug' && !ENABLE_VERBOSE_DEBUG_LOGS) {
+		return;
+	}
+
+	// 发送到前端调试面板
 	if (logToIFrame) {
 		logToIFrame(level, message, data);
+	}
+
+	// 只有 warn/error 才输出到控制台
+	if (level === 'warn') {
+		console.warn(`[${level.toUpperCase()}] ${message}`, data || '');
+	}
+	else if (level === 'error') {
+		console.error(`[${level.toUpperCase()}] ${message}`, data || '');
 	}
 }
 
@@ -78,6 +96,9 @@ export async function collectSchematicData(): Promise<CollectedData> {
 	// 检查是否有打开的原理图文档
 	const docInfo = await eda.dmt_SelectControl.getCurrentDocumentInfo();
 	if (!docInfo || docInfo.documentType !== 1) { // EDMT_EditorDocumentType.SCHEMATIC_PAGE = 1
+		log('warn', '[采集] 当前文档不是原理图，终止采集', {
+			documentType: docInfo?.documentType,
+		});
 		throw new ReviewError(
 			ErrorCode.COLLECT_NO_DOCUMENT,
 			'没有打开的原理图文档',
@@ -216,7 +237,9 @@ export async function collectSchematicData(): Promise<CollectedData> {
 			await eda.dmt_EditorControl.activateDocument(originalTabId);
 		}
 		catch (restoreError) {
-			console.warn('[采集] 恢复原始文档焦点失败:', restoreError);
+			log('warn', '[采集] 恢复原始文档焦点失败', {
+				error: restoreError instanceof Error ? restoreError.message : String(restoreError),
+			});
 		}
 
 		// 统计网络
@@ -235,30 +258,7 @@ export async function collectSchematicData(): Promise<CollectedData> {
 			withManufacturerPartNumber: components.filter(c => c.manufacturerPartNumber).length,
 		};
 
-		log('info', `[采集] 元件属性统计`, {
-			总元件数: stats.total,
-			有Value: `${stats.withValue}/${stats.total} (${(stats.withValue / stats.total * 100).toFixed(1)}%)`,
-			有Prefix: `${stats.withPrefix}/${stats.total} (${(stats.withPrefix / stats.total * 100).toFixed(1)}%)`,
-			有AddIntoPcb: `${stats.withAddIntoPcb}/${stats.total} (${(stats.withAddIntoPcb / stats.total * 100).toFixed(1)}%)`,
-			有LcscPart: `${stats.withLcscPart}/${stats.total} (${(stats.withLcscPart / stats.total * 100).toFixed(1)}%)`,
-			有JlcPart: `${stats.withJlcPart}/${stats.total} (${(stats.withJlcPart / stats.total * 100).toFixed(1)}%)`,
-			有BomInclude: `${stats.withBomInclude}/${stats.total} (${(stats.withBomInclude / stats.total * 100).toFixed(1)}%)`,
-			有Manufacturer: `${stats.withManufacturer}/${stats.total} (${(stats.withManufacturer / stats.total * 100).toFixed(1)}%)`,
-			有ManufacturerPartNumber: `${stats.withManufacturerPartNumber}/${stats.total} (${(stats.withManufacturerPartNumber / stats.total * 100).toFixed(1)}%)`,
-		});
-
-		// 显示第一个有 Value 的元件作为示例
-		const sampleWithValue = components.find(c => c.value);
-		if (sampleWithValue) {
-			log('info', `[采集] 元件属性示例 (${sampleWithValue.designator})`, {
-				Value: sampleWithValue.value || '(空)',
-				Prefix: sampleWithValue.prefix || '(空)',
-				AddIntoPcb: sampleWithValue.addIntoPcb || '(空)',
-				LcscPart: sampleWithValue.lcscPart || '(空)',
-				JlcPart: sampleWithValue.jlcPart || '(空)',
-				BomInclude: sampleWithValue.bomInclude || '(空)',
-			});
-		}
+		log('info', `[采集] 元件属性统计`, stats);
 
 		const totalTime = Date.now() - startTime;
 		log('success', `[采集] 采集完成: ${components.length} 器件, ${pins.length} 引脚, ${nets.length} 网络, ${netLabels.length} 网络标记 (总耗时 ${totalTime}ms)`);
@@ -284,7 +284,9 @@ export async function collectSchematicData(): Promise<CollectedData> {
 			// ignore
 		}
 
-		console.error('[采集] 采集失败:', error);
+		log('error', '[采集] 采集失败', {
+			error: error instanceof Error ? error.message : String(error),
+		});
 		throw new ReviewError(
 			ErrorCode.COLLECT_API_FAILED,
 			`数据采集失败: ${error instanceof Error ? error.message : String(error)}`,
@@ -348,6 +350,12 @@ async function collectComponentsAndPins(options: {
 	// 第二阶段：获取器件详细信息 + 引脚
 	const allComponents: RawComponent[] = [];
 	const allPins: RawPin[] = [];
+
+	// 未绑定引脚统计（汇总输出，避免逐条日志风暴）
+	const MAX_UNRESOLVED_SAMPLES = 12;
+	let unresolvedPinCount = 0;
+	let unresolvedPowerPinCount = 0;
+	const unresolvedPinSamples: any[] = [];
 
 	const componentTasks = validPrimitives.map(({ primitive }, _index) => async () => {
 		// 并行获取器件基本信息 + 引脚列表
@@ -577,11 +585,17 @@ async function collectComponentsAndPins(options: {
 						topo: nearestTopo ? `${nearestTopo.distance.toFixed(1)}` : 'none',
 					};
 
+					// 汇总统计，不再逐条输出
 					if (electricalType === 'Power' || electricalType === 'Ground') {
-						log('warn', `[Pin-Net] 电源/地引脚未绑定`, debugInfo);
+						unresolvedPowerPinCount++;
 					}
 					else {
-						log('debug', `[Pin-Net] 引脚未绑定`, debugInfo);
+						unresolvedPinCount++;
+					}
+
+					// 收集前 N 条样本
+					if (unresolvedPinSamples.length < MAX_UNRESOLVED_SAMPLES) {
+						unresolvedPinSamples.push(debugInfo);
 					}
 				}
 
@@ -611,6 +625,16 @@ async function collectComponentsAndPins(options: {
 			continue; // 基本信息获取失败的元件跳过
 		allComponents.push(result.component);
 		allPins.push(...result.pins);
+	}
+
+	// 汇总输出未绑定引脚统计
+	if (unresolvedPinCount > 0 || unresolvedPowerPinCount > 0) {
+		log(unresolvedPowerPinCount > 0 ? 'warn' : 'info', '[Pin-Net] 未绑定引脚汇总', {
+			unresolvedPinCount,
+			unresolvedPowerPinCount,
+			sampleCount: unresolvedPinSamples.length,
+			samples: unresolvedPinSamples,
+		});
 	}
 
 	return { components: allComponents, pins: allPins };
@@ -707,7 +731,6 @@ async function collectNetlist(): Promise<string | undefined> {
 	}
 	catch (error) {
 		log('error', `[采集] 网表获取异常: ${error instanceof Error ? error.message : String(error)}`);
-		console.error('[采集] 网表获取异常详情:', error);
 		return undefined;
 	}
 }
@@ -794,6 +817,7 @@ async function collectTexts(
 	const { schematicPageUuid } = options;
 
 	try {
+		let failedCount = 0;
 		const textPrimitives = await eda.sch_PrimitiveText.getAll();
 
 		const textTasks = textPrimitives.map(textPrimitive => async () => {
@@ -813,17 +837,30 @@ async function collectTexts(
 					schematicPageUuid,
 				} as RawText;
 			}
-			catch (textError) {
-				console.warn('采集单个文本图元失败:', textError);
+			catch {
+				failedCount++;
 				return null;
 			}
 		});
 
 		const results = await promiseAllWithLimit(textTasks, 50);
-		return results.filter((item): item is RawText => item !== null);
+		const filtered = results.filter((item): item is RawText => item !== null);
+
+		if (failedCount > 0) {
+			log('warn', '[采集] 文本图元采集部分失败', {
+				failedCount,
+				total: textPrimitives.length,
+				schematicPageUuid: schematicPageUuid || '(当前页)',
+			});
+		}
+
+		return filtered;
 	}
 	catch (error) {
-		console.warn('采集文本标注失败，已降级为空数组:', error);
+		log('warn', '[采集] 采集文本标注失败，已降级为空数组', {
+			error: error instanceof Error ? error.message : String(error),
+			schematicPageUuid: schematicPageUuid || '(当前页)',
+		});
 		return [];
 	}
 }
@@ -838,6 +875,7 @@ async function collectBuses(
 	const { schematicPageUuid } = options;
 
 	try {
+		let failedCount = 0;
 		const busPrimitives = await eda.sch_PrimitiveBus.getAll();
 
 		const busTasks = busPrimitives.map(busPrimitive => async () => {
@@ -864,17 +902,30 @@ async function collectBuses(
 					schematicPageUuid,
 				} as RawBus;
 			}
-			catch (busError) {
-				console.warn('采集单个总线图元失败:', busError);
+			catch {
+				failedCount++;
 				return null;
 			}
 		});
 
 		const results = await promiseAllWithLimit(busTasks, 50);
-		return results.filter((item): item is RawBus => item !== null);
+		const filtered = results.filter((item): item is RawBus => item !== null);
+
+		if (failedCount > 0) {
+			log('warn', '[采集] 总线图元采集部分失败', {
+				failedCount,
+				total: busPrimitives.length,
+				schematicPageUuid: schematicPageUuid || '(当前页)',
+			});
+		}
+
+		return filtered;
 	}
 	catch (error) {
-		console.warn('采集总线失败，已降级为空数组:', error);
+		log('warn', '[采集] 采集总线失败，已降级为空数组', {
+			error: error instanceof Error ? error.message : String(error),
+			schematicPageUuid: schematicPageUuid || '(当前页)',
+		});
 		return [];
 	}
 }
@@ -889,6 +940,7 @@ async function collectNetLabels(
 	const { schematicPageUuid } = options;
 
 	try {
+		let failedCount = 0;
 		// 获取当前页的所有器件
 		const primitives = await eda.sch_PrimitiveComponent.getAll(undefined, false);
 
@@ -924,17 +976,30 @@ async function collectNetLabels(
 					schematicPageUuid,
 				} as RawNetLabel;
 			}
-			catch (labelError) {
-				console.warn('采集单个网络标记失败:', labelError);
+			catch {
+				failedCount++;
 				return null;
 			}
 		});
 
 		const results = await promiseAllWithLimit(netLabelTasks, 50);
-		return results.filter((item): item is RawNetLabel => item !== null);
+		const filteredResults = results.filter((item): item is RawNetLabel => item !== null);
+
+		if (failedCount > 0) {
+			log('warn', '[采集] 网络标记采集部分失败', {
+				failedCount,
+				total: netLabelPrimitives.length,
+				schematicPageUuid: schematicPageUuid || '(当前页)',
+			});
+		}
+
+		return filteredResults;
 	}
 	catch (error) {
-		console.warn('采集网络标记失败，已降级为空数组:', error);
+		log('warn', '[采集] 采集网络标记失败，已降级为空数组', {
+			error: error instanceof Error ? error.message : String(error),
+			schematicPageUuid: schematicPageUuid || '(当前页)',
+		});
 		return [];
 	}
 }
@@ -948,13 +1013,7 @@ export function parseNetlist(netlistRaw: string | undefined): Map<string, string
 		return map;
 
 	try {
-		// 诊断日志：显示网表前500字符和末尾500字符
-		const preview = netlistRaw.substring(0, 500).replace(/\n/g, '\\n');
-		log('info', `[采集] 网表预览 (前500字符): ${preview}`);
-		if (netlistRaw.length > 1000) {
-			const tail = netlistRaw.substring(netlistRaw.length - 500).replace(/\n/g, '\\n');
-			log('info', `[采集] 网表预览 (末500字符): ${tail}`);
-		}
+		log('debug', '[采集] 开始解析网表', { length: netlistRaw.length });
 
 		// 策略1：JLCEDA_PRO 格式（关键字 "NET:"）
 		if (netlistRaw.includes('NET:')) {
@@ -1103,7 +1162,7 @@ function parseNetlistProtel2V2(netlistRaw: string, map: Map<string, string>): vo
 	}
 
 	if (map.size > 0) {
-		log('info', `[采集] 使用 PROTEL NETLIST 2.0 格式解析器`);
+		log('debug', `[采集] 使用 PROTEL NETLIST 2.0 格式解析器`);
 	}
 }
 
@@ -1180,7 +1239,7 @@ function parseNetlistProtel2Standard(netlistRaw: string, map: Map<string, string
 	}
 
 	if (map.size > 0) {
-		log('info', `[采集] 使用 Protel2 标准格式解析器`);
+		log('debug', `[采集] 使用 Protel2 标准格式解析器`);
 	}
 }
 
@@ -1226,7 +1285,7 @@ function parseNetlistGeneric(netlistRaw: string, map: Map<string, string>): void
 	}
 
 	if (map.size > 0) {
-		log('info', `[采集] 使用通用格式解析器`);
+		log('debug', `[采集] 使用通用格式解析器`);
 	}
 }
 
@@ -1551,7 +1610,7 @@ function buildWireTopology(
 		clusterIndex++;
 	}
 
-	log('info', `[L4拓扑] 构建了 ${wireClusters.length} 个导线簇`);
+	log('debug', `[L4拓扑] 构建了 ${wireClusters.length} 个导线簇`);
 
 	return wireClusters;
 }

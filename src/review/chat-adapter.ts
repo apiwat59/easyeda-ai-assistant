@@ -23,9 +23,17 @@ export function setDebugLog(fn: (level: string, message: string, data?: any) => 
 }
 
 function logDebug(level: string, message: string, data?: any): void {
-	console.warn(`[chat-adapter] ${message}`, data || '');
+	// 发送到前端调试面板
 	if (debugLog) {
 		debugLog(level, `[chat-adapter] ${message}`, data);
+	}
+
+	// 只有 warn/error 才输出到控制台
+	if (level === 'warn') {
+		console.warn(`[chat-adapter] ${message}`, data || '');
+	}
+	else if (level === 'error') {
+		console.error(`[chat-adapter] ${message}`, data || '');
 	}
 }
 
@@ -382,6 +390,11 @@ async function makeRequest(
 
 		if (!response.ok) {
 			const errorText = await response.text();
+			logDebug('warn', 'AI HTTP 非成功响应', {
+				url,
+				status: response.status,
+				bodyLength: coerceToString(errorText).length,
+			});
 			handleHttpError(response.status, errorText, url);
 		}
 
@@ -399,11 +412,13 @@ async function makeRequest(
 				url,
 				textLength: responseText.length,
 				textType: typeof rawResponseText,
-				textPreview: responseText.substring(0, 200),
 			});
 		}
 		catch (error) {
-			console.error('[makeRequest] response.text() 失败:', error);
+			logDebug('error', 'response.text() 失败', {
+				url,
+				error: error instanceof Error ? error.message : String(error),
+			});
 			throw new ReviewError(
 				ErrorCode.AI_INVALID_RESPONSE,
 				`读取响应内容失败: ${error instanceof Error ? error.message : String(error)}`,
@@ -439,6 +454,10 @@ async function makeRequest(
 			data = JSON.parse(responseText);
 		}
 		catch (parseError) {
+			logDebug('error', 'AI响应JSON解析失败', {
+				url,
+				responseLength: responseText.length,
+			});
 			throw new ReviewError(
 				ErrorCode.AI_INVALID_RESPONSE,
 				'AI响应解析失败：返回了非JSON内容',
@@ -458,8 +477,6 @@ async function makeRequest(
 		logDebug('info', '原始提取结果', {
 			textLength: textContent.length,
 			reasoningLength: reasoningContent.length,
-			textPreview: textContent.substring(0, 100),
-			reasoningPreview: reasoningContent.substring(0, 100),
 			toolCallCount: toolCalls.length,
 			hasThinkTag: /<think/i.test(textContent),
 		});
@@ -564,7 +581,6 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 
 	logDebug('info', '开始解析 SSE 响应', {
 		textLength: text.length,
-		textPreview: text.substring(0, 200),
 	});
 
 	const lines = text.split(/\r?\n/);
@@ -573,6 +589,7 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 	let reasoningContent = '';
 	const toolCallsBuffer = new Map<number, { id: string; name: string; argumentsText: string }>();
 	let currentEventData: string[] = [];
+	let parseErrorCount = 0;
 
 	// 第一阶段：解析所有 SSE 事件，累积内容
 	for (let i = 0; i < lines.length; i++) {
@@ -632,15 +649,19 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 			}
 		}
 		catch {
-			// 忽略解析错误
+			// 忽略单个事件的解析错误
+			parseErrorCount++;
 		}
 	}
 
 	logDebug('info', 'SSE 解析完成（累积阶段）', {
 		textLength: textContent.length,
 		reasoningLength: reasoningContent.length,
-		textPreview: textContent.substring(0, 500),
 	});
+
+	if (parseErrorCount > 0) {
+		logDebug('warn', 'SSE 事件解析存在失败片段', { parseErrorCount });
+	}
 
 	// 第二阶段：提取标签
 	if (!reasoningContent && textContent) {
@@ -655,7 +676,6 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 			logDebug('info', '从 <think> 标签提取 reasoning', {
 				extractedLength: reasoningContent.length,
 				matchCount: thinkMatches.length,
-				firstMatchPreview: thinkMatches[0].substring(0, 200),
 			});
 		}
 		else {
@@ -741,11 +761,11 @@ function emitCompleteBlocks(
 	onBlock?: MessageBlockHandler,
 ): void {
 	if (!onBlock) {
-		logDebug('warn', 'onBlock 回调为空，跳过事件发送');
+		logDebug('debug', 'onBlock 回调为空，跳过事件发送');
 		return;
 	}
 
-	logDebug('info', '准备发送事件', {
+	logDebug('debug', '准备发送事件', {
 		hasReasoning: !!reasoningContent,
 		hasText: !!textContent,
 		reasoningLength: reasoningContent.length,
@@ -753,23 +773,23 @@ function emitCompleteBlocks(
 	});
 
 	if (reasoningContent) {
-		logDebug('info', '发送 THINKING 事件', { length: reasoningContent.length });
+		logDebug('debug', '发送 THINKING 事件', { length: reasoningContent.length });
 		onBlock({ type: ChunkType.THINKING_START, content: '', accumulatedContent: '' });
 		onBlock({ type: ChunkType.THINKING_DELTA, content: reasoningContent, accumulatedContent: reasoningContent });
 		onBlock({ type: ChunkType.THINKING_COMPLETE, content: '', accumulatedContent: reasoningContent, status: 'success' });
 	}
 	else {
-		logDebug('warn', '没有 reasoning 内容，跳过 THINKING 事件');
+		logDebug('debug', '没有 reasoning 内容，跳过 THINKING 事件');
 	}
 
 	if (textContent) {
-		logDebug('info', '发送 TEXT 事件', { length: textContent.length });
+		logDebug('debug', '发送 TEXT 事件', { length: textContent.length });
 		onBlock({ type: ChunkType.TEXT_START, content: '', accumulatedContent: '' });
 		onBlock({ type: ChunkType.TEXT_DELTA, content: textContent, accumulatedContent: textContent });
 		onBlock({ type: ChunkType.TEXT_COMPLETE, content: '', accumulatedContent: textContent, status: 'success' });
 	}
 	else {
-		logDebug('warn', '没有 text 内容，跳过 TEXT 事件');
+		logDebug('debug', '没有 text 内容，跳过 TEXT 事件');
 	}
 }
 

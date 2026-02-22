@@ -236,6 +236,7 @@ export const CHAT_TOPICS = {
 	REQUEST_CONFIG: 'ai-chat/request-config',
 	REQUEST_HISTORY: 'ai-chat/request-history',
 	REQUEST_TOOLS: 'ai-chat/request-tools',
+	REFRESH_DATA: 'ai-chat/refresh-data',
 	USER_MESSAGE: 'ai-chat/user-message',
 	ABORT_REQUEST: 'ai-chat/abort-request',
 	REGENERATE_REQUEST: 'ai-chat/regenerate-request',

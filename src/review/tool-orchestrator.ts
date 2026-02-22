@@ -554,6 +554,12 @@ export class ToolOrchestrator {
 					&& (response.status === 404 || response.status === 400 || response.status === 410)) {
 					this.mcpSessionId = null;
 					sessionCache.delete(this.gatewayBaseUrl);
+					this.emit({
+						stage: 'mcp-session',
+						status: 'error',
+						title: 'MCP Session 失效，已清除缓存',
+						error: `Gateway HTTP ${response.status}，后续请求将重新 initialize`,
+					});
 				}
 
 				throw new Error(`Gateway HTTP ${response.status}: ${truncateText(text, 500)}`);

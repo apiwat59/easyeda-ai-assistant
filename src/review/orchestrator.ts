@@ -142,9 +142,17 @@ export function triggerBackgroundCollection(
 	notifyIFrame = false,
 ): Promise<void> {
 	if (backgroundCollectionInFlight) {
+		const wasPending = backgroundCollectionRerunPending;
 		backgroundCollectionRerunPending = true;
 		backgroundCollectionRerunReason = reason;
 		backgroundCollectionRerunNotify = backgroundCollectionRerunNotify || notifyIFrame;
+		if (!wasPending) {
+			publishDebugLog('info', '后台采集进行中，已登记重跑', {
+				reason,
+				notifyIFrame,
+				epoch: backgroundCollectionEpoch,
+			});
+		}
 		return backgroundCollectionInFlight;
 	}
 
@@ -255,12 +263,11 @@ async function executeBackgroundCollection(
 
 		const elapsed = Date.now() - startTime;
 		const errorMsg = error instanceof Error ? error.message : String(error);
-		console.warn(`后台采集数据失败(${reason}):`, error);
 
 		// 发送错误日志到 IFrame
-		publishToIFrame('ai-chat/debug-log', {
-			level: 'error',
-			message: `采集失败 (耗时 ${elapsed}ms): ${errorMsg}`,
+		publishDebugLog('error', `采集失败 (耗时 ${elapsed}ms): ${errorMsg}`, {
+			reason,
+			epoch,
 		});
 
 		if (notifyIFrame) {
@@ -472,7 +479,11 @@ async function scheduleNetlistBackfill(
  * 设置MessageBus监听器
  */
 function setupChatListeners(): void {
+	const prevCount = subscriptions.length;
 	cleanupSubscriptions();
+	publishDebugLog('info', '[setupChatListeners] 初始化订阅', {
+		previousSubscriptionCount: prevCount,
+	});
 
 	// 监听IFrame请求原理图数据
 	subscribe(CHAT_TOPICS.REQUEST_DATA, () => {
@@ -497,6 +508,12 @@ function setupChatListeners(): void {
 				timestamp: Date.now(),
 			});
 		}
+	});
+
+	// 监听IFrame请求刷新原理图数据
+	subscribe(CHAT_TOPICS.REFRESH_DATA, () => {
+		publishDebugLog('info', '[手动刷新] 用户触发原理图数据刷新');
+		void triggerBackgroundCollection('manual-refresh', true);
 	});
 
 	// 监听IFrame请求配置数据
@@ -659,31 +676,31 @@ function setupChatListeners(): void {
 
 		// 验证字段类型和长度
 		if (data.apiUrl && (typeof data.apiUrl !== 'string' || data.apiUrl.length > 500)) {
-			console.warn('无效的 apiUrl');
+			publishDebugLog('warn', '配置验证失败: 无效的 apiUrl');
 			return;
 		}
 		if (data.apiKey && (typeof data.apiKey !== 'string' || data.apiKey.length > 500)) {
-			console.warn('无效的 apiKey');
+			publishDebugLog('warn', '配置验证失败: 无效的 apiKey');
 			return;
 		}
 		if (data.model && (typeof data.model !== 'string' || data.model.length > 100)) {
-			console.warn('无效的 model');
+			publishDebugLog('warn', '配置验证失败: 无效的 model');
 			return;
 		}
 		if (data.mcpEnabled !== undefined && typeof data.mcpEnabled !== 'boolean') {
-			console.warn('无效的 mcpEnabled');
+			publishDebugLog('warn', '配置验证失败: 无效的 mcpEnabled');
 			return;
 		}
 		if (data.mcpAutoApprove !== undefined && typeof data.mcpAutoApprove !== 'boolean') {
-			console.warn('无效的 mcpAutoApprove');
+			publishDebugLog('warn', '配置验证失败: 无效的 mcpAutoApprove');
 			return;
 		}
 		if (data.mcpGatewayUrl && (typeof data.mcpGatewayUrl !== 'string' || data.mcpGatewayUrl.length > 500)) {
-			console.warn('无效的 mcpGatewayUrl');
+			publishDebugLog('warn', '配置验证失败: 无效的 mcpGatewayUrl');
 			return;
 		}
 		if (data.mcpGatewayApiKey && (typeof data.mcpGatewayApiKey !== 'string' || data.mcpGatewayApiKey.length > 500)) {
-			console.warn('无效的 mcpGatewayApiKey');
+			publishDebugLog('warn', '配置验证失败: 无效的 mcpGatewayApiKey');
 			return;
 		}
 
@@ -692,12 +709,12 @@ function setupChatListeners(): void {
 			try {
 				const url = new URL(data.apiUrl);
 				if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-					console.warn('apiUrl 必须是 http 或 https 协议');
+					publishDebugLog('warn', '配置验证失败: apiUrl 必须是 http 或 https 协议');
 					return;
 				}
 			}
 			catch {
-				console.warn('apiUrl 格式无效');
+				publishDebugLog('warn', '配置验证失败: apiUrl 格式无效');
 				return;
 			}
 		}
@@ -705,12 +722,12 @@ function setupChatListeners(): void {
 			try {
 				const gatewayUrl = new URL(data.mcpGatewayUrl);
 				if (gatewayUrl.protocol !== 'http:' && gatewayUrl.protocol !== 'https:') {
-					console.warn('mcpGatewayUrl 必须是 http 或 https 协议');
+					publishDebugLog('warn', '配置验证失败: mcpGatewayUrl 必须是 http 或 https 协议');
 					return;
 				}
 			}
 			catch {
-				console.warn('mcpGatewayUrl 格式无效');
+				publishDebugLog('warn', '配置验证失败: mcpGatewayUrl 格式无效');
 				return;
 			}
 		}
@@ -750,36 +767,36 @@ function setupChatListeners(): void {
 
 		// 验证数组大小
 		if (data.messages.length > 100) {
-			console.warn('历史会话数量过多（最大 100）');
+			publishDebugLog('warn', '历史记录验证失败: 会话数量过多');
 			return;
 		}
 
 		// 验证每个会话的结构
 		for (const session of data.messages) {
 			if (!session || typeof session !== 'object') {
-				console.warn('无效的会话结构');
+				publishDebugLog('warn', '历史记录验证失败: 无效的会话结构');
 				return;
 			}
 			if (!session.id || typeof session.id !== 'string' || session.id.length > 100) {
-				console.warn('无效的会话 ID');
+				publishDebugLog('warn', '历史记录验证失败: 无效的会话 ID');
 				return;
 			}
 			if (!Array.isArray(session.messages) || session.messages.length > 1000) {
-				console.warn('无效的会话消息列表');
+				publishDebugLog('warn', '历史记录验证失败: 无效的会话消息列表');
 				return;
 			}
 			// 验证消息结构
 			for (const msg of session.messages) {
 				if (!msg || typeof msg !== 'object') {
-					console.warn('无效的消息结构');
+					publishDebugLog('warn', '历史记录验证失败: 无效的消息结构');
 					return;
 				}
 				if (!msg.role || (msg.role !== 'user' && msg.role !== 'ai')) {
-					console.warn('无效的消息角色');
+					publishDebugLog('warn', '历史记录验证失败: 无效的消息角色');
 					return;
 				}
 				if (typeof msg.content !== 'string' || msg.content.length > 100000) {
-					console.warn('无效的消息内容');
+					publishDebugLog('warn', '历史记录验证失败: 无效的消息内容');
 					return;
 				}
 			}
@@ -859,7 +876,10 @@ function setupChatListeners(): void {
 			});
 		}
 
-		console.warn(`[restoreSession] 恢复会话 ${sessionId}，历史消息数: ${messages.length}`);
+		publishDebugLog('info', '[restoreSession] 会话恢复完成', {
+			sessionId,
+			messageCount: messages.length,
+		});
 	});
 }
 
@@ -880,25 +900,38 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		return;
 	}
 
-	console.warn(`[handleUserMessage] 收到消息: requestId=${msg.requestId}, sessionId=${msg.sessionId}, text=${msg.text?.substring(0, 50)}`);
+	publishDebugLog('info', '[handleUserMessage] 收到请求', {
+		requestId: msg.requestId,
+		sessionId: msg.sessionId,
+		hasText: !!msg.text,
+		imageCount: msg.images?.length || 0,
+		processingCount: processingRequests.size,
+		isProcessing: processingRequests.has(msg.requestId),
+	});
 
 	// 检查是否已完成（防止重复处理）
 	if (completedRequests.has(msg.requestId)) {
 		const completedTime = completedRequests.get(msg.requestId)!;
 		const elapsed = Date.now() - completedTime;
-		console.warn(`[handleUserMessage] 忽略已完成的请求 requestId: ${msg.requestId}（${elapsed}ms 前已完成）`);
+		publishDebugLog('info', '[handleUserMessage] 忽略已完成请求', {
+			requestId: msg.requestId,
+			elapsed,
+		});
 		return;
 	}
 
 	// 防重复提交：使用 Set 实现同步锁，防止并发重复处理
 	if (processingRequests.has(msg.requestId)) {
-		console.warn(`[handleUserMessage] 忽略重复的请求 requestId: ${msg.requestId}`);
+		publishDebugLog('warn', '[handleUserMessage] 忽略重复请求（正在处理中）', {
+			requestId: msg.requestId,
+			processingCount: processingRequests.size,
+		});
 		return;
 	}
 
 	// 立即标记为处理中（同步操作，防止竞态条件）
 	processingRequests.add(msg.requestId);
-	console.warn(`[handleUserMessage] 开始处理 requestId=${msg.requestId}, 当前处理中队列大小: ${processingRequests.size}`);
+	const requestStartTime = Date.now();
 
 	// 验证文本长度
 	if (msg.text && msg.text.length > 50000) {
@@ -1005,8 +1038,6 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 				}
 			: undefined;
 
-		console.warn(`[handleUserMessage] 调用 session.sendMessage, requestId=${msg.requestId}`);
-
 		const reply = await session.sendMessage(
 			msg,
 			config,
@@ -1030,11 +1061,12 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		);
 
 		if (abortController.signal.aborted) {
-			console.warn(`[handleUserMessage] 请求已中止, requestId=${msg.requestId}`);
+			publishDebugLog('info', '[handleUserMessage] 请求已中止', {
+				requestId: msg.requestId,
+				sessionId: msg.sessionId,
+			});
 			return;
 		}
-
-		console.warn(`[handleUserMessage] session.sendMessage 完成, requestId=${msg.requestId}, replyLength=${reply.length}`);
 
 		// 保存最后一条用户消息（用于重新生成）
 		lastUserMessageBySession.set(msg.sessionId, cloneUserMessage(msg));
@@ -1046,14 +1078,26 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 			sessionId: msg.sessionId,
 		});
 
-		console.warn(`[handleUserMessage] AI_RESPONSE 已发送, requestId=${msg.requestId}`);
+		publishDebugLog('success', '[handleUserMessage] 响应发送完成', {
+			requestId: msg.requestId,
+			sessionId: msg.sessionId,
+			replyLength: reply.length,
+			elapsed: Date.now() - requestStartTime,
+		});
 	}
 	catch (error) {
-		console.error(`[handleUserMessage] 处理失败, requestId=${msg.requestId}:`, error);
+		publishDebugLog('error', '[handleUserMessage] 处理失败', {
+			requestId: msg.requestId,
+			sessionId: msg.sessionId,
+			error: error instanceof Error ? error.message : String(error),
+		});
 
 		// 如果是中止错误，静默处理
 		if (isAbortError(error)) {
-			console.warn(`[handleUserMessage] 中止错误，静默处理, requestId=${msg.requestId}`);
+			publishDebugLog('info', '[handleUserMessage] 中止错误，静默处理', {
+				requestId: msg.requestId,
+				sessionId: msg.sessionId,
+			});
 			return;
 		}
 
@@ -1066,7 +1110,6 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 	}
 	finally {
 		// 清理状态
-		console.warn(`[handleUserMessage] 清理状态, requestId=${msg.requestId}, 清理前队列大小: ${processingRequests.size}`);
 		pendingRequests.delete(msg.requestId);
 		processingRequests.delete(msg.requestId);
 
@@ -1075,8 +1118,6 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 
 		// 清理过期的已完成请求（避免内存泄漏）
 		cleanupCompletedRequests();
-
-		console.warn(`[handleUserMessage] 清理完成, requestId=${msg.requestId}, 清理后队列大小: ${processingRequests.size}`);
 	}
 }
 
@@ -1099,9 +1140,17 @@ async function handleLocateRequest(reference: string): Promise<void> {
 	try {
 		// 判断是器件位号还是网络名
 		const isComponent = /^[URCLDQJK]\d+$/i.test(reference);
+		const type = isComponent ? '器件' : '网络';
+
+		publishDebugLog('info', `[定位] 尝试定位${type}`, {
+			reference,
+			type: isComponent ? 'component' : 'net',
+		});
+
+		let success = false;
 
 		if (isComponent) {
-			await eda.sch_SelectControl.doCrossProbeSelect(
+			success = await eda.sch_SelectControl.doCrossProbeSelect(
 				[reference], // components
 				[], // pins
 				[], // nets
@@ -1110,7 +1159,7 @@ async function handleLocateRequest(reference: string): Promise<void> {
 			);
 		}
 		else {
-			await eda.sch_SelectControl.doCrossProbeSelect(
+			success = await eda.sch_SelectControl.doCrossProbeSelect(
 				[],
 				[],
 				[reference],
@@ -1118,9 +1167,25 @@ async function handleLocateRequest(reference: string): Promise<void> {
 				true,
 			);
 		}
+
+		if (success) {
+			publishDebugLog('success', `[定位] ${type}定位成功`, {
+				reference,
+				type: isComponent ? 'component' : 'net',
+			});
+		}
+		else {
+			publishDebugLog('warn', `[定位] ${type}定位失败：API 返回 false（可能不存在或不在当前页面）`, {
+				reference,
+				type: isComponent ? 'component' : 'net',
+			});
+		}
 	}
 	catch (error) {
-		console.warn('定位失败:', error);
+		publishDebugLog('error', '[定位] 定位异常', {
+			reference,
+			error: error instanceof Error ? error.message : String(error),
+		});
 	}
 }
 
@@ -1168,16 +1233,27 @@ function handleAbortRequest(data: AbortRequest): void {
 	const requestId = typeof data?.requestId === 'string' ? data.requestId : '';
 	const sessionId = typeof data?.sessionId === 'string' ? data.sessionId : '';
 
-	if (!requestId || !sessionId)
+	if (!requestId || !sessionId) {
+		publishDebugLog('warn', '[abort] 请求格式无效', { requestId, sessionId });
 		return;
+	}
 
 	const pending = pendingRequests.get(requestId);
-	if (!pending)
+	if (!pending) {
+		publishDebugLog('info', '[abort] 未找到进行中请求', { requestId, sessionId });
 		return;
-	if (pending.sessionId !== sessionId)
+	}
+	if (pending.sessionId !== sessionId) {
+		publishDebugLog('warn', '[abort] sessionId 不匹配，忽略', {
+			requestId,
+			expectedSessionId: pending.sessionId,
+			actualSessionId: sessionId,
+		});
 		return;
+	}
 
 	pending.abortController.abort();
+	publishDebugLog('info', '[abort] 请求已中止', { requestId, sessionId });
 	publishPausedCompleteBlocks(requestId, sessionId, pending);
 	pendingRequests.delete(requestId);
 }
@@ -1372,14 +1448,21 @@ function isThinkingBlock(type: ChunkType): boolean {
 // ============ MessageBus 通信 ============
 
 /**
+ * 统一调试日志发送（发送到 IFrame 调试面板）
+ */
+function publishDebugLog(level: string, message: string, data?: unknown): void {
+	publishToIFrame('ai-chat/debug-log', { level, message, data });
+}
+
+/**
  * 发布消息到IFrame
  */
 function publishToIFrame(topic: string, data: unknown): void {
 	try {
 		eda.sys_MessageBus.publishPublic(topic, data);
 	}
-	catch {
-		console.warn('发布消息失败:', topic);
+	catch (error) {
+		console.warn('发布消息失败:', topic, error instanceof Error ? error.message : '未知错误');
 	}
 }
 

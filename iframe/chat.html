@@ -75,7 +75,33 @@
             font-size: 11px;
             margin-bottom: 4px;
             font-weight: 500;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }
+        .info-label-text { flex: 1; }
+        .btn-refresh {
+            width: 22px;
+            height: 22px;
+            padding: 0;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            background: var(--bg-input);
+            color: var(--text-secondary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            line-height: 1;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+        .btn-refresh:hover { background: var(--bg-hover); color: var(--accent-color); border-color: var(--accent-color); }
+        .btn-refresh:disabled { cursor: not-allowed; opacity: 0.5; }
+        .btn-refresh.refreshing .refresh-icon { animation: spin 0.8s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .refresh-icon { display: inline-block; }
         .info-value {
             background: var(--bg-input);
             padding: 5px 8px;
@@ -489,6 +515,20 @@
         .empty-state-text { font-size: 15px; color: var(--text-primary); }
         .empty-state-hint { font-size: 12px; }
 
+        /* --- 系统事件消息（刷新提示等） --- */
+        .system-event {
+            align-self: center;
+            max-width: 90%;
+            text-align: center;
+            padding: 4px 12px;
+            font-size: 11px;
+            color: var(--text-secondary);
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            animation: slideIn 0.2s ease;
+        }
+
         /* --- 停止生成按钮 --- */
         #send-btn.generating {
             background: var(--error-color);
@@ -710,6 +750,10 @@
             border-left-color: #4fc3f7;
             background: rgba(79, 195, 247, 0.1);
         }
+        .debug-log-entry.debug {
+            border-left-color: #90a4ae;
+            background: rgba(144, 164, 174, 0.08);
+        }
         .debug-log-entry.warn {
             border-left-color: #ffb74d;
             background: rgba(255, 183, 77, 0.1);
@@ -735,6 +779,7 @@
             margin-right: 8px;
         }
         .debug-log-level.info { background: #4fc3f7; color: #000; }
+        .debug-log-level.debug { background: #90a4ae; color: #fff; }
         .debug-log-level.warn { background: #ffb74d; color: #000; }
         .debug-log-level.error { background: #e57373; color: #fff; }
         .debug-log-level.success { background: #81c784; color: #000; }
@@ -958,7 +1003,12 @@
         </div>
         <div class="sidebar-content">
             <div class="info-section">
-                <div class="info-label">原理图数据</div>
+                <div class="info-label">
+                    <span class="info-label-text">原理图数据</span>
+                    <button class="btn-refresh" id="btn-refresh" title="刷新原理图数据">
+                        <span class="refresh-icon">↻</span>
+                    </button>
+                </div>
                 <div class="info-value" id="info-components">器件: 采集中...</div>
                 <div class="info-value" id="info-pins">引脚: 采集中...</div>
                 <div class="info-value" id="info-nets">网络: 采集中...</div>
@@ -1146,7 +1196,26 @@
         var debugLogs = [];
         var MAX_DEBUG_LOGS = 500;
 
+        /**
+         * 高频低价值日志过滤器
+         * 过滤掉渲染路径和 Markdown 处理的 info 级日志，减少调试面板噪声
+         */
+        function shouldSkipDebugLog(level, message) {
+            if (level !== 'info' || !message) return false;
+            // 过滤 Markdown 渲染相关的高频日志
+            if (message.indexOf('[Markdown]') === 0) return true;
+            // 过滤 Block 渲染相关的高频日志
+            if (message.indexOf('[Thinking Block]') === 0) return true;
+            if (message.indexOf('[Text Block]') === 0) return true;
+            if (message.indexOf('[createTextBlockElement]') === 0) return true;
+            if (message === 'renderMessages - blocks 排序') return true;
+            if (message.indexOf('Thinking 事件:') === 0) return true;
+            if (message.indexOf('Text 事件:') === 0) return true;
+            return false;
+        }
+
         function addDebugLog(level, message, data) {
+            if (shouldSkipDebugLog(level, message)) return;
             var timestamp = new Date().toISOString().substring(11, 23); // HH:mm:ss.SSS
             debugLogs.push({
                 timestamp: timestamp,
@@ -1390,7 +1459,10 @@
 
             // 序列化消息：将 blocks 转为纯文本（thinking + text 合并）
             var lightweight = messages
-                .filter(function(msg) { return !msg.transient; })
+                .filter(function(msg) {
+                    // 过滤掉临时消息和系统事件消息（系统事件仅用于前端展示，不参与历史保存）
+                    return !msg.transient && msg.role !== 'system-event';
+                })
                 .map(function(msg) {
                     var content = '';
                     if (msg.blocks && msg.blocks.length > 0) {
@@ -1555,6 +1627,7 @@
                 sidebar.classList.toggle('collapsed');
             });
             document.getElementById('btn-config').addEventListener('click', openConfigModal);
+            document.getElementById('btn-refresh').addEventListener('click', refreshSchematicData);
             document.getElementById('btn-cancel-config').addEventListener('click', closeConfigModal);
             document.getElementById('btn-save-config').addEventListener('click', saveConfig);
             document.getElementById('header-ui-settings-btn').addEventListener('click', openUISettingsModal);
@@ -1579,6 +1652,15 @@
             messageInput.addEventListener('input', function() {
                 messageInput.style.height = 'auto';
                 messageInput.style.height = messageInput.scrollHeight + 'px';
+            });
+
+            // 引用标签点击（事件委托，兼容流式渲染后动态插入的 ref-tag）
+            messagesContainer.addEventListener('click', function(e) {
+                var target = e.target;
+                if (!target || typeof target.closest !== 'function') return;
+                var refTag = target.closest('.ref-tag');
+                if (!refTag || !refTag.dataset.ref) return;
+                locateReference(refTag.dataset.ref);
             });
 
             // 键盘快捷键：Ctrl+D 打开调试日志
@@ -1655,6 +1737,11 @@
                     nets: n,
                     timestamp: data.timestamp
                 });
+
+                // 如果正在等待刷新完成，触发完成回调
+                if (_refreshPending) {
+                    onRefreshComplete({ components: c, pins: p, nets: n }, data.timestamp);
+                }
             }
 
             document.getElementById('info-components').textContent = '器件: ' + (c < 0 ? '采集中...' : c);
@@ -2026,7 +2113,6 @@
             // 因为 AI_RESPONSE 可能先到，导致 pending 被清理
             // 只要 sessionId 匹配就处理事件
             if (data.sessionId !== currentSessionId) {
-                console.warn('[前端] handleAIText sessionId 不匹配，跳过. 当前:', currentSessionId, '事件:', data.sessionId);
                 addDebugLog('warn', 'Text sessionId 不匹配', {
                     currentSessionId: currentSessionId,
                     eventSessionId: data.sessionId
@@ -2139,6 +2225,12 @@
                 details: data.details
             });
 
+            // 如果正在等待刷新完成，收到错误时恢复刷新按钮状态
+            if (_refreshPending && !data.requestId) {
+                addDebugLog('warn', '[刷新失败] 收到系统错误，恢复刷新按钮状态');
+                resetRefreshButton();
+            }
+
             if (data.requestId) {
                 var pending = pendingRequests[data.requestId];
                 if (!pending) return;
@@ -2230,6 +2322,15 @@
             var requestId = generateUUID();
             activeRequestId = requestId;
 
+            // 审计日志：用户发送消息
+            addDebugLog('info', '[用户操作] 发送消息', {
+                requestId: requestId,
+                sessionId: currentSessionId,
+                hasText: !!text,
+                textLength: text.length,
+                imageCount: attachedFiles.length
+            });
+
             // 创建用户消息（Block 架构）
             var userBlocks = [];
             if (text) {
@@ -2274,6 +2375,12 @@
         function abortGeneration() {
             if (!activeRequestId) return;
 
+            // 审计日志：用户中止生成
+            addDebugLog('info', '[用户操作] 中止生成', {
+                requestId: activeRequestId,
+                sessionId: currentSessionId
+            });
+
             publishMessage('ai-chat/abort-request', {
                 requestId: activeRequestId,
                 sessionId: currentSessionId
@@ -2303,6 +2410,12 @@
                 }
             }
             if (!lastUserMsg) return;
+
+            // 审计日志：用户重新生成回复
+            addDebugLog('info', '[用户操作] 重新生成回复', {
+                sessionId: currentSessionId,
+                messageCount: messages.length
+            });
 
             // 标记最后一条 AI 消息为待替换（不立即删除，等收到新回复时替换）
             for (var j = messages.length - 1; j >= 0; j--) {
@@ -2393,6 +2506,14 @@
          * 创建消息 DOM 元素（支持 Block 架构）
          */
         function createMessageElement(msg) {
+            // 系统事件消息（刷新提示等）
+            if (msg.role === 'system-event') {
+                var eventEl = document.createElement('div');
+                eventEl.className = 'system-event';
+                eventEl.textContent = msg.content;
+                return eventEl;
+            }
+
             var el = document.createElement('div');
             el.className = 'message ' + msg.role;
             el.id = msg.id;
@@ -2512,11 +2633,6 @@
 
             el.appendChild(avatarDiv);
             el.appendChild(bodyDiv);
-
-            // 绑定引用点击事件
-            el.querySelectorAll('.ref-tag').forEach(function(tag) {
-                tag.addEventListener('click', function() { locateReference(tag.dataset.ref); });
-            });
 
             return el;
         }
@@ -2899,7 +3015,12 @@
                         var parent = node.parentElement;
                         while (parent && parent !== containerElement) {
                             var tag = parent.tagName;
-                            if (tag === 'CODE' || tag === 'PRE' || tag === 'A' || tag === 'SPAN') {
+                            // 跳过代码块（<pre> 及其内部）和链接
+                            if (tag === 'PRE' || tag === 'A') {
+                                return NodeFilter.FILTER_REJECT;
+                            }
+                            // 跳过已经是 ref-tag 的 span
+                            if (tag === 'SPAN' && parent.classList.contains('ref-tag')) {
                                 return NodeFilter.FILTER_REJECT;
                             }
                             parent = parent.parentElement;
@@ -2960,7 +3081,10 @@
             return t;
         }
 
-        function locateReference(ref) { publishMessage('ai-chat/locate', { reference: ref }); }
+        function locateReference(ref) {
+            addDebugLog('info', '[定位] 点击引用标签', { reference: ref });
+            publishMessage('ai-chat/locate', { reference: ref });
+        }
 
         function escapeHtml(text) {
             var d = document.createElement('div');
@@ -3065,7 +3189,7 @@
                             renderFilePreviews();
                         })
                         .catch(function(error) {
-                            console.error('图片压缩失败:', error);
+                            addDebugLog('error', '图片压缩失败', { error: error.message || String(error) });
                             showError('图片压缩失败: ' + error.message);
                         });
                 }
@@ -3178,6 +3302,95 @@
                 '<div class="empty-state-text">AI 原理图助手</div>' +
                 '<div class="empty-state-hint">询问原理图问题、请求审查建议或上传截图</div></div>';
             renderHistoryList();
+        }
+
+        // ============ 刷新原理图数据 ============
+
+        var _refreshPending = false;
+        var _refreshTimestamp = 0; // 用于关联刷新请求，防止竞态条件
+        var _refreshTimeoutId = null; // 超时定时器引用
+
+        function refreshSchematicData() {
+            if (_refreshPending || isThinking) return;
+            _refreshPending = true;
+            _refreshTimestamp = Date.now();
+
+            var btn = document.getElementById('btn-refresh');
+            btn.disabled = true;
+            btn.classList.add('refreshing');
+
+            addDebugLog('info', '[用户操作] 手动刷新原理图数据', { timestamp: _refreshTimestamp });
+            setStatus('thinking', '正在采集原理图...');
+            publishMessage('ai-chat/refresh-data', { timestamp: _refreshTimestamp });
+
+            // 设置超时兜底：如果 30 秒后仍未收到响应，强制恢复按钮状态
+            _refreshTimeoutId = setTimeout(function() {
+                if (_refreshPending) {
+                    addDebugLog('warn', '[刷新超时] 30秒未收到响应，强制恢复按钮状态');
+                    resetRefreshButton();
+                }
+            }, 30000);
+        }
+
+        /**
+         * 重置刷新按钮状态（失败/超时时调用）
+         */
+        function resetRefreshButton() {
+            _refreshPending = false;
+            _refreshTimestamp = 0;
+
+            // 清理超时定时器
+            if (_refreshTimeoutId) {
+                clearTimeout(_refreshTimeoutId);
+                _refreshTimeoutId = null;
+            }
+
+            var btn = document.getElementById('btn-refresh');
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('refreshing');
+            }
+
+            if (!isThinking) {
+                setStatus('ready', '就绪');
+            }
+        }
+
+        /**
+         * 刷新完成后恢复按钮状态，并在对话中插入系统事件消息
+         */
+        function onRefreshComplete(summary, timestamp) {
+            // 检查是否是本次刷新的响应（防止竞态条件）
+            if (!_refreshPending) {
+                addDebugLog('info', '[刷新完成] 但当前没有待处理的刷新请求，忽略');
+                return;
+            }
+
+            // 如果有 timestamp，验证是否匹配
+            // 后端采集通常 < 10 秒，如果收到的 timestamp 远早于本次刷新请求，说明是旧的采集结果
+            if (timestamp && _refreshTimestamp && timestamp < _refreshTimestamp) {
+                addDebugLog('info', '[刷新完成] 收到的是刷新请求之前的采集结果，等待本次采集完成', {
+                    refreshRequestTime: _refreshTimestamp,
+                    dataTimestamp: timestamp
+                });
+                return; // 忽略旧结果，等本次采集完成或超时兜底
+            }
+
+            resetRefreshButton();
+
+            // 如果有对话历史，插入一条系统事件消息提示数据已更新
+            if (messages.length > 0) {
+                var eventMsg = {
+                    id: generateUUID(),
+                    role: 'system-event',
+                    content: '📋 原理图数据已更新（' + summary.components + ' 个器件，' +
+                        summary.pins + ' 个引脚，' + summary.nets + ' 个网络）',
+                    timestamp: Date.now()
+                };
+                messages.push(eventMsg);
+                saveHistory();
+                renderMessages();
+            }
         }
 
         // ============ 通用工具 ============

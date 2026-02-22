@@ -26,8 +26,8 @@ export function activate(status?: 'onStartupFinished', arg?: string): void {
 	try {
 		eda.sys_Timer.clearIntervalTimer(AUTO_COLLECT_TIMER_ID);
 	}
-	catch {
-		// ignore
+	catch (error) {
+		console.warn('[auto-collect] 清理旧定时器失败(可忽略):', error);
 	}
 
 	// 启动定时器：每5秒检测文档变化
@@ -64,11 +64,12 @@ async function probeDocumentAndTriggerCollection(): Promise<void> {
 			return;
 		}
 		lastObservedSchematicUuid = docInfo.uuid;
+		console.warn('[auto-collect] 检测到原理图切换，触发后台采集:', docInfo.uuid);
 		// 触发后台采集（不通知 IFrame，因为可能没有打开对话面板）
 		void triggerBackgroundCollection(`doc-change:${docInfo.uuid}`, false);
 	}
 	catch (error) {
-		console.warn('后台文档变化检测失败:', error);
+		console.warn('[auto-collect] 后台文档变化检测失败:', error);
 	}
 }
 
@@ -78,15 +79,15 @@ async function probeDocumentAndTriggerCollection(): Promise<void> {
 export function aiSchematicReview(): void {
 	startAIChat().catch((error) => {
 		const message = error instanceof Error ? error.message : String(error);
-		console.error('AI Chat failed:', error);
+		console.error('[aiSchematicReview] AI Chat 启动失败:', message);
 		try {
 			eda.sys_Dialog.showInformationMessage(
 				`AI助手启动失败: ${message}`,
 				'启动失败',
 			);
 		}
-		catch {
-			// Dialog调用失败时静默降级
+		catch (dialogError) {
+			console.warn('[aiSchematicReview] 启动失败对话框显示失败:', dialogError);
 		}
 	});
 }
