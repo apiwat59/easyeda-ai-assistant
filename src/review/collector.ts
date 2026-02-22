@@ -358,34 +358,51 @@ async function collectComponentsAndPins(options: {
 	const unresolvedPinSamples: any[] = [];
 
 	const componentTasks = validPrimitives.map(({ primitive }, _index) => async () => {
-		// 并行获取器件基本信息 + 引脚列表
+		// 第一阶段：获取关键字段（失败则跳过整个元件）
 		let primitiveId = '';
 		let designator = '';
+		let pinPrimitives: any[] = [];
+
+		try {
+			// 先获取 primitiveId（只调用一次，避免重复）
+			primitiveId = await primitive.getState_PrimitiveId();
+
+			// 并行获取关键字段：designator 和 pins
+			[designator, pinPrimitives] = await Promise.all([
+				primitive.getState_Designator(),
+				eda.sch_PrimitiveComponent.getAllPinsByPrimitiveId(primitiveId),
+			]);
+		}
+		catch (criticalError) {
+			log('error', `[采集] 获取关键信息失败（跳过元件）`, {
+				primitiveId: primitiveId || '(unknown)',
+				error: criticalError instanceof Error ? criticalError.message : String(criticalError),
+			});
+			// 关键信息获取失败，跳过这个元件
+			return { component: null, pins: [] };
+		}
+
+		// 第二阶段：获取非关键字段（失败则使用默认值）
 		let name = '';
 		let x = 0;
 		let y = 0;
 		let rotation = 0;
-		let pinPrimitives: any[] = [];
 
 		try {
-			[primitiveId, designator, name, x, y, rotation, pinPrimitives] = await Promise.all([
-				primitive.getState_PrimitiveId(),
-				primitive.getState_Designator(),
+			[name, x, y, rotation] = await Promise.all([
 				primitive.getState_Name(),
 				primitive.getState_X(),
 				primitive.getState_Y(),
 				primitive.getState_Rotation(),
-				eda.sch_PrimitiveComponent.getAllPinsByPrimitiveId(
-					await primitive.getState_PrimitiveId(),
-				),
 			]);
 		}
-		catch (basicError) {
-			log('error', `[采集] 获取基本信息失败`, {
-				error: basicError instanceof Error ? basicError.message : String(basicError),
+		catch (nonCriticalError) {
+			log('warn', `[采集] 获取非关键信息失败（使用默认值）`, {
+				designator,
+				primitiveId,
+				error: nonCriticalError instanceof Error ? nonCriticalError.message : String(nonCriticalError),
 			});
-			// 基本信息获取失败，跳过这个元件
-			return { component: null, pins: [] };
+			// 非关键字段失败，使用默认值继续
 		}
 
 		// 制造商信息和关键属性（从 OtherProperty 和标准方法获取）
@@ -501,45 +518,47 @@ async function collectComponentsAndPins(options: {
 			schematicPageUuid,
 		};
 
-		// 采集该器件的引脚
+		// 采集该器件的引脚（逐个容错，避免单个引脚失败导致整个元件被跳过）
 		const componentPins: RawPin[] = [];
+		let pinFailureCount = 0;
 		if (pinPrimitives && pinPrimitives.length > 0) {
-			const pinTasks = pinPrimitives.map((pinPrimitive, _pinIndex) => async () => {
-				const [
-					pinPrimitiveId,
-					pinNumber,
-					pinName,
-					electricalType,
-					pinX,
-					pinY,
-				] = await Promise.all([
-					pinPrimitive.getState_PrimitiveId(),
-					pinPrimitive.getState_PinNumber(),
-					pinPrimitive.getState_PinName(),
-					pinPrimitive.getState_pinType(),
-					pinPrimitive.getState_X(),
-					pinPrimitive.getState_Y(),
-				]);
+			const pinTasks = pinPrimitives.map((pinPrimitive, pinIndex) => async () => {
+				try {
+					const [
+						pinPrimitiveId,
+						pinNumber,
+						pinName,
+						electricalType,
+						pinX,
+						pinY,
+					] = await Promise.all([
+						pinPrimitive.getState_PrimitiveId(),
+						pinPrimitive.getState_PinNumber(),
+						pinPrimitive.getState_PinName(),
+						pinPrimitive.getState_pinType(),
+						pinPrimitive.getState_X(),
+						pinPrimitive.getState_Y(),
+					]);
 
-				const pinKey = `${component.designator}_${pinNumber}`;
+					const pinKey = `${component.designator}_${pinNumber}`;
 
-				// L1: 只使用网表映射（保守模式）
-				// 禁用 L2/L3/L4 策略以避免假阳性（将 NC 引脚错误绑定到附近的导线）
-				const netName: string | null = netlistMap.get(pinKey) || null;
-				const confidence = netName ? 1.0 : 0;
-				const reason = netName ? 'netlist' : 'unresolved';
-				const debugInfo: any = {
-					pin: pinKey,
-					coord: `(${pinX}, ${pinY})`,
-					L1_netlist: netName || 'miss',
-				};
+					// L1: 只使用网表映射（保守模式）
+					// 禁用 L2/L3/L4 策略以避免假阳性（将 NC 引脚错误绑定到附近的导线）
+					const netName: string | null = netlistMap.get(pinKey) || null;
+					const confidence = netName ? 1.0 : 0;
+					const reason = netName ? 'netlist' : 'unresolved';
+					const debugInfo: any = {
+						pin: pinKey,
+						coord: `(${pinX}, ${pinY})`,
+						L1_netlist: netName || 'miss',
+					};
 
-				// L2/L3/L4 策略已禁用（保守模式）
-				// 原因：避免将 NC（悬空）引脚错误绑定到物理上接近但实际未连接的导线
-				// 如果引脚不在网表中，则标记为未绑定（netName = null）
-				//
-				// 如需启用混合模式，取消以下注释：
-				/*
+					// L2/L3/L4 策略已禁用（保守模式）
+					// 原因：避免将 NC（悬空）引脚错误绑定到物理上接近但实际未连接的导线
+					// 如果引脚不在网表中，则标记为未绑定（netName = null）
+					//
+					// 如需启用混合模式，取消以下注释：
+					/*
 				// L2: 如果网表未解析，尝试通过导线坐标匹配
 				if (!netName) {
 					const wireNet = _findNetByWireProximity(pinX, pinY, wireData.validWires);
@@ -574,46 +593,69 @@ async function collectComponentsAndPins(options: {
 				}
 				*/
 
-				// 输出未绑定引脚的调试信息（附带最近邻距离以诊断容差问题）
-				if (!netName) {
-					const nearestWire = findNearestWireDistance(pinX, pinY, wireData.validWires, wireData.emptyWires);
-					const nearestLabel = findNearestLabelDistance(pinX, pinY, netLabels);
-					const nearestTopo = findNearestTopoDistance(pinX, pinY, wireClusters);
-					debugInfo.nearest = {
-						wire: nearestWire ? `${nearestWire.distance.toFixed(1)}(${nearestWire.net || 'empty'})` : 'none',
-						label: nearestLabel ? `${nearestLabel.distance.toFixed(1)}(${nearestLabel.net})` : 'none',
-						topo: nearestTopo ? `${nearestTopo.distance.toFixed(1)}` : 'none',
-					};
+					// 输出未绑定引脚的调试信息（附带最近邻距离以诊断容差问题）
+					if (!netName) {
+						const nearestWire = findNearestWireDistance(pinX, pinY, wireData.validWires, wireData.emptyWires);
+						const nearestLabel = findNearestLabelDistance(pinX, pinY, netLabels);
+						const nearestTopo = findNearestTopoDistance(pinX, pinY, wireClusters);
+						debugInfo.nearest = {
+							wire: nearestWire ? `${nearestWire.distance.toFixed(1)}(${nearestWire.net || 'empty'})` : 'none',
+							label: nearestLabel ? `${nearestLabel.distance.toFixed(1)}(${nearestLabel.net})` : 'none',
+							topo: nearestTopo ? `${nearestTopo.distance.toFixed(1)}` : 'none',
+						};
 
-					// 汇总统计，不再逐条输出
-					if (electricalType === 'Power' || electricalType === 'Ground') {
-						unresolvedPowerPinCount++;
-					}
-					else {
-						unresolvedPinCount++;
+						// 汇总统计，不再逐条输出
+						if (electricalType === 'Power' || electricalType === 'Ground') {
+							unresolvedPowerPinCount++;
+						}
+						else {
+							unresolvedPinCount++;
+						}
+
+						// 收集前 N 条样本
+						if (unresolvedPinSamples.length < MAX_UNRESOLVED_SAMPLES) {
+							unresolvedPinSamples.push(debugInfo);
+						}
 					}
 
-					// 收集前 N 条样本
-					if (unresolvedPinSamples.length < MAX_UNRESOLVED_SAMPLES) {
-						unresolvedPinSamples.push(debugInfo);
-					}
+					return {
+						primitiveId: pinPrimitiveId,
+						componentPrimitiveId: component.primitiveId,
+						componentDesignator: component.designator,
+						pinNumber: pinNumber || '',
+						pinName: pinName || '',
+						pinType: electricalType || 'Passive',
+						netName,
+						netBindingConfidence: confidence,
+						netBindingReason: reason,
+					} as RawPin;
 				}
-
-				return {
-					primitiveId: pinPrimitiveId,
-					componentPrimitiveId: component.primitiveId,
-					componentDesignator: component.designator,
-					pinNumber: pinNumber || '',
-					pinName: pinName || '',
-					pinType: electricalType || 'Passive',
-					netName,
-					netBindingConfidence: confidence,
-					netBindingReason: reason,
-				} as RawPin;
+				catch (pinError) {
+					pinFailureCount++;
+					log('warn', `[采集] 引脚获取失败（跳过该引脚）`, {
+						designator: component.designator,
+						primitiveId: component.primitiveId,
+						pinIndex,
+						error: pinError instanceof Error ? pinError.message : String(pinError),
+					});
+					return null; // 返回 null 表示该引脚失败
+				}
 			});
 
 			const pinResults = await promiseAllWithLimit(pinTasks, 50);
-			componentPins.push(...pinResults);
+			// 过滤掉失败的引脚（null）
+			componentPins.push(...pinResults.filter((pin): pin is RawPin => pin !== null));
+
+			// 如果引脚失败率过高，记录警告
+			if (pinFailureCount > 0) {
+				log('warn', `[采集] 元件引脚部分失败`, {
+					designator: component.designator,
+					primitiveId: component.primitiveId,
+					totalPins: pinPrimitives.length,
+					failedPins: pinFailureCount,
+					successPins: componentPins.length,
+				});
+			}
 		}
 
 		return { component, pins: componentPins };

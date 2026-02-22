@@ -87,19 +87,38 @@ const TOOL_CACHE_TTL_MS = 10_000; // 10 秒缓存有效期
 let toolListInflight: Promise<Array<{ name: string; description: string }>> | null = null;
 
 /**
- * 后台采集 single-flight 调度状态
+ * 后台采集 single-flight 调度状态（跨实例全局锁）
  */
-let backgroundCollectionInFlight: Promise<void> | null = null;
-let backgroundCollectionRerunPending = false;
-let backgroundCollectionRerunReason = '';
-let backgroundCollectionRerunNotify = false;
-let backgroundCollectionEpoch = 0;
+declare global {
+	// eslint-disable-next-line vars-on-top
+	var __aiSchReview_collectionLock: {
+		inFlight: Promise<void> | null;
+		rerunPending: boolean;
+		rerunReason: string;
+		rerunNotify: boolean;
+		epoch: number;
+	} | undefined;
+}
+
+function getGlobalCollectionLock() {
+	if (!globalThis.__aiSchReview_collectionLock) {
+		globalThis.__aiSchReview_collectionLock = {
+			inFlight: null,
+			rerunPending: false,
+			rerunReason: '',
+			rerunNotify: false,
+			epoch: 0,
+		};
+	}
+	return globalThis.__aiSchReview_collectionLock;
+}
 
 /**
  * 检查是否正在采集中（用于外部抑制逻辑）
  */
 export function isCollectionInProgress(): boolean {
-	return backgroundCollectionInFlight !== null;
+	const lock = getGlobalCollectionLock();
+	return lock.inFlight !== null;
 }
 
 /**
@@ -141,40 +160,42 @@ export function triggerBackgroundCollection(
 	reason = 'external-trigger',
 	notifyIFrame = false,
 ): Promise<void> {
-	if (backgroundCollectionInFlight) {
-		const wasPending = backgroundCollectionRerunPending;
-		backgroundCollectionRerunPending = true;
-		backgroundCollectionRerunReason = reason;
-		backgroundCollectionRerunNotify = backgroundCollectionRerunNotify || notifyIFrame;
+	const lock = getGlobalCollectionLock();
+
+	if (lock.inFlight) {
+		const wasPending = lock.rerunPending;
+		lock.rerunPending = true;
+		lock.rerunReason = reason;
+		lock.rerunNotify = lock.rerunNotify || notifyIFrame;
 		if (!wasPending) {
 			publishDebugLog('info', '后台采集进行中，已登记重跑', {
 				reason,
 				notifyIFrame,
-				epoch: backgroundCollectionEpoch,
+				epoch: lock.epoch,
 			});
 		}
-		return backgroundCollectionInFlight;
+		return lock.inFlight;
 	}
 
-	const epoch = ++backgroundCollectionEpoch;
-	backgroundCollectionInFlight = executeBackgroundCollection(epoch, reason, notifyIFrame)
+	const epoch = ++lock.epoch;
+	lock.inFlight = executeBackgroundCollection(epoch, reason, notifyIFrame)
 		.finally(() => {
-			backgroundCollectionInFlight = null;
+			lock.inFlight = null;
 
-			if (!backgroundCollectionRerunPending) {
+			if (!lock.rerunPending) {
 				return;
 			}
 
-			const rerunReason = backgroundCollectionRerunReason || 'rerun';
-			const rerunNotify = backgroundCollectionRerunNotify;
-			backgroundCollectionRerunPending = false;
-			backgroundCollectionRerunReason = '';
-			backgroundCollectionRerunNotify = false;
+			const rerunReason = lock.rerunReason || 'rerun';
+			const rerunNotify = lock.rerunNotify;
+			lock.rerunPending = false;
+			lock.rerunReason = '';
+			lock.rerunNotify = false;
 
 			void triggerBackgroundCollection(`${rerunReason}:rerun`, rerunNotify);
 		});
 
-	return backgroundCollectionInFlight;
+	return lock.inFlight;
 }
 
 /**
@@ -208,11 +229,12 @@ async function executeBackgroundCollection(
 
 		const collected = await collectSchematicData();
 
+		const lock = getGlobalCollectionLock();
 		// epoch/version：只接纳最新采集结果，过期结果直接丢弃
-		if (epoch !== backgroundCollectionEpoch) {
+		if (epoch !== lock.epoch) {
 			publishToIFrame('ai-chat/debug-log', {
 				level: 'warn',
-				message: `采集结果被丢弃 (epoch ${epoch} 已过期, 当前 ${backgroundCollectionEpoch})`,
+				message: `采集结果被丢弃 (epoch ${epoch} 已过期, 当前 ${lock.epoch})`,
 			});
 			return;
 		}
@@ -256,8 +278,9 @@ async function executeBackgroundCollection(
 		void scheduleNetlistBackfill(epoch, collected);
 	}
 	catch (error) {
+		const lock = getGlobalCollectionLock();
 		// 过期任务失败不需要覆盖新任务状态
-		if (epoch !== backgroundCollectionEpoch) {
+		if (epoch !== lock.epoch) {
 			return;
 		}
 
@@ -334,7 +357,8 @@ async function scheduleNetlistBackfill(
 		}
 
 		// 检查 epoch 是否过期
-		if (epoch !== backgroundCollectionEpoch) {
+		const lock = getGlobalCollectionLock();
+		if (epoch !== lock.epoch) {
 			eda.sys_Timer.clearIntervalTimer(TIMER_ID);
 			publishToIFrame('ai-chat/debug-log', {
 				level: 'warn',
@@ -426,7 +450,8 @@ async function scheduleNetlistBackfill(
 			}));
 
 			// 更新缓存数据（如果 epoch 仍然有效）
-			if (epoch === backgroundCollectionEpoch) {
+			const lock = getGlobalCollectionLock();
+			if (epoch === lock.epoch) {
 				cachedSchematicData = collected;
 
 				// 将更新后的数据注入所有已存在的会话
