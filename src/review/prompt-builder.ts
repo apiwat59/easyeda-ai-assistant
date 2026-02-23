@@ -148,6 +148,13 @@ export function buildChatSystemPrompt(schematicContext: string | null): string {
 	if (schematicContext) {
 		return `${basePrompt}
 
+## 重要：实时数据原则
+
+下方的原理图数据是从用户工程中**实时采集**的最新版本。用户可能在对话过程中修改了原理图，因此：
+- **始终以下方 <schematic_data> 中的数据为唯一事实来源**
+- **不要依赖你在之前对话轮次中的分析结论**，因为数据可能已被用户更新
+- 当用户询问某个器件/网络的连接关系时，请直接从下方数据中查找并回答
+
 ## 当前原理图数据
 
 <schematic_data>

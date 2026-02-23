@@ -10,6 +10,7 @@
 
 import type { CollectedData, ConfigStore, UserMessage } from './types';
 import { chunkData } from './chunker';
+import { buildChatSystemPrompt } from './prompt-builder';
 import { extractReasoningFromDelta, getReasoningParams } from './reasoning-config';
 import { ChunkType, ErrorCode, ReviewError } from './types';
 
@@ -93,12 +94,87 @@ export class ChatSession {
 	}
 
 	/**
+	 * 构建数据更新通知消息（包含数据摘要，帮助 AI 确认数据已变化）
+	 */
+	private static buildDataUpdateNotice(data: CollectedData): string {
+		return `[系统通知] 用户已修改原理图并重新采集数据。
+
+当前最新数据摘要：${data.components.length} 个器件、${data.pins.length} 个引脚、${data.nets.length} 个网络。
+
+重要：你当前对话最开头的 system prompt 中的 <schematic_data> 就是最新版本的数据，请直接从中查找信息来回答问题。不要依赖你在之前对话轮次中的分析结论，因为器件/连接可能已被用户修改。`;
+	}
+
+	private static buildDataUpdateAck(data: CollectedData): string {
+		return `收到，我已确认 system prompt 中的 <schematic_data> 已更新为最新版本（${data.components.length} 个器件、${data.pins.length} 个引脚、${data.nets.length} 个网络）。我将直接从 system prompt 的数据中查找信息来回答后续问题，不依赖之前的分析结论。`;
+	}
+
+	/**
+	 * 判断一条消息是否为数据更新通知（用于 clear() 跳过和去重）
+	 */
+	private static isDataUpdateNotice(content: string | unknown): boolean {
+		return typeof content === 'string' && content.startsWith('[系统通知] 用户已修改原理图并重新采集数据。');
+	}
+
+	private static isDataUpdateAck(content: string | unknown): boolean {
+		return typeof content === 'string' && content.startsWith('收到，我已确认 system prompt 中的 <schematic_data> 已更新为最新版本');
+	}
+
+	/**
 	 * 设置原理图上下文（用于更新数据）
+	 *
+	 * 当已有对话历史时，注入一对 user+assistant 消息通知 AI 数据已变化。
+	 * 通知中包含具体的数据摘要（器件数/引脚数/网络数），帮助 AI 确认数据确实变了，
+	 * 并明确告知 AI 从 system prompt 的 <schematic_data> 中查找数据。
+	 *
+	 * 去重机制：setSchematicContext 可能被连续调用多次（主采集 + 网表回填），
+	 * 如果末尾已是通知对则替换（因为数据摘要可能不同），避免 history 膨胀。
 	 */
 	setSchematicContext(data: CollectedData): void {
 		const chunks = chunkData(data, { maxPinsPerChunk: 1200 });
 		if (chunks.length > 0) {
 			this.schematicContext = JSON.stringify(chunks[0]);
+		}
+
+		// 如果已有对话历史，注入数据更新通知，让 AI 知道数据已变化
+		if (this.history.length > 0) {
+			const len = this.history.length;
+
+			// 去重：如果末尾已是通知对，替换为最新数据摘要（而非跳过，因为摘要数字可能不同）
+			if (
+				len >= 2
+				&& this.history[len - 2].role === 'user'
+				&& ChatSession.isDataUpdateNotice(this.history[len - 2].content)
+				&& this.history[len - 1].role === 'assistant'
+				&& ChatSession.isDataUpdateAck(this.history[len - 1].content)
+			) {
+				this.history[len - 2].content = ChatSession.buildDataUpdateNotice(data);
+				this.history[len - 1].content = ChatSession.buildDataUpdateAck(data);
+				logDebug('info', '[setSchematicContext] 更新末尾通知对的数据摘要', {
+					historyLength: len,
+					components: data.components.length,
+					pins: data.pins.length,
+					nets: data.nets.length,
+				});
+				return;
+			}
+
+			this.history.push({
+				role: 'user',
+				content: ChatSession.buildDataUpdateNotice(data),
+			});
+			this.history.push({
+				role: 'assistant',
+				content: ChatSession.buildDataUpdateAck(data),
+			});
+			logDebug('info', '[setSchematicContext] 已注入数据更新通知到 history', {
+				historyLength: this.history.length,
+				components: data.components.length,
+				pins: data.pins.length,
+				nets: data.nets.length,
+			});
+		}
+		else {
+			logDebug('info', '[setSchematicContext] history 为空，仅更新 schematicContext（不注入通知）');
 		}
 	}
 
@@ -168,7 +244,16 @@ export class ChatSession {
 					...this.history,
 				];
 
-				const result = await callOpenAICompatibleChat(messages, config, onBlock, signal, availableTools);
+				const result = await callOpenAICompatibleChat(messages, config, signal, availableTools);
+
+				logDebug('info', `[sendMessage] 第 ${round} 轮 API 返回`, {
+					round,
+					hasText: !!result.textContent,
+					textLength: result.textContent.length,
+					hasReasoning: !!result.reasoningContent,
+					toolCallCount: result.toolCalls.length,
+					historyLength: this.history.length,
+				});
 
 				// 若模型要求调用工具，进入工具执行分支
 				if (result.toolCalls.length > 0) {
@@ -186,6 +271,11 @@ export class ChatSession {
 							role: 'assistant',
 							content: fallbackText,
 						});
+						logDebug('info', '[sendMessage] 无工具执行器，回退为纯文本（触发 emitCompleteBlocks）', {
+							round,
+							fallbackTextLength: fallbackText.length,
+						});
+						emitCompleteBlocks(fallbackText, '', onBlock);
 						return fallbackText;
 					}
 
@@ -214,7 +304,15 @@ export class ChatSession {
 					continue;
 				}
 
-				// 普通文本回答结束
+				// 普通文本回答结束：仅在此处向 UI 发送事件，避免工具调用中间轮次重复触发
+				logDebug('info', `[sendMessage] 最终文本响应（第 ${round} 轮），触发 emitCompleteBlocks`, {
+					round,
+					textLength: result.textContent.length,
+					reasoningLength: result.reasoningContent.length,
+					historyLength: this.history.length,
+				});
+				emitCompleteBlocks(result.textContent, result.reasoningContent, onBlock);
+
 				const assistantContent = result.reasoningContent
 					? `${result.reasoningContent}\n\n${result.textContent}`
 					: result.textContent;
@@ -235,14 +333,32 @@ export class ChatSession {
 	 * 工具调用场景下一轮对话可能包含多条消息：
 	 *   user → assistant(tool_calls) → tool × N → assistant(final)
 	 * 因此从末尾向前找到最后一条 user 消息，将其及之后的所有消息一并移除。
+	 *
+	 * 注意：跳过 DATA_UPDATE_NOTICE（数据更新通知），它是由 setSchematicContext
+	 * 自动注入的伪用户消息，不属于真实的用户问答轮次。如果不跳过，当末尾恰好
+	 * 是通知对时，clear() 只会移除通知对而保留真实的上一轮对话，导致重新生成失效。
 	 */
 	clear(): void {
 		for (let i = this.history.length - 1; i >= 0; i--) {
 			if (this.history[i].role === 'user') {
+				// 仅当该 user 消息与其后的 assistant 消息组成完整通知对时，才视为伪消息并跳过
+				if (ChatSession.isDataUpdateNotice(this.history[i].content)) {
+					const next = this.history[i + 1];
+					if (next?.role === 'assistant' && ChatSession.isDataUpdateAck(next.content)) {
+						continue;
+					}
+				}
 				this.history.splice(i);
+				logDebug('info', '[clear] 已回滚最后一轮对话', {
+					removedFromIndex: i,
+					remainingHistoryLength: this.history.length,
+				});
 				return;
 			}
 		}
+		logDebug('warn', '[clear] 未找到可回滚的真实用户消息', {
+			historyLength: this.history.length,
+		});
 	}
 
 	/**
@@ -276,17 +392,6 @@ export class ChatSession {
 	}
 }
 
-// ============ System Prompt ============
-
-function buildChatSystemPrompt(schematicContext: string): string {
-	return `你是一个专业的硬件工程师助手，擅长分析原理图设计。
-
-当前原理图数据：
-${schematicContext || '（暂无数据）'}
-
-请根据用户的问题，提供专业、准确的回答。`;
-}
-
 // ============ 文本规范化 ============
 
 function normalizeChunkText(text: unknown): string {
@@ -304,7 +409,6 @@ function normalizeChunkText(text: unknown): string {
 async function callOpenAICompatibleChat(
 	messages: ChatMessage[],
 	config: ConfigStore,
-	onBlock?: MessageBlockHandler,
 	signal?: AbortSignal,
 	tools?: import('./types').ChatToolDefinition[],
 ): Promise<ChatCompletionResult> {
@@ -339,7 +443,7 @@ async function callOpenAICompatibleChat(
 		body.tool_choice = 'auto';
 	}
 
-	return await makeRequest(url, config, body, onBlock, signal);
+	return await makeRequest(url, config, body, signal);
 }
 
 /**
@@ -349,7 +453,6 @@ async function makeRequest(
 	url: string,
 	config: ConfigStore,
 	body: unknown,
-	onBlock?: MessageBlockHandler,
 	signal?: AbortSignal,
 ): Promise<ChatCompletionResult> {
 	let abortHandler: (() => void) | undefined;
@@ -445,7 +548,7 @@ async function makeRequest(
 
 		if (isSSE) {
 			// SSE 格式：解析所有事件，累积 reasoning 和 content
-			return parseSSEResponse(responseText, onBlock);
+			return parseSSEResponse(responseText);
 		}
 
 		// 标准 JSON 响应
@@ -504,9 +607,6 @@ async function makeRequest(
 			reasoningSource: hasNonWhitespace(reasoningContent) ? 'API字段' : (extractedReasoning ? '<think>标签' : '无'),
 			toolCallCount: toolCalls.length,
 		});
-
-		// 发送事件
-		emitCompleteBlocks(finalText, finalReasoning, onBlock);
 
 		return { textContent: finalText, reasoningContent: finalReasoning, toolCalls };
 	}
@@ -567,9 +667,9 @@ async function makeRequest(
  * 策略：
  * 1. 解析所有 SSE 事件，累积完整的 text 和 reasoning 内容
  * 2. 提取 <think> 标签（如果有）
- * 3. 按正确顺序发送事件：THINKING → TEXT
+ * 3. 返回累积结果（事件发送由 sendMessage 统一控制）
  */
-function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatCompletionResult {
+function parseSSEResponse(text: string): ChatCompletionResult {
 	// 防御性检查
 	if (!text || typeof text !== 'string') {
 		logDebug('error', 'SSE响应为空或格式错误', {
@@ -694,9 +794,6 @@ function parseSSEResponse(text: string, onBlock?: MessageBlockHandler): ChatComp
 	});
 
 	const toolCalls = buildToolCallsFromBuffer(toolCallsBuffer);
-
-	// 第三阶段：按正确顺序发送事件
-	emitCompleteBlocks(textContent, reasoningContent, onBlock);
 
 	if (!textContent && !reasoningContent && toolCalls.length === 0) {
 		throw new ReviewError(ErrorCode.AI_INVALID_RESPONSE, '无法从SSE响应中提取内容');

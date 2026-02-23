@@ -192,6 +192,27 @@ export class ToolOrchestrator {
 		}
 	}
 
+	/**
+	 * 更新当前请求上下文（每次新请求复用时必须调用）
+	 *
+	 * ToolOrchestrator 按 sessionId 复用，但 requestId 每次请求不同。
+	 * 不更新会导致工具事件携带旧 requestId，前端匹配不到当前消息，
+	 * 从而创建多余的工具调用提示框。
+	 */
+	updateRequestContext(requestId: string): void {
+		const oldRequestId = this.context.requestId;
+		if (!requestId || requestId === oldRequestId) {
+			return;
+		}
+		this.context.requestId = requestId;
+		// 注意：不能用 this.emit()，它会走 TOOL_EVENT 通道被前端渲染成工具提示框
+		// 仅输出控制台调试信息（非警告级别，属于正常流程）
+		// eslint-disable-next-line no-console
+		console.log(
+			`[tool-orchestrator] requestId 已更新: ${oldRequestId.substring(0, 12)}→${requestId.substring(0, 12)}`,
+		);
+	}
+
 	isEnabled(): boolean {
 		return !!this.config.mcpEnabled && this.gatewayBaseUrl.length > 0;
 	}

@@ -5,6 +5,36 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.5] - 2026-02-23
+
+### 修复的问题 🐛
+
+- 🐛 **修复原理图刷新后 AI 无法感知数据变化（关键修复）** - 对话过程中修改原理图后点击刷新，AI 仍然依赖旧的分析结论回答问题
+  - 根本原因：history 中保留了之前轮次基于旧数据的分析结论，AI 倾向于相信自己之前说过的话
+  - 解决方案：刷新时向 history 注入包含数据摘要的 user+assistant 通知对，告知 AI 数据已变化，并在 system prompt 中增加"实时数据原则"指令
+- 🐛 **修复 AI 重复回答问题** - 插件重新打开后，AI 对同一条消息产生两次完整回复
+  - 根本原因：`emitCompleteBlocks` 在 `makeRequest`/`parseSSEResponse` 内部被调用，工具调用中间轮次也会触发
+  - 解决方案：将 `emitCompleteBlocks` 上移到 `sendMessage` 的 while 循环中，仅在最终文本响应时触发
+- 🐛 **修复 MCP 工具提示框重复显示** - 连续发送消息时，出现多个"工具调用中..."提示框
+  - 根本原因：`ToolOrchestrator` 按 sessionId 缓存复用，但 requestId 在创建时固定，新消息的工具事件携带旧 requestId
+  - 解决方案：添加 `updateRequestContext()` 方法，复用时更新 requestId
+- 🐛 **修复插件重开后 handleUserMessage 被重复调用** - 关闭再打开插件后，用户消息被处理两次
+  - 根本原因：EDA MessageBus 的 `cancel()` 可能无法取消已排队但未执行的旧回调
+  - 解决方案：引入 `listenerEpoch` 版本号机制，旧版本订阅的回调在执行时自动丢弃
+- 🐛 **修复重新生成功能被通知消息干扰** - 刷新后点击重新生成时，只移除了通知对而非真实的用户问答
+  - 根本原因：`clear()` 方法将注入的通知消息视为普通用户消息
+  - 解决方案：`clear()` 在查找回滚边界时跳过完整的数据更新通知对
+
+### 技术改进 🔧
+
+- 🔧 **System Prompt 模块化** - `buildChatSystemPrompt` 从 `chat-adapter.ts` 提取到独立的 `prompt-builder.ts`
+- 🔧 **事件发送统一管控** - `emitCompleteBlocks` 调用由 `sendMessage` 统一控制，`callOpenAICompatibleChat`、`makeRequest`、`parseSSEResponse` 不再直接触发 UI 事件
+- 🔧 **epoch 守卫全覆盖** - 版本号校验覆盖所有关键 MessageBus 订阅：USER_MESSAGE、ABORT_REQUEST、REGENERATE_REQUEST、CLEAR_SESSION、LOCATE、restore-session
+- 🔧 **防重集合同步清理** - `clearAllChatSessions()` 同步清除 `processingRequests` 和 `completedRequests`，避免旧请求 ID 残留
+- 🔧 **调试日志全覆盖** - 所有修改点均添加结构化调试日志，输出到 UI 调试面板
+
+---
+
 ## [1.1.2] - 2026-02-20
 
 ### 修复的问题 🐛

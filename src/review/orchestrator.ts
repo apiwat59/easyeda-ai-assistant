@@ -76,6 +76,14 @@ let cachedSchematicData: CollectedData | null = null;
 const subscriptions: Array<{ cancel: () => void }> = [];
 
 /**
+ * 订阅版本号（每次 setupChatListeners 递增）
+ *
+ * EDA MessageBus 的 cancel() 可能无法取消已排队但未执行的回调。
+ * 通过版本号机制确保旧版本订阅产生的回调在执行时被丢弃。
+ */
+let listenerEpoch = 0;
+
+/**
  * MCP 工具列表缓存（避免重复 initialize 请求）
  */
 let toolListCache: { tools: Array<{ name: string; description: string }>; timestamp: number } | null = null;
@@ -504,10 +512,17 @@ async function scheduleNetlistBackfill(
  * 设置MessageBus监听器
  */
 function setupChatListeners(): void {
+	// 幂等保护：如果已有订阅存在，说明 startAIChat 被重复调用（如用户多次点击菜单）
+	// 仅清理并重新注册即可，但需注意 EDA MessageBus 的 cancel 可能不完全生效
 	const prevCount = subscriptions.length;
 	cleanupSubscriptions();
+
+	// 递增版本号，使旧回调在执行时自动失效
+	const currentEpoch = ++listenerEpoch;
 	publishDebugLog('info', '[setupChatListeners] 初始化订阅', {
 		previousSubscriptionCount: prevCount,
+		listenerEpoch: currentEpoch,
+		note: prevCount > 0 ? '检测到旧订阅，已尝试清理并递增 epoch' : '首次注册',
 	});
 
 	// 监听IFrame请求原理图数据
@@ -670,6 +685,15 @@ function setupChatListeners(): void {
 	subscribe(CHAT_TOPICS.USER_MESSAGE, async (data: any) => {
 		if (!data || typeof data !== 'object')
 			return;
+		// epoch 校验：丢弃旧版本订阅产生的回调（EDA MessageBus cancel 可能不彻底）
+		if (currentEpoch !== listenerEpoch) {
+			publishDebugLog('warn', '[USER_MESSAGE] 丢弃过期订阅回调', {
+				callbackEpoch: currentEpoch,
+				currentEpoch: listenerEpoch,
+				requestId: (data as any)?.requestId,
+			});
+			return;
+		}
 		await handleUserMessage(data as UserMessage);
 	});
 
@@ -677,6 +701,13 @@ function setupChatListeners(): void {
 	subscribe(CHAT_TOPICS.ABORT_REQUEST, (data: any) => {
 		if (!data || typeof data !== 'object')
 			return;
+		if (currentEpoch !== listenerEpoch) {
+			publishDebugLog('warn', '[ABORT_REQUEST] 丢弃过期订阅回调', {
+				callbackEpoch: currentEpoch,
+				currentEpoch: listenerEpoch,
+			});
+			return;
+		}
 		handleAbortRequest(data as AbortRequest);
 	});
 
@@ -684,11 +715,25 @@ function setupChatListeners(): void {
 	subscribe(CHAT_TOPICS.REGENERATE_REQUEST, async (data: any) => {
 		if (!data || typeof data !== 'object')
 			return;
+		if (currentEpoch !== listenerEpoch) {
+			publishDebugLog('warn', '[REGENERATE_REQUEST] 丢弃过期订阅回调', {
+				callbackEpoch: currentEpoch,
+				currentEpoch: listenerEpoch,
+			});
+			return;
+		}
 		await handleRegenerateRequest(data as RegenerateRequest);
 	});
 
 	// 监听定位请求
 	subscribe(CHAT_TOPICS.LOCATE, async (data: any) => {
+		if (currentEpoch !== listenerEpoch) {
+			publishDebugLog('warn', '[LOCATE] 丢弃过期订阅回调', {
+				callbackEpoch: currentEpoch,
+				currentEpoch: listenerEpoch,
+			});
+			return;
+		}
 		if (!data?.reference)
 			return;
 		await handleLocateRequest(data.reference);
@@ -839,6 +884,13 @@ function setupChatListeners(): void {
 
 	// 监听清空会话请求（支持按 sessionId 清空或全部清空）
 	subscribe(CHAT_TOPICS.CLEAR_SESSION, (data: any) => {
+		if (currentEpoch !== listenerEpoch) {
+			publishDebugLog('warn', '[CLEAR_SESSION] 丢弃过期订阅回调', {
+				callbackEpoch: currentEpoch,
+				currentEpoch: listenerEpoch,
+			});
+			return;
+		}
 		const sessionId = typeof data?.sessionId === 'string'
 			? data.sessionId
 			: '';
@@ -864,6 +916,13 @@ function setupChatListeners(): void {
 
 	// 监听恢复会话请求（从历史记录恢复上下文）
 	subscribe('ai-chat/restore-session', (data: any) => {
+		if (currentEpoch !== listenerEpoch) {
+			publishDebugLog('warn', '[RESTORE_SESSION] 丢弃过期订阅回调', {
+				callbackEpoch: currentEpoch,
+				currentEpoch: listenerEpoch,
+			});
+			return;
+		}
 		if (!data || typeof data !== 'object') {
 			return;
 		}
@@ -1030,6 +1089,19 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 				publishToolEvent,
 			);
 			toolOrchestratorsBySession.set(msg.sessionId, toolOrchestrator);
+			publishDebugLog('info', '[handleUserMessage] 创建新的 ToolOrchestrator', {
+				requestId: msg.requestId,
+				sessionId: msg.sessionId,
+			});
+		}
+		else {
+			// 复用时必须更新 requestId，否则工具事件会携带旧请求 ID，
+			// 导致前端匹配不到当前消息，创建多余的工具调用提示框
+			publishDebugLog('info', '[handleUserMessage] 复用已有 ToolOrchestrator，更新 requestId', {
+				requestId: msg.requestId,
+				sessionId: msg.sessionId,
+			});
+			toolOrchestrator.updateRequestContext(msg.requestId);
 		}
 
 		// 如果启用 MCP，拉取工具列表
@@ -1239,6 +1311,10 @@ function getOrCreateChatSession(sessionId: string): ChatSession {
 function clearAllChatSessions(): void {
 	abortAllPendingRequests();
 
+	// 同步清理防重集合，避免旧请求 ID 残留导致新一轮交互中防重判断不生效
+	processingRequests.clear();
+	completedRequests.clear();
+
 	for (const session of chatSessions.values()) {
 		session.reset();
 	}
@@ -1247,6 +1323,8 @@ function clearAllChatSessions(): void {
 	toolListCache = null; // 清空工具缓存
 	clearSessionCache(); // 清空 MCP Session 缓存
 	toolOrchestratorsBySession.clear(); // 清空 ToolOrchestrator 缓存
+
+	publishDebugLog('info', '[clearAllChatSessions] 已清理所有会话及防重状态');
 }
 
 // ============ 中止管理 ============
