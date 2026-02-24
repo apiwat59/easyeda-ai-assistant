@@ -45,20 +45,84 @@ interface PendingRequestState {
 const pendingRequests = new Map<string, PendingRequestState>();
 
 /**
- * 正在处理中的 requestId 集合（用于防止并发重复处理）
+ * 请求处理结果类型
  */
-const processingRequests = new Set<string>();
+type RequestOutcome = 'success' | 'aborted' | 'failed' | 'rejected';
+
+interface CompletedEntry {
+	timestamp: number;
+	outcome: RequestOutcome;
+}
 
 /**
- * 已完成的 requestId 缓存（用于防止重复处理）
- * 格式：{ requestId: timestamp }
+ * 请求去重守卫（全局单例，不可外部重置）
+ *
+ * 合并原 processingRequests (Set) + completedRequests (Map) 为单一不可篡改的防重机制。
+ * 根治"clearAllChatSessions 意外清除 completedRequests 导致旧 MessageBus 回调绕过防重"的问题。
+ *
+ * 设计原则：
+ * - tryAcquire/release 是唯一操作入口，外部无法 clear/reset
+ * - 已完成请求通过 TTL 自动淘汰，无需手动清理
+ * - tryAcquire 前置过期清理，避免长时间空闲后旧条目误拦截
  */
-const completedRequests = new Map<string, number>();
+class RequestGuard {
+	private readonly processing = new Set<string>();
+	private readonly completed = new Map<string, CompletedEntry>();
+	private static readonly CACHE_TTL_MS = 60_000;
 
-/**
- * 已完成请求的缓存时间（毫秒）
- */
-const COMPLETED_REQUEST_CACHE_TIME = 60000; // 60 秒
+	/**
+	 * 尝试获取 requestId 的处理权。
+	 * 返回 true 表示获取成功（调用方必须在处理结束后调用 release），
+	 * 返回 false 表示该 requestId 正在处理或已完成（应跳过）。
+	 */
+	tryAcquire(requestId: string): boolean {
+		this.evictExpired();
+		if (this.processing.has(requestId))
+			return false;
+		if (this.completed.has(requestId))
+			return false;
+		this.processing.add(requestId);
+		return true;
+	}
+
+	/**
+	 * 释放 requestId 的处理权，并标记为已完成。
+	 * 必须在 handleUserMessage 的 finally 块中调用。
+	 */
+	release(requestId: string, outcome: RequestOutcome): void {
+		this.processing.delete(requestId);
+		this.completed.set(requestId, { timestamp: Date.now(), outcome });
+		this.evictExpired();
+	}
+
+	/** 当前处理中的请求数量（仅用于日志） */
+	get processingCount(): number {
+		return this.processing.size;
+	}
+
+	/** 检查某个 requestId 是否正在处理中（仅用于日志） */
+	isProcessing(requestId: string): boolean {
+		return this.processing.has(requestId);
+	}
+
+	/** 获取已完成请求的状态（仅用于日志） */
+	getCompleted(requestId: string): CompletedEntry | undefined {
+		return this.completed.get(requestId);
+	}
+
+	/** 清理过期的已完成记录 */
+	private evictExpired(): void {
+		const now = Date.now();
+		for (const [id, entry] of this.completed) {
+			if (now - entry.timestamp > RequestGuard.CACHE_TTL_MS) {
+				this.completed.delete(id);
+			}
+		}
+	}
+}
+
+/** 全局唯一的请求防重守卫（不暴露 clear/reset，避免外部误清空） */
+const requestGuard = new RequestGuard();
 
 /**
  * 记录每个会话最后一条用户消息（用于重新生成）
@@ -130,33 +194,50 @@ export function isCollectionInProgress(): boolean {
 }
 
 /**
+ * startAIChat 重入锁（防止用户快速双击菜单导致多次注册订阅）
+ */
+let startAIChatInFlight = false;
+
+/**
  * 启动AI对话面板
  */
 export async function startAIChat(): Promise<void> {
-	// 从配置读取窗口尺寸
-	const config = loadConfig();
-	const width = config.windowWidth || 960;
-	const height = config.windowHeight || 700;
+	// 防重入：openIFrame 是异步调用，双击菜单会导致两次调用并发执行
+	if (startAIChatInFlight) {
+		publishDebugLog('warn', '[startAIChat] 忽略重复调用（上次尚未完成）');
+		return;
+	}
+	startAIChatInFlight = true;
 
-	// 打开IFrame面板（不阻塞，不立即采集数据）
 	try {
-		await eda.sys_IFrame.openIFrame('/iframe/chat.html', width, height, 'ai-sch-chat', {
-			maximizeButton: true,
-			minimizeButton: true,
-		});
+		// 从配置读取窗口尺寸
+		const config = loadConfig();
+		const width = config.windowWidth || 960;
+		const height = config.windowHeight || 700;
+
+		// 打开IFrame面板（不阻塞，不立即采集数据）
+		try {
+			await eda.sys_IFrame.openIFrame('/iframe/chat.html', width, height, 'ai-sch-chat', {
+				maximizeButton: true,
+				minimizeButton: true,
+			});
+		}
+		catch {
+			throw new ReviewError(ErrorCode.UI_IFRAME_FAILED, '无法打开对话面板');
+		}
+
+		// 打开新面板时重置会话容器，避免旧面板状态串入
+		clearAllChatSessions();
+
+		// 设置MessageBus监听
+		setupChatListeners();
+
+		// 异步触发后台采集（不阻塞UI）
+		void triggerBackgroundCollection('start-ai-chat', true);
 	}
-	catch {
-		throw new ReviewError(ErrorCode.UI_IFRAME_FAILED, '无法打开对话面板');
+	finally {
+		startAIChatInFlight = false;
 	}
-
-	// 打开新面板时重置会话容器，避免旧面板状态串入
-	clearAllChatSessions();
-
-	// 设置MessageBus监听
-	setupChatListeners();
-
-	// 异步触发后台采集（不阻塞UI）
-	void triggerBackgroundCollection('start-ai-chat', true);
 }
 
 /**
@@ -989,94 +1070,91 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		sessionId: msg.sessionId,
 		hasText: !!msg.text,
 		imageCount: msg.images?.length || 0,
-		processingCount: processingRequests.size,
-		isProcessing: processingRequests.has(msg.requestId),
+		guardProcessingCount: requestGuard.processingCount,
 	});
 
-	// 检查是否已完成（防止重复处理）
-	if (completedRequests.has(msg.requestId)) {
-		const completedTime = completedRequests.get(msg.requestId)!;
-		const elapsed = Date.now() - completedTime;
-		publishDebugLog('info', '[handleUserMessage] 忽略已完成请求', {
-			requestId: msg.requestId,
-			elapsed,
-		});
+	// 统一防重：tryAcquire 合并了 processing + completed 的检查，且不可被外部 clear
+	if (!requestGuard.tryAcquire(msg.requestId)) {
+		const completed = requestGuard.getCompleted(msg.requestId);
+		if (completed) {
+			publishDebugLog('info', '[handleUserMessage] 忽略已完成请求', {
+				requestId: msg.requestId,
+				elapsed: Date.now() - completed.timestamp,
+				outcome: completed.outcome,
+			});
+		}
+		else {
+			publishDebugLog('warn', '[handleUserMessage] 忽略重复请求（正在处理中）', {
+				requestId: msg.requestId,
+				guardProcessingCount: requestGuard.processingCount,
+			});
+		}
 		return;
 	}
 
-	// 防重复提交：使用 Set 实现同步锁，防止并发重复处理
-	if (processingRequests.has(msg.requestId)) {
-		publishDebugLog('warn', '[handleUserMessage] 忽略重复请求（正在处理中）', {
-			requestId: msg.requestId,
-			processingCount: processingRequests.size,
-		});
-		return;
-	}
-
-	// 立即标记为处理中（同步操作，防止竞态条件）
-	processingRequests.add(msg.requestId);
 	const requestStartTime = Date.now();
+	let requestOutcome: RequestOutcome = 'failed';
 
-	// 验证文本长度
-	if (msg.text && msg.text.length > 50000) {
-		processingRequests.delete(msg.requestId);
-		publishToIFrame(CHAT_TOPICS.ERROR, {
-			message: '消息过长（最大 50000 字符）',
-			requestId: msg.requestId,
-			sessionId: msg.sessionId,
-		});
-		return;
-	}
-
-	// 验证图片数量和大小
-	if (msg.images) {
-		if (msg.images.length > 10) {
-			processingRequests.delete(msg.requestId);
+	try {
+		// 验证文本长度
+		if (msg.text && msg.text.length > 50000) {
+			requestOutcome = 'rejected';
 			publishToIFrame(CHAT_TOPICS.ERROR, {
-				message: '图片数量过多（最大 10 张）',
+				message: '消息过长（最大 50000 字符）',
 				requestId: msg.requestId,
 				sessionId: msg.sessionId,
 			});
 			return;
 		}
 
-		for (const img of msg.images) {
-			if (img.data && img.data.length > 10 * 1024 * 1024) {
-				processingRequests.delete(msg.requestId);
+		// 验证图片数量和大小
+		if (msg.images) {
+			if (msg.images.length > 10) {
+				requestOutcome = 'rejected';
 				publishToIFrame(CHAT_TOPICS.ERROR, {
-					message: '图片过大（单张最大 10MB）',
+					message: '图片数量过多（最大 10 张）',
 					requestId: msg.requestId,
 					sessionId: msg.sessionId,
 				});
 				return;
 			}
+
+			for (const img of msg.images) {
+				if (img.data && img.data.length > 10 * 1024 * 1024) {
+					requestOutcome = 'rejected';
+					publishToIFrame(CHAT_TOPICS.ERROR, {
+						message: '图片过大（单张最大 10MB）',
+						requestId: msg.requestId,
+						sessionId: msg.sessionId,
+					});
+					return;
+				}
+			}
 		}
-	}
 
-	const config = loadConfig();
-	const configError = validateConfig(config);
+		const config = loadConfig();
+		const configError = validateConfig(config);
 
-	if (configError) {
-		processingRequests.delete(msg.requestId);
-		publishToIFrame(CHAT_TOPICS.ERROR, {
-			message: `请先配置AI: ${configError}`,
-			code: ErrorCode.AI_NO_CONFIG,
-			requestId: msg.requestId,
+		if (configError) {
+			requestOutcome = 'rejected';
+			publishToIFrame(CHAT_TOPICS.ERROR, {
+				message: `请先配置AI: ${configError}`,
+				code: ErrorCode.AI_NO_CONFIG,
+				requestId: msg.requestId,
+				sessionId: msg.sessionId,
+			});
+			return;
+		}
+
+		// 创建新的 AbortController
+		const abortController = new AbortController();
+		pendingRequests.set(msg.requestId, {
 			sessionId: msg.sessionId,
+			abortController,
+			thinkingAccumulated: '',
+			textAccumulated: '',
 		});
-		return;
-	}
 
-	// 创建新的 AbortController
-	const abortController = new AbortController();
-	pendingRequests.set(msg.requestId, {
-		sessionId: msg.sessionId,
-		abortController,
-		thinkingAccumulated: '',
-		textAccumulated: '',
-	});
-
-	try {
 		// 按 sessionId 获取或创建会话（核心隔离机制）
 		const session = getOrCreateChatSession(msg.sessionId);
 
@@ -1158,6 +1236,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		);
 
 		if (abortController.signal.aborted) {
+			requestOutcome = 'aborted';
 			publishDebugLog('info', '[handleUserMessage] 请求已中止', {
 				requestId: msg.requestId,
 				sessionId: msg.sessionId,
@@ -1165,6 +1244,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 			return;
 		}
 
+		requestOutcome = 'success';
 		// 保存最后一条用户消息（用于重新生成）
 		lastUserMessageBySession.set(msg.sessionId, cloneUserMessage(msg));
 
@@ -1191,6 +1271,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 
 		// 如果是中止错误，静默处理
 		if (isAbortError(error)) {
+			requestOutcome = 'aborted';
 			publishDebugLog('info', '[handleUserMessage] 中止错误，静默处理', {
 				requestId: msg.requestId,
 				sessionId: msg.sessionId,
@@ -1206,27 +1287,10 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		});
 	}
 	finally {
-		// 清理状态
+		// 清理进行中请求状态
 		pendingRequests.delete(msg.requestId);
-		processingRequests.delete(msg.requestId);
-
-		// 记录已完成的请求（防止重复处理）
-		completedRequests.set(msg.requestId, Date.now());
-
-		// 清理过期的已完成请求（避免内存泄漏）
-		cleanupCompletedRequests();
-	}
-}
-
-/**
- * 清理过期的已完成请求缓存
- */
-function cleanupCompletedRequests(): void {
-	const now = Date.now();
-	for (const [requestId, completedTime] of completedRequests.entries()) {
-		if (now - completedTime > COMPLETED_REQUEST_CACHE_TIME) {
-			completedRequests.delete(requestId);
-		}
+		// 释放 RequestGuard 处理权并标记为已完成（过期自动清理）
+		requestGuard.release(msg.requestId, requestOutcome);
 	}
 }
 
@@ -1311,9 +1375,8 @@ function getOrCreateChatSession(sessionId: string): ChatSession {
 function clearAllChatSessions(): void {
 	abortAllPendingRequests();
 
-	// 同步清理防重集合，避免旧请求 ID 残留导致新一轮交互中防重判断不生效
-	processingRequests.clear();
-	completedRequests.clear();
+	// RequestGuard 为全局不可重置的防重守卫，此处不清空其状态。
+	// 即使 MessageBus 在清理后重新投递旧消息，requestGuard 仍能拦截。
 
 	for (const session of chatSessions.values()) {
 		session.reset();
@@ -1324,7 +1387,7 @@ function clearAllChatSessions(): void {
 	clearSessionCache(); // 清空 MCP Session 缓存
 	toolOrchestratorsBySession.clear(); // 清空 ToolOrchestrator 缓存
 
-	publishDebugLog('info', '[clearAllChatSessions] 已清理所有会话及防重状态');
+	publishDebugLog('info', '[clearAllChatSessions] 已清理所有会话状态（RequestGuard 保持不变）');
 }
 
 // ============ 中止管理 ============
