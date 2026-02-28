@@ -37,20 +37,23 @@
 
 ### 🤖 支持的 Reasoning 模型
 
-本插件支持 **10+ 种主流 AI 模型**的 reasoning/thinking 功能：
+本插件支持 **13+ 种主流 AI 服务商**的 reasoning/thinking 功能，内置一键预设：
 
-| 模型系列 | 示例模型 | Reasoning 支持 |
-|---------|---------|---------------|
-| **OpenAI o1/o3** | o1-mini, o1-pro, o3-mini | ✅ 完整支持 |
-| **Grok** | grok-2, grok-beta, grok-2-1212 | ✅ 完整支持 |
-| **DeepSeek** | deepseek-reasoner, deepseek-r1 | ✅ 完整支持 |
-| **Claude 3.7** | claude-3-7-sonnet | ✅ 完整支持 |
-| **Gemini** | gemini-2.0-flash, gemini-3.0 | ✅ 完整支持 |
-| **Qwen (通义千问)** | qwen-max, qwen-plus | ✅ 完整支持 |
-| **Doubao (豆包)** | doubao-pro | ✅ 完整支持 |
-| **Zhipu (智谱)** | glm-4-plus | ✅ 完整支持 |
-| **Kimi** | kimi-k1 | ✅ 完整支持 |
-| **Hunyuan (混元)** | hunyuan-turbo | ✅ 完整支持 |
+| 服务商 | 推荐模型 | Reasoning 支持 |
+|--------|---------|---------------|
+| **OpenAI** | gpt-5.2 | ✅ 完整支持 |
+| **xAI (Grok)** | grok-4.20-beta | ✅ 完整支持（推荐） |
+| **DeepSeek** | deepseek-chat | ✅ 完整支持 |
+| **Google Gemini** | gemini-3-flash | ✅ 完整支持 |
+| **OpenRouter** | claude-sonnet-4.6 | ✅ 完整支持 |
+| **Groq** | qwen/qwen3-32b | ✅ 完整支持 |
+| **Mistral** | mistral-large-latest | ✅ 完整支持 |
+| **Qwen (通义千问)** | qwen3.5-plus | ✅ 完整支持 |
+| **Zhipu (智谱)** | glm-4.7 | ✅ 完整支持 |
+| **Kimi** | kimi-k2.5 | ✅ 完整支持 |
+| **SiliconFlow** | DeepSeek-V3 | ✅ 完整支持 |
+| **Doubao (豆包)** | doubao-seed-2-0-pro | ✅ 完整支持 |
+| **Yi (零一万物)** | yi-large | ✅ 完整支持 |
 
 **自动检测**：插件会自动识别模型类型，无需手动配置 reasoning 参数。
 
@@ -158,13 +161,14 @@ npm run build
 
 **推荐配置（Grok）**：
 - API URL: `https://api.x.ai/v1`
-- 模型: `grok-2-1212` 或 `grok-beta`
+- 模型: `grok-4.20-beta`
 - API Key: 从 [x.ai](https://x.ai) 获取
 
 **其他兼容 API**：
-- OpenAI API
-- Claude API（通过兼容层）
-- DeepSeek API
+- OpenAI API (`gpt-5.2`)
+- DeepSeek API (`deepseek-chat`)
+- Google Gemini API (`gemini-3-flash`)
+- OpenRouter（聚合多模型，如 `claude-sonnet-4.6`）
 - 任何 OpenAI 兼容的 API
 
 ---
