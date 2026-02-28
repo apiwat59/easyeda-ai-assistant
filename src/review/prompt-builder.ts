@@ -118,7 +118,10 @@ ${JSON.stringify(chunk)}
 /**
  * 构建对话模式的System Prompt
  */
-export function buildChatSystemPrompt(schematicContext: string | null): string {
+export function buildChatSystemPrompt(
+	schematicContext: string | null,
+	customSystemPrompt?: string,
+): string {
 	const basePrompt = `你是一位专业的PCB原理图审查助手，拥有15年硬件设计经验。
 
 ## 你的能力
@@ -138,12 +141,21 @@ export function buildChatSystemPrompt(schematicContext: string | null): string {
 
 ## 原理图数据格式
 
-当用户提供原理图数据时，格式为：
-- components: [位号, 名称, 制造商, 制造商编号, X, Y, 旋转]
-- pins: [位号, 引脚编号, 引脚名称, 引脚类型, 网络名称]
-- nets: [网络名称, 连接引脚数]
+当用户提供原理图数据时，为 SCH-REVIEW-COMPACT v1 紧凑格式：
+- fields 对象定义了每类 tuple 数组的列顺序，请以此为准解析数据
+- components：器件 tuple 数组，列顺序见 fields.components
+- pins：引脚 tuple 数组，列顺序见 fields.pins
+- nets：网络 tuple 数组，列顺序见 fields.nets
+- 可能包含 texts（文本标注）、buses（总线）、netLabels（GND/VCC等网络标记）可选数据
 
 引脚类型包括：IN(输入)、OUT(输出)、BI(双向)、Passive(无源)、Power(电源)、Ground(地)等。`;
+
+	const normalizedCustomPrompt = typeof customSystemPrompt === 'string'
+		? customSystemPrompt.trim()
+		: '';
+	const customBlock = normalizedCustomPrompt
+		? `\n\n## 用户自定义指令\n\n${normalizedCustomPrompt}`
+		: '';
 
 	if (schematicContext) {
 		return `${basePrompt}
@@ -161,8 +173,8 @@ export function buildChatSystemPrompt(schematicContext: string | null): string {
 ${schematicContext}
 </schematic_data>
 
-用户可以直接询问这个原理图的问题，你应该基于上述数据回答。`;
+用户可以直接询问这个原理图的问题，你应该基于上述数据回答。${customBlock}`;
 	}
 
-	return basePrompt;
+	return `${basePrompt}${customBlock}`;
 }

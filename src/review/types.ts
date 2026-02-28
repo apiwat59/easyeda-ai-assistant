@@ -7,7 +7,34 @@
 /**
  * SCH-REVIEW-COMPACT v1 格式
  * 使用tuple数组节省Token
+ * fields 字段定义每个 tuple 数组的列顺序，AI 按此解析
  */
+
+/** 器件 tuple 可选列名 */
+export type SchComponentFieldKey
+	= | 'designator'
+		| 'name'
+		| 'value'
+		| 'manufacturer'
+		| 'manufacturerPartNumber'
+		| 'lcscPart'
+		| 'addIntoPcb'
+		| 'bomInclude'
+		| 'x'
+		| 'y'
+		| 'rotation';
+
+/** 引脚 tuple 可选列名 */
+export type SchPinFieldKey
+	= | 'componentDesignator'
+		| 'pinNumber'
+		| 'pinName'
+		| 'pinType'
+		| 'netName';
+
+/** 网络 tuple 可选列名 */
+export type SchNetFieldKey = 'netName' | 'pinCount';
+
 export interface SchReviewChunk {
 	schema: 'sch-review-compact-v1';
 	summary: {
@@ -17,12 +44,19 @@ export interface SchReviewChunk {
 		chunkId: string;
 		chunkCount: number;
 	};
-	// [位号, 名称, 关键属性, 前缀, 加入PCB, LCSC料号, JLC料号, BOM包含, 制造商, 制造商编号, X, Y, 旋转]
-	components: Array<[string, string, string, string, string, string, string, string, string, string, number, number, number]>;
-	// [位号, 引脚编号, 引脚名称, 引脚类型, 网络名称]
-	pins: Array<[string, string, string, string, string | null]>;
-	// [网络名称, 连接引脚数]
-	nets: Array<[string, number]>;
+	/** 各 tuple 数组的列顺序映射，AI 必须以此为准解析数据 */
+	fields: {
+		components: SchComponentFieldKey[];
+		pins: SchPinFieldKey[];
+		nets: SchNetFieldKey[];
+	};
+	components: Array<Array<string | number>>;
+	pins: Array<Array<string | null>>;
+	nets: Array<Array<string | number>>;
+	/** 可选扩展数据（用户勾选后传入） */
+	texts?: Array<[string, string, number, number]>; // [primitiveId, content, x, y]
+	buses?: Array<[string, string, number[][]]>; // [primitiveId, busName, lines]
+	netLabels?: Array<[string, string, number, number, 'netflag' | 'netport']>; // [primitiveId, netName, x, y, type]
 }
 
 // ============ 原始数据结构 ============
@@ -209,6 +243,52 @@ export enum AIProvider {
 }
 
 /**
+ * 原理图字段选择配置
+ * 控制哪些字段序列化到 AI 的 schematic_data 中
+ * 核心标识字段（designator/pinNumber/netName）由后端强制保留
+ */
+export interface SchematicFieldsConfig {
+	// 器件字段
+	componentName?: boolean;
+	componentValue?: boolean;
+	componentManufacturer?: boolean;
+	componentManufacturerPartNumber?: boolean;
+	componentLcscPart?: boolean;
+	componentAddIntoPcb?: boolean;
+	componentBomInclude?: boolean;
+	componentXy?: boolean;
+	componentRotation?: boolean;
+	// 引脚字段
+	pinPinName?: boolean;
+	pinPinType?: boolean;
+	// 网络字段
+	netPinCount?: boolean;
+	// 额外数据（默认不传）
+	includeTexts?: boolean;
+	includeBuses?: boolean;
+	includeNetLabels?: boolean;
+}
+
+/** 所有字段的默认值（true=默认传给AI，false=默认不传） */
+export const DEFAULT_SCHEMATIC_FIELDS: Required<SchematicFieldsConfig> = {
+	componentName: true,
+	componentValue: true,
+	componentManufacturer: true,
+	componentManufacturerPartNumber: true,
+	componentLcscPart: true,
+	componentAddIntoPcb: true,
+	componentBomInclude: true,
+	componentXy: true,
+	componentRotation: true,
+	pinPinName: true,
+	pinPinType: true,
+	netPinCount: true,
+	includeTexts: false,
+	includeBuses: false,
+	includeNetLabels: false,
+};
+
+/**
  * 配置存储
  */
 export interface ConfigStore {
@@ -223,6 +303,8 @@ export interface ConfigStore {
 	mcpGatewayUrl?: string; // MCP Gateway 地址
 	mcpGatewayApiKey?: string; // MCP Gateway 鉴权 token（可选）
 	mcpAutoApprove?: boolean; // 是否默认自动批准工具调用
+	customSystemPrompt?: string; // 用户自定义系统提示词（追加到内置提示词之后）
+	schematicFields?: SchematicFieldsConfig; // 原理图字段选择（控制传给AI的字段）
 }
 
 // ============ 对话模式通信协议 ============

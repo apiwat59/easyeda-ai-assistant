@@ -1,14 +1,33 @@
-import type { ConfigStore } from './types';
+import type { ConfigStore, SchematicFieldsConfig } from './types';
 /**
  * AI原理图审查 - 配置管理
  *
  * 使用 eda.sys_Storage 持久化存储AI审查配置
  * 注意：扩展主上下文中 localStorage 不可用，必须使用 EDA 提供的存储 API
  */
-import { AIProvider } from './types';
+import { AIProvider, DEFAULT_SCHEMATIC_FIELDS } from './types';
 
 const CONFIG_KEY = 'ai-sch-review-config';
 const HISTORY_KEY = 'ai-sch-chat-history';
+
+/**
+ * 归一化 schematicFields 配置：
+ * 将存储中的字段值 merge 到默认配置，过滤非布尔值，保证结构完整
+ */
+function mergeSchematicFields(saved?: unknown): Required<SchematicFieldsConfig> {
+	const merged: Required<SchematicFieldsConfig> = { ...DEFAULT_SCHEMATIC_FIELDS };
+	if (!saved || typeof saved !== 'object' || Array.isArray(saved)) {
+		return merged;
+	}
+	const raw = saved as Record<string, unknown>;
+	const keys = Object.keys(DEFAULT_SCHEMATIC_FIELDS) as Array<keyof SchematicFieldsConfig>;
+	for (const key of keys) {
+		if (typeof raw[key] === 'boolean') {
+			(merged as Record<string, boolean>)[key] = raw[key] as boolean;
+		}
+	}
+	return merged;
+}
 
 /**
  * 默认配置
@@ -25,6 +44,8 @@ const DEFAULT_CONFIG: ConfigStore = {
 	mcpGatewayUrl: '',
 	mcpGatewayApiKey: '',
 	mcpAutoApprove: true,
+	customSystemPrompt: '',
+	schematicFields: { ...DEFAULT_SCHEMATIC_FIELDS },
 };
 
 /**
@@ -34,14 +55,16 @@ export function loadConfig(): ConfigStore {
 	try {
 		const raw = eda.sys_Storage.getExtensionUserConfig(CONFIG_KEY);
 		if (!raw) {
-			return { ...DEFAULT_CONFIG };
+			return { ...DEFAULT_CONFIG, schematicFields: { ...DEFAULT_SCHEMATIC_FIELDS } };
 		}
 		// raw 可能是对象或字符串
 		const parsed = typeof raw === 'string' ? JSON.parse(raw) as Partial<ConfigStore> : raw as Partial<ConfigStore>;
-		return { ...DEFAULT_CONFIG, ...parsed };
+		const merged: ConfigStore = { ...DEFAULT_CONFIG, ...parsed };
+		merged.schematicFields = mergeSchematicFields(parsed.schematicFields);
+		return merged;
 	}
 	catch {
-		return { ...DEFAULT_CONFIG };
+		return { ...DEFAULT_CONFIG, schematicFields: { ...DEFAULT_SCHEMATIC_FIELDS } };
 	}
 }
 

@@ -640,6 +640,12 @@ function setupChatListeners(): void {
 	// 监听IFrame请求配置数据
 	subscribe(CHAT_TOPICS.REQUEST_CONFIG, () => {
 		const config = loadConfig();
+		const customPrompt = typeof config.customSystemPrompt === 'string' ? config.customSystemPrompt.trim() : '';
+		if (customPrompt) {
+			publishDebugLog('info', '[REQUEST_CONFIG] 加载自定义系统提示词', {
+				length: customPrompt.length,
+			});
+		}
 		publishToIFrame(CHAT_TOPICS.CONFIG_DATA, {
 			apiUrl: config.apiUrl,
 			apiKey: config.apiKey || '',
@@ -650,6 +656,8 @@ function setupChatListeners(): void {
 			mcpGatewayUrl: config.mcpGatewayUrl || '',
 			mcpGatewayApiKey: config.mcpGatewayApiKey || '',
 			mcpAutoApprove: config.mcpAutoApprove !== false,
+			customSystemPrompt: config.customSystemPrompt || '',
+			schematicFields: config.schematicFields || {},
 		});
 	});
 
@@ -854,6 +862,49 @@ function setupChatListeners(): void {
 			publishDebugLog('warn', '配置验证失败: 无效的 mcpGatewayApiKey');
 			return;
 		}
+		if (data.customSystemPrompt !== undefined) {
+			if (typeof data.customSystemPrompt !== 'string') {
+				publishDebugLog('warn', '配置验证失败: customSystemPrompt 类型错误');
+				publishToIFrame(CHAT_TOPICS.ERROR, {
+					message: '配置保存失败: 自定义系统提示词格式无效',
+					code: 'CONFIG_VALIDATION_FAILED',
+				});
+				return;
+			}
+			if (data.customSystemPrompt.length > 5000) {
+				publishDebugLog('warn', '配置验证失败: customSystemPrompt 超长', {
+					length: data.customSystemPrompt.length,
+				});
+				publishToIFrame(CHAT_TOPICS.ERROR, {
+					message: '配置保存失败: 自定义系统提示词最多 5000 字符',
+					code: 'CONFIG_VALIDATION_FAILED',
+				});
+				return;
+			}
+		}
+
+		// 验证 schematicFields（若存在，必须是纯 boolean 键值对对象）
+		if (data.schematicFields !== undefined) {
+			if (typeof data.schematicFields !== 'object' || data.schematicFields === null || Array.isArray(data.schematicFields)) {
+				publishDebugLog('warn', '配置验证失败: schematicFields 类型错误');
+				publishToIFrame(CHAT_TOPICS.ERROR, {
+					message: '配置保存失败: schematicFields 格式无效',
+					code: 'CONFIG_VALIDATION_FAILED',
+				});
+				return;
+			}
+			// 校验所有值必须是 boolean（允许空对象）
+			for (const [k, v] of Object.entries(data.schematicFields)) {
+				if (typeof v !== 'boolean') {
+					publishDebugLog('warn', `配置验证失败: schematicFields.${k} 不是 boolean`);
+					publishToIFrame(CHAT_TOPICS.ERROR, {
+						message: `配置保存失败: schematicFields.${k} 值无效`,
+						code: 'CONFIG_VALIDATION_FAILED',
+					});
+					return;
+				}
+			}
+		}
 
 		// 验证 URL 格式
 		if (data.apiUrl) {
@@ -887,6 +938,14 @@ function setupChatListeners(): void {
 		toolListCache = null;
 		clearSessionCache(); // 清空 MCP Session 缓存
 
+		// 记录自定义系统提示词变更
+		if (data.customSystemPrompt !== undefined) {
+			const trimmed = typeof data.customSystemPrompt === 'string' ? data.customSystemPrompt.trim() : '';
+			publishDebugLog('info', `[CONFIG_UPDATE] 自定义系统提示词${trimmed ? '已设置' : '已清空'}`, {
+				length: trimmed.length,
+			});
+		}
+
 		const result = await saveConfig(data);
 
 		if (!result.success) {
@@ -908,7 +967,28 @@ function setupChatListeners(): void {
 			mcpGatewayUrl: result.config.mcpGatewayUrl || '',
 			mcpGatewayApiKey: result.config.mcpGatewayApiKey || '',
 			mcpAutoApprove: result.config.mcpAutoApprove !== false,
+			customSystemPrompt: result.config.customSystemPrompt || '',
+			schematicFields: result.config.schematicFields || {},
 		});
+
+		// 若字段配置有变更，刷新所有现有会话
+		if (data.schematicFields !== undefined) {
+			const newFields = result.config.schematicFields;
+			publishDebugLog('info', '[CONFIG_UPDATE] schematicFields 已变更，刷新所有会话字段配置', {
+				sessionCount: chatSessions.size,
+				hasData: !!cachedSchematicData,
+			});
+			for (const session of chatSessions.values()) {
+				// 无论是否有缓存数据，都先更新字段配置
+				if (newFields) {
+					session.updateSchematicFields(newFields);
+				}
+				// 只有有缓存数据时才重新序列化上下文
+				if (cachedSchematicData) {
+					session.updateSchematicContext(cachedSchematicData);
+				}
+			}
+		}
 	});
 
 	// 监听历史记录更新
@@ -1360,7 +1440,8 @@ function getOrCreateChatSession(sessionId: string): ChatSession {
 	if (existing)
 		return existing;
 
-	const session = new ChatSession();
+	const config = loadConfig();
+	const session = new ChatSession(undefined, config.schematicFields);
 	if (cachedSchematicData) {
 		session.setSchematicContext(cachedSchematicData);
 	}

@@ -3,7 +3,7 @@
  *
  * 按引脚数分块，避免单次请求Token过大
  */
-import type { CollectedData, SchReviewChunk } from './types';
+import type { CollectedData, SchematicFieldsConfig, SchReviewChunk } from './types';
 import { estimateJsonSize, serializeToCompactFormat } from './serializer';
 
 /**
@@ -21,10 +21,15 @@ const DEFAULT_CHUNK_CONFIG: ChunkConfig = {
 
 /**
  * 将数据分块
+ *
+ * @param data    采集的原始数据
+ * @param config  分块配置（引脚数/字节数上限）
+ * @param fields  字段选择配置（传入 serializer，控制 AI 可见字段）
  */
 export function chunkData(
 	data: CollectedData,
 	config: Partial<ChunkConfig> = {},
+	fields?: SchematicFieldsConfig,
 ): SchReviewChunk[] {
 	const cfg = { ...DEFAULT_CHUNK_CONFIG, ...config };
 
@@ -67,13 +72,14 @@ export function chunkData(
 				currentChunkComponents,
 				chunks.length,
 				-1, // 暂时不知道总数
+				fields,
 			);
 
 			// 强制执行字节限制：与尾块使用相同的递归拆分逻辑
 			const chunkSize = estimateJsonSize(chunk);
 			if (chunkSize > cfg.maxBytesPerChunk) {
 				console.warn(`Chunk ${chunks.length} exceeds byte limit: ${chunkSize} > ${cfg.maxBytesPerChunk}`);
-				splitAndPushChunk(data, [...currentChunkComponents], chunks, cfg);
+				splitAndPushChunk(data, [...currentChunkComponents], chunks, cfg, fields);
 			}
 			else {
 				chunks.push(chunk);
@@ -90,7 +96,7 @@ export function chunkData(
 	}
 
 	// 处理最后一个分块（可能需要递归拆分以满足字节限制）
-	splitAndPushChunk(data, currentChunkComponents, chunks, cfg);
+	splitAndPushChunk(data, currentChunkComponents, chunks, cfg, fields);
 
 	// 更新所有分块的chunkCount
 	const totalChunks = chunks.length;
@@ -110,12 +116,13 @@ function splitAndPushChunk(
 	components: typeof data.components,
 	chunks: SchReviewChunk[],
 	cfg: ChunkConfig,
+	fields?: SchematicFieldsConfig,
 ): void {
 	if (components.length === 0) {
 		return;
 	}
 
-	const chunk = buildChunk(data, components, chunks.length, -1);
+	const chunk = buildChunk(data, components, chunks.length, -1, fields);
 	const chunkSize = estimateJsonSize(chunk);
 
 	// 满足字节限制，或只有一个器件（无法再拆分）
@@ -132,14 +139,14 @@ function splitAndPushChunk(
 			break;
 		overflowComponents.unshift(lastComponent);
 
-		const reducedChunk = buildChunk(data, components, chunks.length, -1);
+		const reducedChunk = buildChunk(data, components, chunks.length, -1, fields);
 		const reducedSize = estimateJsonSize(reducedChunk);
 
 		if (reducedSize <= cfg.maxBytesPerChunk || components.length === 1) {
 			// 剩余部分满足限制，推送
 			chunks.push(reducedChunk);
 			// 递归处理溢出的器件
-			splitAndPushChunk(data, overflowComponents, chunks, cfg);
+			splitAndPushChunk(data, overflowComponents, chunks, cfg, fields);
 			return;
 		}
 	}
@@ -147,12 +154,16 @@ function splitAndPushChunk(
 
 /**
  * 构建单个分块
+ *
+ * texts / buses / netLabels 全局数据仅附加到第一个分块（chunkIndex === 0），
+ * 避免在多分块场景下重复传输。
  */
 function buildChunk(
 	data: CollectedData,
 	components: typeof data.components,
 	chunkIndex: number,
 	totalChunks: number,
+	fields?: SchematicFieldsConfig,
 ): SchReviewChunk {
 	// 提取该分块的器件ID集合
 	const componentIds = new Set(components.map(c => c.primitiveId));
@@ -168,18 +179,24 @@ function buildChunk(
 	);
 	const chunkNets = data.nets.filter(n => netNamesInChunk.has(n.netName));
 
-	// 构建分块数据
-	const chunkData: CollectedData = {
+	// 构建分块数据（texts/buses/netLabels 只放在第一块）
+	const chunkCollectedData: CollectedData = {
 		components,
 		pins: chunkPins,
 		nets: chunkNets,
 		netlistRaw: data.netlistRaw,
 		timestamp: data.timestamp,
+		...(chunkIndex === 0 && {
+			texts: data.texts,
+			buses: data.buses,
+			netLabels: data.netLabels,
+		}),
 	};
 
 	return serializeToCompactFormat(
-		chunkData,
+		chunkCollectedData,
 		`chunk-${String(chunkIndex + 1).padStart(2, '0')}`,
 		totalChunks > 0 ? totalChunks : 1,
+		fields,
 	);
 }

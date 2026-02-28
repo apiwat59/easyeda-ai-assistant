@@ -492,8 +492,25 @@
             background: var(--bg-panel); border: 1px solid var(--border-color);
             width: 400px; max-width: 90%; border-radius: var(--radius-md);
             box-shadow: 0 4px 20px rgba(0,0,0,0.15); padding: 16px;
+            max-height: 80vh; display: flex; flex-direction: column;
         }
         .modal-header { font-size: 15px; font-weight: 600; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--border-color); }
+        .modal-body { flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; }
+        .config-section { border: 1px solid var(--border-color); border-radius: var(--radius-md); margin-bottom: 8px; overflow: hidden; }
+        .config-section:last-child { margin-bottom: 0; }
+        .config-section-header {
+            width: 100%; display: flex; align-items: center; gap: 6px;
+            padding: 8px 10px; border: none; background: var(--bg-input);
+            border-radius: var(--radius-md); cursor: pointer; user-select: none;
+            font-size: 12px; font-weight: 500; color: var(--text-primary);
+            text-align: left; font-family: inherit;
+        }
+        .config-section-header:hover { background: var(--bg-hover); }
+        .config-section-arrow { transition: transform 0.2s; font-size: 10px; color: var(--text-secondary); }
+        .config-section.collapsed .config-section-arrow { transform: rotate(-90deg); }
+        .config-section-body { padding: 8px 10px 4px; border-top: 1px solid var(--border-color); }
+        .config-section-body .form-group:last-child { margin-bottom: 0; }
+        .config-section.collapsed .config-section-body { display: none; }
         .form-group { margin-bottom: 12px; }
         .form-label { display: block; margin-bottom: 4px; color: var(--text-secondary); font-size: 12px; }
         .form-control {
@@ -503,6 +520,13 @@
         }
         .form-control:focus { border-color: var(--accent-color); }
         .form-hint { font-size: 11px; color: var(--text-placeholder); margin-top: 3px; }
+        .sch-fields-toolbar { display: flex; gap: 6px; margin-bottom: 8px; }
+        .btn-xs { padding: 2px 8px !important; font-size: 11px !important; }
+        .sch-fields-section { margin-bottom: 8px; }
+        .sch-fields-group-title { font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; font-weight: 500; display: flex; align-items: center; gap: 6px; }
+        .sch-fields-badge { font-size: 10px; background: var(--bg-hover); color: var(--text-placeholder); padding: 1px 5px; border-radius: 3px; font-weight: normal; }
+        .sch-fields-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; }
+        .sch-field-item { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-primary); cursor: pointer; padding: 2px 0; user-select: none; }
         .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border-color); }
         .modal-actions .btn { width: auto; padding: 6px 20px; }
 
@@ -1067,41 +1091,123 @@
     <div id="config-modal">
         <div class="modal-content">
             <div class="modal-header">AI 配置</div>
-            <div class="form-group">
-                <label class="form-label">API 地址</label>
-                <input type="text" class="form-control" id="cfg-apiurl" placeholder="https://api.openai.com/v1/chat/completions">
-                <div class="form-hint">OpenAI 兼容的 Chat Completions 接口地址</div>
-            </div>
-            <div class="form-group">
-                <label class="form-label">API Key</label>
-                <input type="password" class="form-control" id="cfg-apikey" placeholder="输入你的 API Key">
-            </div>
-            <div class="form-group">
-                <label class="form-label">模型名称</label>
-                <input type="text" class="form-control" id="cfg-model" value="gpt-4o">
-            </div>
-            <div class="form-group">
-                <label class="form-label">MCP 工具网关</label>
-                <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-primary);margin-bottom:6px;">
-                    <input type="checkbox" id="cfg-mcp-enabled">
-                    启用 MCP 工具调用
-                </label>
-                <input type="text" class="form-control" id="cfg-mcp-gateway-url" placeholder="https://mcp-gateway.example.com">
-                <div class="form-hint">用于代理 tools/list 与 tools/call 的 Gateway 地址</div>
-            </div>
-            <div class="form-group">
-                <label class="form-label">Gateway API Key（可选）</label>
-                <input type="password" class="form-control" id="cfg-mcp-gateway-apikey" placeholder="可选">
-            </div>
-            <div class="form-group">
-                <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-primary);margin-bottom:6px;">
-                    <input type="checkbox" id="cfg-mcp-auto-approve" checked>
-                    默认自动批准工具调用
-                </label>
-            </div>
-            <div class="form-group">
-                <label class="form-label">工具预览</label>
-                <div class="form-hint" id="cfg-tools-preview">尚未加载工具列表</div>
+            <div class="modal-body">
+                <div class="config-section">
+                    <button type="button" class="config-section-header" onclick="toggleConfigSection(this)" aria-expanded="true">
+                        <span class="config-section-arrow">▼</span> 基础配置
+                    </button>
+                    <div class="config-section-body">
+                        <div class="form-group">
+                            <label class="form-label">API 地址</label>
+                            <input type="text" class="form-control" id="cfg-apiurl" placeholder="https://api.openai.com/v1/chat/completions">
+                            <div class="form-hint">OpenAI 兼容的 Chat Completions 接口地址</div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">API Key</label>
+                            <input type="password" class="form-control" id="cfg-apikey" placeholder="输入你的 API Key">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">模型名称</label>
+                            <input type="text" class="form-control" id="cfg-model" value="gpt-4o">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="config-section collapsed">
+                    <button type="button" class="config-section-header" onclick="toggleConfigSection(this)" aria-expanded="false">
+                        <span class="config-section-arrow">▼</span> MCP 工具网关
+                    </button>
+                    <div class="config-section-body">
+                        <div class="form-group">
+                            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-primary);margin-bottom:6px;">
+                                <input type="checkbox" id="cfg-mcp-enabled">
+                                启用 MCP 工具调用
+                            </label>
+                            <input type="text" class="form-control" id="cfg-mcp-gateway-url" placeholder="https://mcp-gateway.example.com">
+                            <div class="form-hint">用于代理 tools/list 与 tools/call 的 Gateway 地址</div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Gateway API Key（可选）</label>
+                            <input type="password" class="form-control" id="cfg-mcp-gateway-apikey" placeholder="可选">
+                        </div>
+                        <div class="form-group">
+                            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-primary);margin-bottom:6px;">
+                                <input type="checkbox" id="cfg-mcp-auto-approve" checked>
+                                默认自动批准工具调用
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">工具预览</label>
+                            <div class="form-hint" id="cfg-tools-preview">尚未加载工具列表</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="config-section collapsed">
+                    <button type="button" class="config-section-header" onclick="toggleConfigSection(this)" aria-expanded="false">
+                        <span class="config-section-arrow">▼</span> 原理图字段
+                    </button>
+                    <div class="config-section-body">
+                        <div class="form-group">
+                            <div class="sch-fields-toolbar">
+                                <button type="button" class="btn btn-secondary btn-xs" onclick="selectAllSchematicFields(true)">全选</button>
+                                <button type="button" class="btn btn-secondary btn-xs" onclick="selectAllSchematicFields(false)">全不选</button>
+                                <button type="button" class="btn btn-secondary btn-xs" onclick="resetSchematicFieldsToDefault()">重置默认</button>
+                            </div>
+                            <div class="sch-fields-section">
+                                <div class="sch-fields-group-title">器件字段</div>
+                                <div class="sch-fields-grid">
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-componentName"> 器件名称</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-componentValue"> 器件值/型号</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-componentManufacturer"> 制造商</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-componentManufacturerPartNumber"> 制造商料号</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-componentLcscPart"> LCSC 料号</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-componentAddIntoPcb"> 加入PCB</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-componentBomInclude"> BOM包含</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-componentXy"> 坐标 (X/Y)</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-componentRotation"> 旋转角度</label>
+                                </div>
+                            </div>
+                            <div class="sch-fields-section">
+                                <div class="sch-fields-group-title">引脚字段</div>
+                                <div class="sch-fields-grid">
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-pinPinName"> 引脚名称</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-pinPinType"> 引脚类型</label>
+                                </div>
+                            </div>
+                            <div class="sch-fields-section">
+                                <div class="sch-fields-group-title">网络字段</div>
+                                <div class="sch-fields-grid">
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-netPinCount"> 引脚数</label>
+                                </div>
+                            </div>
+                            <div class="sch-fields-section">
+                                <div class="sch-fields-group-title">扩展数据 <span class="sch-fields-badge">默认关闭</span></div>
+                                <div class="sch-fields-grid">
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includeTexts"> 文本标注</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includeBuses"> 总线数据</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includeNetLabels"> 网络标记(GND/VCC等)</label>
+                                </div>
+                            </div>
+                            <div class="form-hint">控制发给 AI 的原理图数据范围，减少字段可节省 Token</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="config-section collapsed">
+                    <button type="button" class="config-section-header" onclick="toggleConfigSection(this)" aria-expanded="false">
+                        <span class="config-section-arrow">▼</span> 高级设置
+                    </button>
+                    <div class="config-section-body">
+                        <div class="form-group">
+                            <label class="form-label">自定义系统提示词（可选）</label>
+                            <textarea class="form-control" id="cfg-custom-system-prompt" rows="4" maxlength="5000"
+                                      placeholder="例如：请用英文回答所有问题；回答时重点关注电源完整性问题"
+                                      style="resize:vertical;min-height:60px;font-size:12px;"></textarea>
+                            <div class="form-hint">追加到内置提示词之后，个性化 AI 回答风格或附加指令（最多 5000 字）</div>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="modal-actions">
                 <button class="btn btn-secondary" id="btn-cancel-config">取消</button>
@@ -1762,6 +1868,8 @@
                 document.getElementById('cfg-mcp-gateway-url').value = data.mcpGatewayUrl || '';
                 document.getElementById('cfg-mcp-gateway-apikey').value = data.mcpGatewayApiKey || '';
                 document.getElementById('cfg-mcp-auto-approve').checked = data.mcpAutoApprove !== false;
+                document.getElementById('cfg-custom-system-prompt').value = data.customSystemPrompt || '';
+                applySchematicFieldsToForm(data.schematicFields || {});
             }
             // 仅首次收到配置且 MCP 已启用时触发一次工具列表请求
             if (data.mcpEnabled && !_toolsBootstrapped) {
@@ -3222,6 +3330,52 @@
 
         // ============ 配置管理 ============
 
+        var DEFAULT_SCHEMATIC_FIELDS = {
+            componentName: true, componentValue: true, componentManufacturer: true,
+            componentManufacturerPartNumber: true, componentLcscPart: true,
+            componentAddIntoPcb: true, componentBomInclude: true,
+            componentXy: true, componentRotation: true,
+            pinPinName: true, pinPinType: true, netPinCount: true,
+            includeTexts: false, includeBuses: false, includeNetLabels: false
+        };
+
+        var SCHEMATIC_FIELD_KEYS = Object.keys(DEFAULT_SCHEMATIC_FIELDS);
+
+        function applySchematicFieldsToForm(fields) {
+            var effective = Object.assign({}, DEFAULT_SCHEMATIC_FIELDS, fields || {});
+            for (var key of SCHEMATIC_FIELD_KEYS) {
+                var el = document.getElementById('sch-field-' + key);
+                if (el) el.checked = !!effective[key];
+            }
+        }
+
+        function readSchematicFieldsFromForm() {
+            var result = {};
+            for (var key of SCHEMATIC_FIELD_KEYS) {
+                var el = document.getElementById('sch-field-' + key);
+                result[key] = el ? !!el.checked : DEFAULT_SCHEMATIC_FIELDS[key];
+            }
+            return result;
+        }
+
+        function resetSchematicFieldsToDefault() {
+            applySchematicFieldsToForm(DEFAULT_SCHEMATIC_FIELDS);
+        }
+
+        function selectAllSchematicFields(checked) {
+            for (var key of SCHEMATIC_FIELD_KEYS) {
+                var el = document.getElementById('sch-field-' + key);
+                if (el) el.checked = checked;
+            }
+        }
+
+        function toggleConfigSection(el) {
+            var section = el.closest('.config-section');
+            if (!section) return;
+            var collapsed = section.classList.toggle('collapsed');
+            el.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        }
+
         function openConfigModal() {
             configModal.classList.add('active');
             publishMessage('ai-chat/request-config', {});
@@ -3232,12 +3386,20 @@
             document.getElementById('cfg-mcp-gateway-url').value = currentConfig.mcpGatewayUrl || '';
             document.getElementById('cfg-mcp-gateway-apikey').value = currentConfig.mcpGatewayApiKey || '';
             document.getElementById('cfg-mcp-auto-approve').checked = currentConfig.mcpAutoApprove !== false;
+            document.getElementById('cfg-custom-system-prompt').value = currentConfig.customSystemPrompt || '';
+            applySchematicFieldsToForm(currentConfig.schematicFields || {});
             updateToolsPreviewText();
         }
 
         function closeConfigModal() { configModal.classList.remove('active'); }
 
         function saveConfig() {
+            var customSystemPrompt = document.getElementById('cfg-custom-system-prompt').value.trim();
+            if (customSystemPrompt.length > 5000) {
+                addDebugLog('warn', '[配置] 自定义系统提示词超过 5000 字符限制 (' + customSystemPrompt.length + ')');
+                alert('自定义系统提示词最多 5000 字符，当前 ' + customSystemPrompt.length + ' 字符');
+                return;
+            }
             var config = {
                 provider: 'openai_compatible',
                 apiUrl: document.getElementById('cfg-apiurl').value,
@@ -3246,7 +3408,9 @@
                 mcpEnabled: !!document.getElementById('cfg-mcp-enabled').checked,
                 mcpGatewayUrl: document.getElementById('cfg-mcp-gateway-url').value.trim(),
                 mcpGatewayApiKey: document.getElementById('cfg-mcp-gateway-apikey').value.trim(),
-                mcpAutoApprove: !!document.getElementById('cfg-mcp-auto-approve').checked
+                mcpAutoApprove: !!document.getElementById('cfg-mcp-auto-approve').checked,
+                customSystemPrompt: customSystemPrompt,
+                schematicFields: readSchematicFieldsFromForm()
             };
             // 重置 bootstrap flag，允许配置变更后重新加载工具列表
             _toolsBootstrapped = false;

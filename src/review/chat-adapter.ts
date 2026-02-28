@@ -8,7 +8,7 @@
  * 4. 通过 onBlock 回调模拟流式事件，保持前端体验一致
  */
 
-import type { CollectedData, ConfigStore, UserMessage } from './types';
+import type { CollectedData, ConfigStore, SchematicFieldsConfig, UserMessage } from './types';
 import { chunkData } from './chunker';
 import { buildChatSystemPrompt } from './prompt-builder';
 import { extractReasoningFromDelta, getReasoningParams } from './reasoning-config';
@@ -83,10 +83,12 @@ export interface ChatMessage {
 export class ChatSession {
 	private history: ChatMessage[] = [];
 	private schematicContext: string = '';
+	private schematicFields?: SchematicFieldsConfig;
 
-	constructor(schematicData?: CollectedData) {
+	constructor(schematicData?: CollectedData, schematicFields?: SchematicFieldsConfig) {
+		this.schematicFields = schematicFields;
 		if (schematicData) {
-			const chunks = chunkData(schematicData, { maxPinsPerChunk: 1200 });
+			const chunks = chunkData(schematicData, { maxPinsPerChunk: 1200 }, this.schematicFields);
 			if (chunks.length > 0) {
 				this.schematicContext = JSON.stringify(chunks[0]);
 			}
@@ -130,11 +132,7 @@ export class ChatSession {
 	 * 如果末尾已是通知对则替换（因为数据摘要可能不同），避免 history 膨胀。
 	 */
 	setSchematicContext(data: CollectedData): void {
-		const chunks = chunkData(data, { maxPinsPerChunk: 1200 });
-		if (chunks.length > 0) {
-			this.schematicContext = JSON.stringify(chunks[0]);
-		}
-
+		this.updateSchematicContext(data);
 		// 如果已有对话历史，注入数据更新通知，让 AI 知道数据已变化
 		if (this.history.length > 0) {
 			const len = this.history.length;
@@ -179,6 +177,23 @@ export class ChatSession {
 	}
 
 	/**
+	 * 静默更新原理图上下文（不注入 history 通知，用于字段配置变更后刷新）
+	 */
+	updateSchematicContext(data: CollectedData): void {
+		const chunks = chunkData(data, { maxPinsPerChunk: 1200 }, this.schematicFields);
+		if (chunks.length > 0) {
+			this.schematicContext = JSON.stringify(chunks[0]);
+		}
+	}
+
+	/**
+	 * 更新原理图字段选择配置
+	 */
+	updateSchematicFields(fields: SchematicFieldsConfig): void {
+		this.schematicFields = fields;
+	}
+
+	/**
 	 * 重置会话（清空历史）
 	 */
 	reset(): void {
@@ -205,7 +220,15 @@ export class ChatSession {
 			throw createAbortReviewError('请求在发送前已取消', undefined, signal.reason);
 		}
 
-		const systemPrompt = buildChatSystemPrompt(this.schematicContext);
+		const systemPrompt = buildChatSystemPrompt(this.schematicContext, config.customSystemPrompt);
+		const customPromptTrimmed = typeof config.customSystemPrompt === 'string'
+			? config.customSystemPrompt.trim()
+			: '';
+		if (customPromptTrimmed) {
+			logDebug('info', '[sendMessage] 已启用自定义系统提示词', {
+				length: customPromptTrimmed.length,
+			});
+		}
 		const initialHistoryLength = this.history.length;
 
 		// 构建用户消息内容
