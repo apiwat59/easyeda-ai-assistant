@@ -3,7 +3,23 @@
  *
  * 从EDA API采集器件、引脚、导线、网络标记等数据
  */
-import type { CollectedData, CollectionMeta, RawBus, RawComponent, RawNet, RawPin, RawText } from './types';
+import type {
+	CollectedData,
+	CollectionMeta,
+	RawArc,
+	RawBus,
+	RawCircle,
+	RawComponent,
+	RawDrcResult,
+	RawNet,
+	RawNetLabel,
+	RawPin,
+	RawPolygon,
+	RawPrimitivePin,
+	RawProjectInfo,
+	RawRectangle,
+	RawText,
+} from './types';
 import { ErrorCode, ReviewError } from './types';
 
 /**
@@ -121,10 +137,18 @@ export async function collectSchematicData(): Promise<CollectedData> {
 		meta.expectedPageCount = pages.length;
 		log('info', `[采集] 检测到 ${pages.length} 个图页`);
 
-		// 先采集网表（全局数据，无需逐页）
+		// 先采集全局数据（无需逐页，与页面切换无关）
 		const t0 = Date.now();
-		const netlistRaw = await collectNetlist();
-		log('info', `[采集] 网表采集完成 (耗时 ${Date.now() - t0}ms)`);
+		const [netlistRaw, drcResult, projectInfo] = await Promise.all([
+			collectNetlist(),
+			collectDrcResult(),
+			collectProjectInfo(),
+		]);
+		log('info', `[采集] 全局数据采集完成 (耗时 ${Date.now() - t0}ms)`, {
+			hasNetlist: !!netlistRaw,
+			drcPassed: drcResult?.passed,
+			projectName: projectInfo?.projectName,
+		});
 
 		// 解析网表构建 pin-net 映射（全局）
 		const netlistMap = parseNetlist(netlistRaw);
@@ -137,15 +161,25 @@ export async function collectSchematicData(): Promise<CollectedData> {
 		let texts: RawText[] = [];
 		let buses: RawBus[] = [];
 		let netLabels: RawNetLabel[] = [];
+		let arcs: RawArc[] = [];
+		let circles: RawCircle[] = [];
+		let polygons: RawPolygon[] = [];
+		let rectangles: RawRectangle[] = [];
+		let primitivePins: RawPrimitivePin[] = [];
 
 		if (pages.length === 1) {
 			// 单页场景：无需切换
 			const t1 = Date.now();
-			const [wireData, pageTexts, pageBuses, pageNetLabels] = await Promise.all([
+			const [wireData, pageTexts, pageBuses, pageNetLabels, pageArcs, pageCircles, pagePolygons, pageRectangles, pagePrimitivePins] = await Promise.all([
 				collectWires(),
 				collectTexts({ schematicPageUuid: pages[0].uuid }),
 				collectBuses({ schematicPageUuid: pages[0].uuid }),
 				collectNetLabels({ schematicPageUuid: pages[0].uuid }),
+				collectArcs({ schematicPageUuid: pages[0].uuid }),
+				collectCircles({ schematicPageUuid: pages[0].uuid }),
+				collectPolygons({ schematicPageUuid: pages[0].uuid }),
+				collectRectangles({ schematicPageUuid: pages[0].uuid }),
+				collectPrimitivePins({ schematicPageUuid: pages[0].uuid }),
 			]);
 
 			allValidWires = wireData.validWires;
@@ -164,8 +198,13 @@ export async function collectSchematicData(): Promise<CollectedData> {
 			texts = pageTexts;
 			buses = pageBuses;
 			netLabels = pageNetLabels;
+			arcs = pageArcs;
+			circles = pageCircles;
+			polygons = pagePolygons;
+			rectangles = pageRectangles;
+			primitivePins = pagePrimitivePins;
 
-			log('info', `[采集] 单页数据采集完成: ${components.length} 器件, ${pins.length} 引脚, ${allValidWires.length + allEmptyWires.length} 导线, ${texts.length} 文本, ${buses.length} 总线, ${netLabels.length} 网络标记 (耗时 ${Date.now() - t1}ms)`);
+			log('info', `[采集] 单页数据采集完成: ${components.length} 器件, ${pins.length} 引脚, ${allValidWires.length + allEmptyWires.length} 导线, ${texts.length} 文本, ${buses.length} 总线, ${netLabels.length} 网络标记, ${arcs.length} 圆弧, ${circles.length} 圆, ${polygons.length} 多边形, ${rectangles.length} 矩形, ${primitivePins.length} 独立引脚 (耗时 ${Date.now() - t1}ms)`);
 			meta.collectedPageUuids = [pages[0].uuid];
 			meta.collectedPageCount = 1;
 		}
@@ -187,12 +226,17 @@ export async function collectSchematicData(): Promise<CollectedData> {
 
 					await eda.dmt_EditorControl.activateDocument(pageTabId);
 
-					// 先采集 Wire/Text/Bus/NetLabel
-					const [wireData, pageTexts, pageBuses, pageNetLabels] = await Promise.all([
+					// 先采集 Wire/Text/Bus/NetLabel/图形图元
+					const [wireData, pageTexts, pageBuses, pageNetLabels, pageArcs, pageCircles, pagePolygons, pageRectangles, pagePrimitivePins] = await Promise.all([
 						collectWires(),
 						collectTexts({ schematicPageUuid: page.uuid }),
 						collectBuses({ schematicPageUuid: page.uuid }),
 						collectNetLabels({ schematicPageUuid: page.uuid }),
+						collectArcs({ schematicPageUuid: page.uuid }),
+						collectCircles({ schematicPageUuid: page.uuid }),
+						collectPolygons({ schematicPageUuid: page.uuid }),
+						collectRectangles({ schematicPageUuid: page.uuid }),
+						collectPrimitivePins({ schematicPageUuid: page.uuid }),
 					]);
 
 					allValidWires.push(...wireData.validWires);
@@ -211,15 +255,20 @@ export async function collectSchematicData(): Promise<CollectedData> {
 					texts.push(...pageTexts);
 					buses.push(...pageBuses);
 					netLabels.push(...pageNetLabels);
+					arcs.push(...pageArcs);
+					circles.push(...pageCircles);
+					polygons.push(...pagePolygons);
+					rectangles.push(...pageRectangles);
+					primitivePins.push(...pagePrimitivePins);
 					meta.collectedPageUuids.push(page.uuid);
-					log('info', `[采集] 图页 ${i + 1}/${pages.length} (${page.name}): ${pageComponents.length} 器件, ${pagePins.length} 引脚, ${wireData.validWires.length + wireData.emptyWires.length} 导线, ${pageTexts.length} 文本, ${pageBuses.length} 总线, ${pageNetLabels.length} 网络标记 (耗时 ${Date.now() - pageStartTime}ms)`);
+					log('info', `[采集] 图页 ${i + 1}/${pages.length} (${page.name}): ${pageComponents.length} 器件, ${pagePins.length} 引脚, ${wireData.validWires.length + wireData.emptyWires.length} 导线, ${pageTexts.length} 文本, ${pageBuses.length} 总线, ${pageNetLabels.length} 网络标记, ${pageArcs.length} 圆弧, ${pageCircles.length} 圆, ${pagePolygons.length} 多边形, ${pageRectangles.length} 矩形, ${pagePrimitivePins.length} 独立引脚 (耗时 ${Date.now() - pageStartTime}ms)`);
 				}
 				catch (pageError) {
 					log('error', `[采集] 采集图页失败 ${i + 1}/${pages.length} (${page.name})`, pageError);
 					meta.missingPageUuids.push(page.uuid);
 				}
 			}
-			log('info', `[采集] 逐页采集完成: 总计 ${components.length} 器件, ${pins.length} 引脚, ${allValidWires.length + allEmptyWires.length} 导线, ${texts.length} 文本, ${buses.length} 总线, ${netLabels.length} 网络标记 (总耗时 ${Date.now() - t1}ms)`);
+			log('info', `[采集] 逐页采集完成: 总计 ${components.length} 器件, ${pins.length} 引脚, ${allValidWires.length + allEmptyWires.length} 导线, ${texts.length} 文本, ${buses.length} 总线, ${netLabels.length} 网络标记, ${arcs.length} 圆弧, ${circles.length} 圆, ${polygons.length} 多边形, ${rectangles.length} 矩形, ${primitivePins.length} 独立引脚 (总耗时 ${Date.now() - t1}ms)`);
 
 			meta.collectedPageCount = meta.collectedPageUuids.length;
 			if (meta.missingPageUuids.length > 0) {
@@ -270,6 +319,13 @@ export async function collectSchematicData(): Promise<CollectedData> {
 			texts,
 			buses,
 			netLabels,
+			arcs,
+			circles,
+			polygons,
+			rectangles,
+			primitivePins,
+			drcResult,
+			projectInfo,
 			netlistRaw,
 			timestamp: Date.now(),
 			meta,
@@ -1044,6 +1100,428 @@ async function collectNetLabels(
 		});
 		return [];
 	}
+}
+
+/**
+ * 采集 DRC 检查结果（全局，不依赖页面切换）
+ * 失败时降级为 undefined，不阻塞主流程
+ */
+async function collectDrcResult(): Promise<RawDrcResult | undefined> {
+	try {
+		const passed = await eda.sch_Drc.check(false, false);
+		return {
+			passed: !!passed,
+			strict: false,
+			timestamp: Date.now(),
+		};
+	}
+	catch (error) {
+		log('warn', '[采集] DRC 检查失败，已降级为 undefined', {
+			error: error instanceof Error ? error.message : String(error),
+		});
+		return undefined;
+	}
+}
+
+/**
+ * 采集当前工程元信息（全局，不依赖页面切换）
+ * 失败时降级为 undefined，不阻塞主流程
+ */
+async function collectProjectInfo(): Promise<RawProjectInfo | undefined> {
+	try {
+		const project = await eda.dmt_Project.getCurrentProjectInfo();
+		if (!project) {
+			return undefined;
+		}
+		return {
+			projectName: project.friendlyName || project.name || '',
+			projectDescription: project.description || undefined,
+			projectUuid: project.uuid,
+			timestamp: Date.now(),
+		};
+	}
+	catch (error) {
+		log('warn', '[采集] 工程元信息获取失败，已降级为 undefined', {
+			error: error instanceof Error ? error.message : String(error),
+		});
+		return undefined;
+	}
+}
+
+/**
+ * 采集圆弧图元
+ * 失败时降级为空数组，不阻塞主流程
+ */
+async function collectArcs(
+	options: CollectTextAndBusOptions = {},
+): Promise<RawArc[]> {
+	const { schematicPageUuid } = options;
+
+	try {
+		let failedCount = 0;
+		const arcPrimitives = await eda.sch_PrimitiveArc.getAll();
+
+		const arcTasks = arcPrimitives.map(arcPrimitive => async () => {
+			try {
+				const [primitiveId, startX, startY, referenceX, referenceY, endX, endY] = await Promise.all([
+					arcPrimitive.getState_PrimitiveId(),
+					arcPrimitive.getState_StartX(),
+					arcPrimitive.getState_StartY(),
+					arcPrimitive.getState_ReferenceX(),
+					arcPrimitive.getState_ReferenceY(),
+					arcPrimitive.getState_EndX(),
+					arcPrimitive.getState_EndY(),
+				]);
+
+				// 三点求外接圆计算圆弧几何参数
+				const geometry = deriveArcGeometry(startX, startY, referenceX, referenceY, endX, endY);
+				if (!geometry) {
+					failedCount++;
+					return null;
+				}
+
+				return {
+					primitiveId,
+					...geometry,
+					schematicPageUuid,
+				} as RawArc;
+			}
+			catch {
+				failedCount++;
+				return null;
+			}
+		});
+
+		const results = await promiseAllWithLimit(arcTasks, 50);
+		const filtered = results.filter((item): item is RawArc => item !== null);
+
+		if (failedCount > 0) {
+			log('warn', '[采集] 圆弧图元采集部分失败', {
+				failedCount,
+				total: arcPrimitives.length,
+				schematicPageUuid: schematicPageUuid || '(当前页)',
+			});
+		}
+
+		return filtered;
+	}
+	catch (error) {
+		log('warn', '[采集] 采集圆弧图元失败，已降级为空数组', {
+			error: error instanceof Error ? error.message : String(error),
+			schematicPageUuid: schematicPageUuid || '(当前页)',
+		});
+		return [];
+	}
+}
+
+/**
+ * 采集圆图元
+ * 失败时降级为空数组，不阻塞主流程
+ */
+async function collectCircles(
+	options: CollectTextAndBusOptions = {},
+): Promise<RawCircle[]> {
+	const { schematicPageUuid } = options;
+
+	try {
+		let failedCount = 0;
+		const circlePrimitives = await eda.sch_PrimitiveCircle.getAll();
+
+		const circleTasks = circlePrimitives.map(circlePrimitive => async () => {
+			try {
+				const [primitiveId, cx, cy, radius] = await Promise.all([
+					circlePrimitive.getState_PrimitiveId(),
+					circlePrimitive.getState_CenterX(),
+					circlePrimitive.getState_CenterY(),
+					circlePrimitive.getState_Radius(),
+				]);
+
+				return {
+					primitiveId,
+					cx,
+					cy,
+					radius,
+					schematicPageUuid,
+				} as RawCircle;
+			}
+			catch {
+				failedCount++;
+				return null;
+			}
+		});
+
+		const results = await promiseAllWithLimit(circleTasks, 50);
+		const filtered = results.filter((item): item is RawCircle => item !== null);
+
+		if (failedCount > 0) {
+			log('warn', '[采集] 圆图元采集部分失败', {
+				failedCount,
+				total: circlePrimitives.length,
+				schematicPageUuid: schematicPageUuid || '(当前页)',
+			});
+		}
+
+		return filtered;
+	}
+	catch (error) {
+		log('warn', '[采集] 采集圆图元失败，已降级为空数组', {
+			error: error instanceof Error ? error.message : String(error),
+			schematicPageUuid: schematicPageUuid || '(当前页)',
+		});
+		return [];
+	}
+}
+
+/**
+ * 采集多边形/折线图元
+ * 失败时降级为空数组，不阻塞主流程
+ */
+async function collectPolygons(
+	options: CollectTextAndBusOptions = {},
+): Promise<RawPolygon[]> {
+	const { schematicPageUuid } = options;
+
+	try {
+		let failedCount = 0;
+		const polygonPrimitives = await eda.sch_PrimitivePolygon.getAll();
+
+		const polygonTasks = polygonPrimitives.map(polygonPrimitive => async () => {
+			try {
+				const [primitiveId, line] = await Promise.all([
+					polygonPrimitive.getState_PrimitiveId(),
+					polygonPrimitive.getState_Line(),
+				]);
+
+				if (!line) {
+					return null;
+				}
+
+				// 将平坦的坐标数组转为点对数组
+				const points: number[][] = [];
+				const flatLine = Array.isArray(line[0]) ? (line as number[][]).flat() : line as number[];
+				for (let i = 0; i + 1 < flatLine.length; i += 2) {
+					points.push([flatLine[i], flatLine[i + 1]]);
+				}
+
+				if (points.length < 2) {
+					return null;
+				}
+
+				// 判断是否闭合（首尾点重合）
+				const first = points[0];
+				const last = points[points.length - 1];
+				const closed = points.length > 2 && first[0] === last[0] && first[1] === last[1];
+
+				return {
+					primitiveId,
+					points,
+					closed,
+					schematicPageUuid,
+				} as RawPolygon;
+			}
+			catch {
+				failedCount++;
+				return null;
+			}
+		});
+
+		const results = await promiseAllWithLimit(polygonTasks, 50);
+		const filtered = results.filter((item): item is RawPolygon => item !== null);
+
+		if (failedCount > 0) {
+			log('warn', '[采集] 多边形图元采集部分失败', {
+				failedCount,
+				total: polygonPrimitives.length,
+				schematicPageUuid: schematicPageUuid || '(当前页)',
+			});
+		}
+
+		return filtered;
+	}
+	catch (error) {
+		log('warn', '[采集] 采集多边形图元失败，已降级为空数组', {
+			error: error instanceof Error ? error.message : String(error),
+			schematicPageUuid: schematicPageUuid || '(当前页)',
+		});
+		return [];
+	}
+}
+
+/**
+ * 采集矩形图元
+ * 失败时降级为空数组，不阻塞主流程
+ */
+async function collectRectangles(
+	options: CollectTextAndBusOptions = {},
+): Promise<RawRectangle[]> {
+	const { schematicPageUuid } = options;
+
+	try {
+		let failedCount = 0;
+		const rectanglePrimitives = await eda.sch_PrimitiveRectangle.getAll();
+
+		const rectangleTasks = rectanglePrimitives.map(rectanglePrimitive => async () => {
+			try {
+				const [primitiveId, x, y, width, height] = await Promise.all([
+					rectanglePrimitive.getState_PrimitiveId(),
+					rectanglePrimitive.getState_TopLeftX(),
+					rectanglePrimitive.getState_TopLeftY(),
+					rectanglePrimitive.getState_Width(),
+					rectanglePrimitive.getState_Height(),
+				]);
+
+				return {
+					primitiveId,
+					x,
+					y,
+					width,
+					height,
+					schematicPageUuid,
+				} as RawRectangle;
+			}
+			catch {
+				failedCount++;
+				return null;
+			}
+		});
+
+		const results = await promiseAllWithLimit(rectangleTasks, 50);
+		const filtered = results.filter((item): item is RawRectangle => item !== null);
+
+		if (failedCount > 0) {
+			log('warn', '[采集] 矩形图元采集部分失败', {
+				failedCount,
+				total: rectanglePrimitives.length,
+				schematicPageUuid: schematicPageUuid || '(当前页)',
+			});
+		}
+
+		return filtered;
+	}
+	catch (error) {
+		log('warn', '[采集] 采集矩形图元失败，已降级为空数组', {
+			error: error instanceof Error ? error.message : String(error),
+			schematicPageUuid: schematicPageUuid || '(当前页)',
+		});
+		return [];
+	}
+}
+
+/**
+ * 采集独立引脚图元（不隶属于器件的引脚）
+ * 失败时降级为空数组，不阻塞主流程
+ */
+async function collectPrimitivePins(
+	options: CollectTextAndBusOptions = {},
+): Promise<RawPrimitivePin[]> {
+	const { schematicPageUuid } = options;
+
+	try {
+		let failedCount = 0;
+		const pinPrimitives = await eda.sch_PrimitivePin.getAll();
+
+		const pinTasks = pinPrimitives.map(pinPrimitive => async () => {
+			try {
+				const [primitiveId, pinNumber, pinName, pinType, x, y] = await Promise.all([
+					pinPrimitive.getState_PrimitiveId(),
+					pinPrimitive.getState_PinNumber(),
+					pinPrimitive.getState_PinName(),
+					pinPrimitive.getState_pinType(),
+					pinPrimitive.getState_X(),
+					pinPrimitive.getState_Y(),
+				]);
+
+				return {
+					primitiveId,
+					pinNumber: pinNumber || '',
+					pinName: pinName || '',
+					pinType: pinType !== undefined ? String(pinType) : '',
+					x,
+					y,
+					schematicPageUuid,
+				} as RawPrimitivePin;
+			}
+			catch {
+				failedCount++;
+				return null;
+			}
+		});
+
+		const results = await promiseAllWithLimit(pinTasks, 50);
+		const filtered = results.filter((item): item is RawPrimitivePin => item !== null);
+
+		if (failedCount > 0) {
+			log('warn', '[采集] 独立引脚图元采集部分失败', {
+				failedCount,
+				total: pinPrimitives.length,
+				schematicPageUuid: schematicPageUuid || '(当前页)',
+			});
+		}
+
+		return filtered;
+	}
+	catch (error) {
+		log('warn', '[采集] 采集独立引脚图元失败，已降级为空数组', {
+			error: error instanceof Error ? error.message : String(error),
+			schematicPageUuid: schematicPageUuid || '(当前页)',
+		});
+		return [];
+	}
+}
+
+/**
+ * 三点外接圆计算圆弧几何参数
+ * 通过起点、参考点、终点三个坐标推导圆心、半径和角度
+ */
+function deriveArcGeometry(
+	startX: number,
+	startY: number,
+	referenceX: number,
+	referenceY: number,
+	endX: number,
+	endY: number,
+): { cx: number; cy: number; radius: number; startAngle: number; endAngle: number } | null {
+	const determinant = 2 * (
+		startX * (referenceY - endY)
+		+ referenceX * (endY - startY)
+		+ endX * (startY - referenceY)
+	);
+
+	// 三点共线，无法构成圆弧
+	if (Math.abs(determinant) < 1e-6) {
+		return null;
+	}
+
+	const startSq = startX ** 2 + startY ** 2;
+	const refSq = referenceX ** 2 + referenceY ** 2;
+	const endSq = endX ** 2 + endY ** 2;
+
+	const cx = (
+		startSq * (referenceY - endY)
+		+ refSq * (endY - startY)
+		+ endSq * (startY - referenceY)
+	) / determinant;
+	const cy = (
+		startSq * (endX - referenceX)
+		+ refSq * (startX - endX)
+		+ endSq * (referenceX - startX)
+	) / determinant;
+
+	const radius = Math.sqrt((startX - cx) ** 2 + (startY - cy) ** 2);
+	if (!Number.isFinite(radius) || radius <= 0) {
+		return null;
+	}
+
+	const toDeg = (rad: number) => (rad * 180) / Math.PI;
+	const normalize = (angle: number) => {
+		const mod = angle % 360;
+		return mod < 0 ? mod + 360 : mod;
+	};
+
+	const startAngle = normalize(toDeg(Math.atan2(startY - cy, startX - cx)));
+	const endAngle = normalize(toDeg(Math.atan2(endY - cy, endX - cx)));
+
+	return { cx, cy, radius, startAngle, endAngle };
 }
 
 /**

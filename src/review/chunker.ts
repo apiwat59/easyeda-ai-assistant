@@ -179,7 +179,7 @@ function buildChunk(
 	);
 	const chunkNets = data.nets.filter(n => netNamesInChunk.has(n.netName));
 
-	// 构建分块数据（texts/buses/netLabels 只放在第一块）
+	// 构建分块数据（texts/buses/netLabels/图形图元/全局元信息 只放在第一块）
 	const chunkCollectedData: CollectedData = {
 		components,
 		pins: chunkPins,
@@ -190,6 +190,13 @@ function buildChunk(
 			texts: data.texts,
 			buses: data.buses,
 			netLabels: data.netLabels,
+			arcs: data.arcs,
+			circles: data.circles,
+			polygons: data.polygons,
+			rectangles: data.rectangles,
+			primitivePins: data.primitivePins,
+			drcResult: data.drcResult,
+			projectInfo: data.projectInfo,
 		}),
 	};
 

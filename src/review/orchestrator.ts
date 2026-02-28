@@ -359,6 +359,8 @@ async function executeBackgroundCollection(
 					pins: collected.pins.length,
 					nets: collected.nets.length,
 				},
+				drcPassed: collected.drcResult?.passed,
+				projectName: collected.projectInfo?.projectName,
 				timestamp: collected.timestamp,
 			});
 		}
@@ -555,6 +557,8 @@ async function scheduleNetlistBackfill(
 						pins: collected.pins.length,
 						nets: collected.nets.length,
 					},
+					drcPassed: collected.drcResult?.passed,
+					projectName: collected.projectInfo?.projectName,
 					timestamp: collected.timestamp,
 				});
 
@@ -615,6 +619,8 @@ function setupChatListeners(): void {
 					pins: cachedSchematicData.pins.length,
 					nets: cachedSchematicData.nets.length,
 				},
+				drcPassed: cachedSchematicData.drcResult?.passed,
+				projectName: cachedSchematicData.projectInfo?.projectName,
 				timestamp: cachedSchematicData.timestamp,
 			});
 		}
@@ -1646,6 +1652,8 @@ function cloneUserMessage(msg: UserMessage): UserMessage {
 		schematicData: msg.schematicData
 			? {
 					summary: { ...msg.schematicData.summary },
+					drcPassed: msg.schematicData.drcPassed,
+					projectName: msg.schematicData.projectName,
 					timestamp: msg.schematicData.timestamp,
 				}
 			: msg.schematicData,

@@ -1213,6 +1213,23 @@
                                     <label class="sch-field-item"><input type="checkbox" id="sch-field-includeNetLabels"> 网络标记(GND/VCC等)</label>
                                 </div>
                             </div>
+                            <div class="sch-fields-section">
+                                <div class="sch-fields-group-title">图形图元 <span class="sch-fields-badge">默认关闭</span></div>
+                                <div class="sch-fields-grid">
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includeArcs"> 圆弧</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includeCircles"> 圆</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includePolygons"> 多边形/折线</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includeRectangles"> 矩形</label>
+                                </div>
+                            </div>
+                            <div class="sch-fields-section">
+                                <div class="sch-fields-group-title">增强数据 <span class="sch-fields-badge">默认关闭</span></div>
+                                <div class="sch-fields-grid">
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includePrimitivePins"> 独立引脚</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includeDrc"> DRC 检查结果</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includeProjectInfo"> 工程信息</label>
+                                </div>
+                            </div>
                             <div class="form-hint">控制发给 AI 的原理图数据范围，减少字段可节省 Token</div>
                         </div>
                     </div>
@@ -3362,7 +3379,9 @@
             componentAddIntoPcb: true, componentBomInclude: true,
             componentXy: true, componentRotation: true,
             pinPinName: true, pinPinType: true, netPinCount: true,
-            includeTexts: false, includeBuses: false, includeNetLabels: false
+            includeTexts: false, includeBuses: false, includeNetLabels: false,
+            includeArcs: false, includeCircles: false, includePolygons: false, includeRectangles: false,
+            includePrimitivePins: false, includeDrc: false, includeProjectInfo: false
         };
 
         var SCHEMATIC_FIELD_KEYS = Object.keys(DEFAULT_SCHEMATIC_FIELDS);

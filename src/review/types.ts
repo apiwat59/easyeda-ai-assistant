@@ -36,7 +36,7 @@ export type SchPinFieldKey
 export type SchNetFieldKey = 'netName' | 'pinCount';
 
 export interface SchReviewChunk {
-	schema: 'sch-review-compact-v1';
+	schema: 'sch-review-compact-v1' | 'sch-review-compact-v2';
 	summary: {
 		totalComponents: number;
 		totalPins: number;
@@ -57,6 +57,15 @@ export interface SchReviewChunk {
 	texts?: Array<[string, string, number, number]>; // [primitiveId, content, x, y]
 	buses?: Array<[string, string, number[][]]>; // [primitiveId, busName, lines]
 	netLabels?: Array<[string, string, number, number, 'netflag' | 'netport']>; // [primitiveId, netName, x, y, type]
+	/** v2 图形图元 tuple 数据 */
+	arcs?: Array<[string, number, number, number, number, number]>; // [primitiveId, cx, cy, radius, startAngle, endAngle]
+	circles?: Array<[string, number, number, number]>; // [primitiveId, cx, cy, radius]
+	polygons?: Array<[string, number[][], boolean]>; // [primitiveId, points, closed]
+	rectangles?: Array<[string, number, number, number, number]>; // [primitiveId, x, y, width, height]
+	primitivePins?: Array<[string, string, string, string, number, number]>; // [primitiveId, pinNumber, pinName, pinType, x, y]
+	/** v2 独立顶层字段 */
+	drcResult?: RawDrcResult;
+	projectInfo?: RawProjectInfo;
 }
 
 // ============ 原始数据结构 ============
@@ -166,6 +175,84 @@ export interface RawNetLabel {
 }
 
 /**
+ * DRC 检查结果（全局，不依赖页面切换）
+ */
+export interface RawDrcResult {
+	passed: boolean;
+	strict: boolean;
+	timestamp: number;
+}
+
+/**
+ * 工程元信息（全局，不依赖页面切换）
+ */
+export interface RawProjectInfo {
+	projectName: string;
+	projectDescription?: string;
+	projectUuid: string;
+	timestamp: number;
+}
+
+/**
+ * 原始圆弧图元数据
+ */
+export interface RawArc {
+	primitiveId: string;
+	cx: number;
+	cy: number;
+	radius: number;
+	startAngle: number;
+	endAngle: number;
+	schematicPageUuid?: string;
+}
+
+/**
+ * 原始圆图元数据
+ */
+export interface RawCircle {
+	primitiveId: string;
+	cx: number;
+	cy: number;
+	radius: number;
+	schematicPageUuid?: string;
+}
+
+/**
+ * 原始多边形/折线图元数据
+ */
+export interface RawPolygon {
+	primitiveId: string;
+	points: number[][];
+	closed: boolean;
+	schematicPageUuid?: string;
+}
+
+/**
+ * 原始矩形图元数据
+ */
+export interface RawRectangle {
+	primitiveId: string;
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+	schematicPageUuid?: string;
+}
+
+/**
+ * 原始独立引脚图元数据（不隶属于器件的引脚）
+ */
+export interface RawPrimitivePin {
+	primitiveId: string;
+	pinNumber: string;
+	pinName: string;
+	pinType: string;
+	x: number;
+	y: number;
+	schematicPageUuid?: string;
+}
+
+/**
  * 采集的原始数据快照
  */
 export interface CollectedData {
@@ -174,8 +261,15 @@ export interface CollectedData {
 	nets: RawNet[];
 	texts?: RawText[];
 	buses?: RawBus[];
-	netLabels?: RawNetLabel[]; // 网络标记（GND、VCC 等）
-	netlistRaw?: string; // 原始网表字符串
+	netLabels?: RawNetLabel[];
+	arcs?: RawArc[];
+	circles?: RawCircle[];
+	polygons?: RawPolygon[];
+	rectangles?: RawRectangle[];
+	primitivePins?: RawPrimitivePin[];
+	drcResult?: RawDrcResult;
+	projectInfo?: RawProjectInfo;
+	netlistRaw?: string;
 	timestamp: number;
 	meta?: CollectionMeta;
 }
@@ -267,6 +361,15 @@ export interface SchematicFieldsConfig {
 	includeTexts?: boolean;
 	includeBuses?: boolean;
 	includeNetLabels?: boolean;
+	// 图形图元（默认不传）
+	includeArcs?: boolean;
+	includeCircles?: boolean;
+	includePolygons?: boolean;
+	includeRectangles?: boolean;
+	// 增强数据（默认不传）
+	includePrimitivePins?: boolean;
+	includeDrc?: boolean;
+	includeProjectInfo?: boolean;
 }
 
 /** 所有字段的默认值（true=默认传给AI，false=默认不传） */
@@ -286,6 +389,13 @@ export const DEFAULT_SCHEMATIC_FIELDS: Required<SchematicFieldsConfig> = {
 	includeTexts: false,
 	includeBuses: false,
 	includeNetLabels: false,
+	includeArcs: false,
+	includeCircles: false,
+	includePolygons: false,
+	includeRectangles: false,
+	includePrimitivePins: false,
+	includeDrc: false,
+	includeProjectInfo: false,
 };
 
 /**
@@ -348,6 +458,8 @@ export interface SchematicDataSummary {
 		pins: number;
 		nets: number;
 	};
+	drcPassed?: boolean;
+	projectName?: string;
 	timestamp: number;
 }
 

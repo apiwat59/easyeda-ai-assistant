@@ -48,6 +48,18 @@ export function serializeToCompactFormat(
 
 	const resolvedFields = resolveSchematicFields(fields);
 
+	// 判断是否存在 v2 扩展数据，决定 schema 版本
+	const hasV2Data = (
+		(resolvedFields.includeArcs && !!data.arcs?.length)
+		|| (resolvedFields.includeCircles && !!data.circles?.length)
+		|| (resolvedFields.includePolygons && !!data.polygons?.length)
+		|| (resolvedFields.includeRectangles && !!data.rectangles?.length)
+		|| (resolvedFields.includePrimitivePins && !!data.primitivePins?.length)
+		|| (resolvedFields.includeDrc && !!data.drcResult)
+		|| (resolvedFields.includeProjectInfo && !!data.projectInfo)
+	);
+	const schema = hasV2Data ? 'sch-review-compact-v2' as const : 'sch-review-compact-v1' as const;
+
 	// ---------- 构建器件字段顺序（designator 为核心字段，强制保留）----------
 	const componentFields: SchComponentFieldKey[] = ['designator'];
 	if (resolvedFields.componentName)
@@ -125,7 +137,7 @@ export function serializeToCompactFormat(
 
 	// ---------- 组装 chunk ----------
 	const chunk: SchReviewChunk = {
-		schema: 'sch-review-compact-v1',
+		schema,
 		summary: {
 			totalComponents: data.components.length,
 			totalPins: data.pins.length,
@@ -154,6 +166,36 @@ export function serializeToCompactFormat(
 
 	if (resolvedFields.includeNetLabels && data.netLabels && data.netLabels.length > 0) {
 		chunk.netLabels = data.netLabels.map(l => [l.primitiveId, l.netName, l.x, l.y, l.type]);
+	}
+
+	// ---------- v2 图形图元 tuple 数据 ----------
+	if (resolvedFields.includeArcs && data.arcs && data.arcs.length > 0) {
+		chunk.arcs = data.arcs.map(a => [a.primitiveId, a.cx, a.cy, a.radius, a.startAngle, a.endAngle]);
+	}
+
+	if (resolvedFields.includeCircles && data.circles && data.circles.length > 0) {
+		chunk.circles = data.circles.map(c => [c.primitiveId, c.cx, c.cy, c.radius]);
+	}
+
+	if (resolvedFields.includePolygons && data.polygons && data.polygons.length > 0) {
+		chunk.polygons = data.polygons.map(p => [p.primitiveId, p.points, p.closed]);
+	}
+
+	if (resolvedFields.includeRectangles && data.rectangles && data.rectangles.length > 0) {
+		chunk.rectangles = data.rectangles.map(r => [r.primitiveId, r.x, r.y, r.width, r.height]);
+	}
+
+	if (resolvedFields.includePrimitivePins && data.primitivePins && data.primitivePins.length > 0) {
+		chunk.primitivePins = data.primitivePins.map(p => [p.primitiveId, p.pinNumber, p.pinName, p.pinType, p.x, p.y]);
+	}
+
+	// ---------- v2 独立顶层字段 ----------
+	if (resolvedFields.includeDrc && data.drcResult) {
+		chunk.drcResult = { ...data.drcResult };
+	}
+
+	if (resolvedFields.includeProjectInfo && data.projectInfo) {
+		chunk.projectInfo = { ...data.projectInfo };
 	}
 
 	return chunk;

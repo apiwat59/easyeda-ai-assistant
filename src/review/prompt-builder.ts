@@ -141,12 +141,14 @@ export function buildChatSystemPrompt(
 
 ## 原理图数据格式
 
-当用户提供原理图数据时，为 SCH-REVIEW-COMPACT v1 紧凑格式：
+当用户提供原理图数据时，为 SCH-REVIEW-COMPACT v1/v2 紧凑格式：
 - fields 对象定义了每类 tuple 数组的列顺序，请以此为准解析数据
 - components：器件 tuple 数组，列顺序见 fields.components
 - pins：引脚 tuple 数组，列顺序见 fields.pins
 - nets：网络 tuple 数组，列顺序见 fields.nets
 - 可能包含 texts（文本标注）、buses（总线）、netLabels（GND/VCC等网络标记）可选数据
+- v2 扩展：可能包含 arcs（圆弧 [id,cx,cy,r,startAngle,endAngle]）、circles（圆 [id,cx,cy,r]）、polygons（多边形 [id,points,closed]）、rectangles（矩形 [id,x,y,w,h]）、primitivePins（独立引脚 [id,pinNumber,pinName,pinType,x,y]）
+- v2 扩展：可能包含 drcResult（DRC检查结果，含 passed/strict/timestamp）和 projectInfo（工程元信息，含 projectName/projectUuid）
 
 引脚类型包括：IN(输入)、OUT(输出)、BI(双向)、Passive(无源)、Power(电源)、Ground(地)等。`;
 
