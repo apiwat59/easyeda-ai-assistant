@@ -1098,6 +1098,30 @@
                     </button>
                     <div class="config-section-body">
                         <div class="form-group">
+                            <label class="form-label">API 预设</label>
+                            <select class="form-control" id="cfg-api-preset" onchange="applyApiPreset()">
+                                <option value="custom" selected>自定义</option>
+                                <optgroup label="── 国际服务商 ──">
+                                    <option value="openai">OpenAI 官方</option>
+                                    <option value="deepseek">DeepSeek</option>
+                                    <option value="openrouter">OpenRouter (聚合平台)</option>
+                                    <option value="groq">Groq (高速推理)</option>
+                                    <option value="xai">xAI Grok</option>
+                                    <option value="mistral">Mistral AI</option>
+                                    <option value="gemini">Google Gemini</option>
+                                </optgroup>
+                                <optgroup label="── 国内服务商 ──">
+                                    <option value="qwen">阿里通义千问</option>
+                                    <option value="glm">智谱 GLM</option>
+                                    <option value="kimi">月之暗面 Kimi</option>
+                                    <option value="siliconflow">硅基流动 (聚合平台)</option>
+                                    <option value="doubao">火山引擎豆包</option>
+                                    <option value="yi">零一万物 Yi</option>
+                                </optgroup>
+                            </select>
+                            <div class="form-hint">选择后自动填充 API 地址和推荐模型，仍可手动修改</div>
+                        </div>
+                        <div class="form-group">
                             <label class="form-label">API 地址</label>
                             <input type="text" class="form-control" id="cfg-apiurl" placeholder="https://api.openai.com/v1/chat/completions">
                             <div class="form-hint">OpenAI 兼容的 Chat Completions 接口地址</div>
@@ -1870,6 +1894,8 @@
                 document.getElementById('cfg-mcp-auto-approve').checked = data.mcpAutoApprove !== false;
                 document.getElementById('cfg-custom-system-prompt').value = data.customSystemPrompt || '';
                 applySchematicFieldsToForm(data.schematicFields || {});
+                var presetEl = document.getElementById('cfg-api-preset');
+                if (presetEl) presetEl.value = 'custom';
             }
             // 仅首次收到配置且 MCP 已启用时触发一次工具列表请求
             if (data.mcpEnabled && !_toolsBootstrapped) {
@@ -3376,6 +3402,31 @@
             el.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
         }
 
+        var API_PRESETS = {
+            openai:      { url: 'https://api.openai.com/v1/chat/completions',                              model: 'gpt-5.2' },
+            deepseek:    { url: 'https://api.deepseek.com/chat/completions',                                model: 'deepseek-chat' },
+            openrouter:  { url: 'https://openrouter.ai/api/v1/chat/completions',                            model: 'anthropic/claude-sonnet-4.6' },
+            groq:        { url: 'https://api.groq.com/openai/v1/chat/completions',                          model: 'qwen/qwen3-32b' },
+            xai:         { url: 'https://api.x.ai/v1/chat/completions',                                     model: 'grok-4.20-beta' },
+            mistral:     { url: 'https://api.mistral.ai/v1/chat/completions',                                model: 'mistral-large-latest' },
+            gemini:      { url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',  model: 'gemini-3-flash' },
+            qwen:        { url: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',       model: 'qwen3.5-plus' },
+            glm:         { url: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',                    model: 'glm-4.7' },
+            kimi:        { url: 'https://api.moonshot.cn/v1/chat/completions',                               model: 'kimi-k2.5' },
+            siliconflow: { url: 'https://api.siliconflow.cn/v1/chat/completions',                            model: 'deepseek-ai/DeepSeek-V3' },
+            doubao:      { url: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions',                 model: 'doubao-seed-2-0-pro' },
+            yi:          { url: 'https://api.lingyiwanwu.com/v1/chat/completions',                           model: 'yi-large' }
+        };
+
+        function applyApiPreset() {
+            var sel = document.getElementById('cfg-api-preset');
+            if (!sel || sel.value === 'custom') return;
+            var p = API_PRESETS[sel.value];
+            if (!p) return;
+            document.getElementById('cfg-apiurl').value = p.url;
+            document.getElementById('cfg-model').value  = p.model;
+        }
+
         function openConfigModal() {
             configModal.classList.add('active');
             publishMessage('ai-chat/request-config', {});
@@ -3389,6 +3440,7 @@
             document.getElementById('cfg-custom-system-prompt').value = currentConfig.customSystemPrompt || '';
             applySchematicFieldsToForm(currentConfig.schematicFields || {});
             updateToolsPreviewText();
+            document.getElementById('cfg-api-preset').value = 'custom';
         }
 
         function closeConfigModal() { configModal.classList.remove('active'); }
