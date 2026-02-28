@@ -1107,17 +1107,25 @@ async function collectNetLabels(
  * 失败时降级为 undefined，不阻塞主流程
  */
 async function collectDrcResult(): Promise<RawDrcResult | undefined> {
+	const t0 = Date.now();
+	log('info', '[采集] 开始采集 DRC 检查结果...');
+
 	try {
 		const passed = await eda.sch_Drc.check(false, false);
-		return {
+		const result: RawDrcResult = {
 			passed: !!passed,
 			strict: false,
 			timestamp: Date.now(),
 		};
+		log('info', `[采集] DRC 检查完成 (耗时 ${Date.now() - t0}ms)`, {
+			passed: result.passed,
+		});
+		return result;
 	}
 	catch (error) {
 		log('warn', '[采集] DRC 检查失败，已降级为 undefined', {
 			error: error instanceof Error ? error.message : String(error),
+			elapsed: Date.now() - t0,
 		});
 		return undefined;
 	}
@@ -1128,21 +1136,33 @@ async function collectDrcResult(): Promise<RawDrcResult | undefined> {
  * 失败时降级为 undefined，不阻塞主流程
  */
 async function collectProjectInfo(): Promise<RawProjectInfo | undefined> {
+	const t0 = Date.now();
+	log('info', '[采集] 开始采集工程元信息...');
+
 	try {
 		const project = await eda.dmt_Project.getCurrentProjectInfo();
 		if (!project) {
+			log('warn', '[采集] 工程元信息为空，已降级为 undefined', {
+				elapsed: Date.now() - t0,
+			});
 			return undefined;
 		}
-		return {
+		const result: RawProjectInfo = {
 			projectName: project.friendlyName || project.name || '',
 			projectDescription: project.description || undefined,
 			projectUuid: project.uuid,
 			timestamp: Date.now(),
 		};
+		log('info', `[采集] 工程元信息采集完成 (耗时 ${Date.now() - t0}ms)`, {
+			projectName: result.projectName,
+			projectUuid: result.projectUuid,
+		});
+		return result;
 	}
 	catch (error) {
 		log('warn', '[采集] 工程元信息获取失败，已降级为 undefined', {
 			error: error instanceof Error ? error.message : String(error),
+			elapsed: Date.now() - t0,
 		});
 		return undefined;
 	}
@@ -1156,9 +1176,11 @@ async function collectArcs(
 	options: CollectTextAndBusOptions = {},
 ): Promise<RawArc[]> {
 	const { schematicPageUuid } = options;
+	const t0 = Date.now();
 
 	try {
 		let failedCount = 0;
+		let deriveFailedCount = 0;
 		const arcPrimitives = await eda.sch_PrimitiveArc.getAll();
 
 		const arcTasks = arcPrimitives.map(arcPrimitive => async () => {
@@ -1177,6 +1199,7 @@ async function collectArcs(
 				const geometry = deriveArcGeometry(startX, startY, referenceX, referenceY, endX, endY);
 				if (!geometry) {
 					failedCount++;
+					deriveFailedCount++;
 					return null;
 				}
 
@@ -1198,16 +1221,20 @@ async function collectArcs(
 		if (failedCount > 0) {
 			log('warn', '[采集] 圆弧图元采集部分失败', {
 				failedCount,
+				deriveFailedCount,
 				total: arcPrimitives.length,
 				schematicPageUuid: schematicPageUuid || '(当前页)',
 			});
 		}
+
+		log('info', `[采集] 圆弧图元采集完成: 总数=${arcPrimitives.length}, 成功=${filtered.length}, 失败=${failedCount} (几何推导失败=${deriveFailedCount}), 耗时=${Date.now() - t0}ms`);
 
 		return filtered;
 	}
 	catch (error) {
 		log('warn', '[采集] 采集圆弧图元失败，已降级为空数组', {
 			error: error instanceof Error ? error.message : String(error),
+			elapsed: Date.now() - t0,
 			schematicPageUuid: schematicPageUuid || '(当前页)',
 		});
 		return [];
@@ -1222,6 +1249,7 @@ async function collectCircles(
 	options: CollectTextAndBusOptions = {},
 ): Promise<RawCircle[]> {
 	const { schematicPageUuid } = options;
+	const t0 = Date.now();
 
 	try {
 		let failedCount = 0;
@@ -1261,11 +1289,14 @@ async function collectCircles(
 			});
 		}
 
+		log('info', `[采集] 圆图元采集完成: 总数=${circlePrimitives.length}, 成功=${filtered.length}, 失败=${failedCount}, 耗时=${Date.now() - t0}ms`);
+
 		return filtered;
 	}
 	catch (error) {
 		log('warn', '[采集] 采集圆图元失败，已降级为空数组', {
 			error: error instanceof Error ? error.message : String(error),
+			elapsed: Date.now() - t0,
 			schematicPageUuid: schematicPageUuid || '(当前页)',
 		});
 		return [];
@@ -1280,9 +1311,12 @@ async function collectPolygons(
 	options: CollectTextAndBusOptions = {},
 ): Promise<RawPolygon[]> {
 	const { schematicPageUuid } = options;
+	const t0 = Date.now();
 
 	try {
 		let failedCount = 0;
+		let invalidLineCount = 0;
+		let tooFewPointsCount = 0;
 		const polygonPrimitives = await eda.sch_PrimitivePolygon.getAll();
 
 		const polygonTasks = polygonPrimitives.map(polygonPrimitive => async () => {
@@ -1293,6 +1327,7 @@ async function collectPolygons(
 				]);
 
 				if (!line) {
+					invalidLineCount++;
 					return null;
 				}
 
@@ -1304,6 +1339,7 @@ async function collectPolygons(
 				}
 
 				if (points.length < 2) {
+					tooFewPointsCount++;
 					return null;
 				}
 
@@ -1336,11 +1372,23 @@ async function collectPolygons(
 			});
 		}
 
+		if (invalidLineCount > 0 || tooFewPointsCount > 0) {
+			log('warn', '[采集] 多边形图元存在无效几何数据', {
+				invalidLineCount,
+				tooFewPointsCount,
+				total: polygonPrimitives.length,
+				schematicPageUuid: schematicPageUuid || '(当前页)',
+			});
+		}
+
+		log('info', `[采集] 多边形图元采集完成: 总数=${polygonPrimitives.length}, 成功=${filtered.length}, 失败=${failedCount}, 无效line=${invalidLineCount}, 点数不足=${tooFewPointsCount}, 耗时=${Date.now() - t0}ms`);
+
 		return filtered;
 	}
 	catch (error) {
 		log('warn', '[采集] 采集多边形图元失败，已降级为空数组', {
 			error: error instanceof Error ? error.message : String(error),
+			elapsed: Date.now() - t0,
 			schematicPageUuid: schematicPageUuid || '(当前页)',
 		});
 		return [];
@@ -1355,6 +1403,7 @@ async function collectRectangles(
 	options: CollectTextAndBusOptions = {},
 ): Promise<RawRectangle[]> {
 	const { schematicPageUuid } = options;
+	const t0 = Date.now();
 
 	try {
 		let failedCount = 0;
@@ -1396,11 +1445,14 @@ async function collectRectangles(
 			});
 		}
 
+		log('info', `[采集] 矩形图元采集完成: 总数=${rectanglePrimitives.length}, 成功=${filtered.length}, 失败=${failedCount}, 耗时=${Date.now() - t0}ms`);
+
 		return filtered;
 	}
 	catch (error) {
 		log('warn', '[采集] 采集矩形图元失败，已降级为空数组', {
 			error: error instanceof Error ? error.message : String(error),
+			elapsed: Date.now() - t0,
 			schematicPageUuid: schematicPageUuid || '(当前页)',
 		});
 		return [];
@@ -1415,6 +1467,7 @@ async function collectPrimitivePins(
 	options: CollectTextAndBusOptions = {},
 ): Promise<RawPrimitivePin[]> {
 	const { schematicPageUuid } = options;
+	const t0 = Date.now();
 
 	try {
 		let failedCount = 0;
@@ -1458,11 +1511,14 @@ async function collectPrimitivePins(
 			});
 		}
 
+		log('info', `[采集] 独立引脚图元采集完成: 总数=${pinPrimitives.length}, 成功=${filtered.length}, 失败=${failedCount}, 耗时=${Date.now() - t0}ms`);
+
 		return filtered;
 	}
 	catch (error) {
 		log('warn', '[采集] 采集独立引脚图元失败，已降级为空数组', {
 			error: error instanceof Error ? error.message : String(error),
+			elapsed: Date.now() - t0,
 			schematicPageUuid: schematicPageUuid || '(当前页)',
 		});
 		return [];
