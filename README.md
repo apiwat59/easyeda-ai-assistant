@@ -56,6 +56,30 @@
 
 ---
 
+## 📸 界面展示
+
+### AI 对话分析
+> 与 AI 自由对话，讨论原理图中的芯片选型、电路设计等问题
+
+![AI 对话界面](screenshots/screenshot-1.png)
+
+### 引脚级精准分析
+> AI 能精确分析每个引脚的连接关系，指出悬空引脚和潜在问题
+
+![引脚分析功能](screenshots/screenshot-2.png)
+
+### 联网搜索 Datasheet
+> 遇到不熟悉的芯片，AI 自动联网搜索数据手册，给出专业建议
+
+![联网搜索能力](screenshots/screenshot-3.png)
+
+### MCP 工具集成
+> 支持 MCP 协议，集成 web_search、web_fetch 等工具，增强 AI 的信息获取能力
+
+![MCP 工具集成](screenshots/screenshot-4.png)
+
+---
+
 ## ✨ 功能特性
 
 ### 🆕 v1.1.0 新特性
