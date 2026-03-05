@@ -23,16 +23,6 @@ setDebugLog((level: string, message: string, data?: any) => {
 });
 
 /**
- * 按 sessionId 维护对话会话（替代单一全局 chatSession）
- */
-const chatSessions = new Map<string, ChatSession>();
-
-/**
- * 按 sessionId 维护 ToolOrchestrator 实例（避免重复创建和 initialize）
- */
-const toolOrchestratorsBySession = new Map<string, ToolOrchestrator>();
-
-/**
  * 进行中请求的状态（按 requestId 隔离）
  */
 interface PendingRequestState {
@@ -41,8 +31,6 @@ interface PendingRequestState {
 	thinkingAccumulated: string;
 	textAccumulated: string;
 }
-
-const pendingRequests = new Map<string, PendingRequestState>();
 
 /**
  * 请求处理结果类型
@@ -121,42 +109,27 @@ class RequestGuard {
 	}
 }
 
-/** 全局唯一的请求防重守卫（不暴露 clear/reset，避免外部误清空） */
-const requestGuard = new RequestGuard();
-
 /**
- * 记录每个会话最后一条用户消息（用于重新生成）
- */
-const lastUserMessageBySession = new Map<string, UserMessage>();
-
-/**
- * 缓存的原理图数据
- */
-let cachedSchematicData: CollectedData | null = null;
-
-/**
- * MessageBus订阅引用
- */
-const subscriptions: Array<{ cancel: () => void }> = [];
-
-/**
- * 订阅版本号（每次 setupChatListeners 递增）
+ * 编排器全局共享状态（跨 EDA 多实例）
  *
- * EDA MessageBus 的 cancel() 可能无法取消已排队但未执行的回调。
- * 通过版本号机制确保旧版本订阅产生的回调在执行时被丢弃。
+ * EDA 平台会加载本模块多次（多个独立实例），模块级变量在各实例间不共享。
+ * 将关键状态统一收敛到 globalThis 下的单一对象，确保所有实例操作同一份状态。
  */
-let listenerEpoch = 0;
+interface OrchestratorState {
+	chatSessions: Map<string, ChatSession>;
+	toolOrchestratorsBySession: Map<string, ToolOrchestrator>;
+	pendingRequests: Map<string, PendingRequestState>;
+	requestGuard: RequestGuard;
+	lastUserMessageBySession: Map<string, UserMessage>;
+	cachedSchematicData: CollectedData | null;
+	subscriptions: Array<{ cancel: () => void }>;
+	listenerEpoch: number;
+	toolListCache: { tools: Array<{ name: string; description: string }>; timestamp: number } | null;
+	toolListInflight: Promise<Array<{ name: string; description: string }>> | null;
+	startAIChatInFlight: boolean;
+}
 
-/**
- * MCP 工具列表缓存（避免重复 initialize 请求）
- */
-let toolListCache: { tools: Array<{ name: string; description: string }>; timestamp: number } | null = null;
 const TOOL_CACHE_TTL_MS = 10_000; // 10 秒缓存有效期
-
-/**
- * 正在进行的工具列表请求（用于合并并发请求）
- */
-let toolListInflight: Promise<Array<{ name: string; description: string }>> | null = null;
 
 /**
  * 后台采集 single-flight 调度状态（跨实例全局锁）
@@ -170,7 +143,36 @@ declare global {
 		rerunNotify: boolean;
 		epoch: number;
 	} | undefined;
+	// eslint-disable-next-line vars-on-top
+	var __aiSchReview_orchestratorState: OrchestratorState | undefined;
 }
+
+/**
+ * 获取跨实例共享的编排器状态（与 getGlobalCollectionLock 同模式）
+ *
+ * 首次调用时在 globalThis 上创建唯一实例，后续所有模块实例共享同一份状态。
+ */
+function getOrchestratorState(): OrchestratorState {
+	if (!globalThis.__aiSchReview_orchestratorState) {
+		globalThis.__aiSchReview_orchestratorState = {
+			chatSessions: new Map<string, ChatSession>(),
+			toolOrchestratorsBySession: new Map<string, ToolOrchestrator>(),
+			pendingRequests: new Map<string, PendingRequestState>(),
+			requestGuard: new RequestGuard(),
+			lastUserMessageBySession: new Map<string, UserMessage>(),
+			cachedSchematicData: null,
+			subscriptions: [],
+			listenerEpoch: 0,
+			toolListCache: null,
+			toolListInflight: null,
+			startAIChatInFlight: false,
+		};
+	}
+	return globalThis.__aiSchReview_orchestratorState;
+}
+
+/** 模块顶层取得全局状态引用（所有实例共享同一个对象） */
+const state = getOrchestratorState();
 
 function getGlobalCollectionLock() {
 	if (!globalThis.__aiSchReview_collectionLock) {
@@ -194,20 +196,15 @@ export function isCollectionInProgress(): boolean {
 }
 
 /**
- * startAIChat 重入锁（防止用户快速双击菜单导致多次注册订阅）
- */
-let startAIChatInFlight = false;
-
-/**
  * 启动AI对话面板
  */
 export async function startAIChat(): Promise<void> {
 	// 防重入：openIFrame 是异步调用，双击菜单会导致两次调用并发执行
-	if (startAIChatInFlight) {
+	if (state.startAIChatInFlight) {
 		publishDebugLog('warn', '[startAIChat] 忽略重复调用（上次尚未完成）');
 		return;
 	}
-	startAIChatInFlight = true;
+	state.startAIChatInFlight = true;
 
 	try {
 		// 从配置读取窗口尺寸
@@ -236,7 +233,7 @@ export async function startAIChat(): Promise<void> {
 		void triggerBackgroundCollection('start-ai-chat', true);
 	}
 	finally {
-		startAIChatInFlight = false;
+		state.startAIChatInFlight = false;
 	}
 }
 
@@ -328,10 +325,10 @@ async function executeBackgroundCollection(
 			return;
 		}
 
-		cachedSchematicData = collected;
+		state.cachedSchematicData = collected;
 
 		// 将原理图数据注入所有已存在的会话
-		for (const session of chatSessions.values()) {
+		for (const session of state.chatSessions.values()) {
 			session.setSchematicContext(collected);
 		}
 
@@ -543,10 +540,10 @@ async function scheduleNetlistBackfill(
 			// 更新缓存数据（如果 epoch 仍然有效）
 			const lock = getGlobalCollectionLock();
 			if (epoch === lock.epoch) {
-				cachedSchematicData = collected;
+				state.cachedSchematicData = collected;
 
 				// 将更新后的数据注入所有已存在的会话
-				for (const session of chatSessions.values()) {
+				for (const session of state.chatSessions.values()) {
 					session.setSchematicContext(collected);
 				}
 
@@ -599,11 +596,11 @@ async function scheduleNetlistBackfill(
 function setupChatListeners(): void {
 	// 幂等保护：如果已有订阅存在，说明 startAIChat 被重复调用（如用户多次点击菜单）
 	// 仅清理并重新注册即可，但需注意 EDA MessageBus 的 cancel 可能不完全生效
-	const prevCount = subscriptions.length;
+	const prevCount = state.subscriptions.length;
 	cleanupSubscriptions();
 
 	// 递增版本号，使旧回调在执行时自动失效
-	const currentEpoch = ++listenerEpoch;
+	const currentEpoch = ++state.listenerEpoch;
 	publishDebugLog('info', '[setupChatListeners] 初始化订阅', {
 		previousSubscriptionCount: prevCount,
 		listenerEpoch: currentEpoch,
@@ -612,16 +609,16 @@ function setupChatListeners(): void {
 
 	// 监听IFrame请求原理图数据
 	subscribe(CHAT_TOPICS.REQUEST_DATA, () => {
-		if (cachedSchematicData) {
+		if (state.cachedSchematicData) {
 			publishToIFrame(CHAT_TOPICS.SCHEMATIC_DATA, {
 				summary: {
-					components: cachedSchematicData.components.length,
-					pins: cachedSchematicData.pins.length,
-					nets: cachedSchematicData.nets.length,
+					components: state.cachedSchematicData.components.length,
+					pins: state.cachedSchematicData.pins.length,
+					nets: state.cachedSchematicData.nets.length,
 				},
-				drcPassed: cachedSchematicData.drcResult?.passed,
-				projectName: cachedSchematicData.projectInfo?.projectName,
-				timestamp: cachedSchematicData.timestamp,
+				drcPassed: state.cachedSchematicData.drcResult?.passed,
+				projectName: state.cachedSchematicData.projectInfo?.projectName,
+				timestamp: state.cachedSchematicData.timestamp,
 			});
 		}
 		else {
@@ -685,26 +682,26 @@ function setupChatListeners(): void {
 		}
 
 		// 1. 命中缓存则直接返回
-		if (toolListCache && (Date.now() - toolListCache.timestamp < TOOL_CACHE_TTL_MS)) {
+		if (state.toolListCache && (Date.now() - state.toolListCache.timestamp < TOOL_CACHE_TTL_MS)) {
 			publishToIFrame('ai-chat/debug-log', {
 				level: 'info',
-				message: `[REQUEST_TOOLS] 缓存命中，直接返回 ${toolListCache.tools.length} 个工具 (requestId=${incomingRequestId})`,
+				message: `[REQUEST_TOOLS] 缓存命中，直接返回 ${state.toolListCache.tools.length} 个工具 (requestId=${incomingRequestId})`,
 			});
 			publishToIFrame(CHAT_TOPICS.TOOLS_DATA, {
 				enabled: true,
-				tools: toolListCache.tools,
+				tools: state.toolListCache.tools,
 			});
 			return;
 		}
 
 		// 2. 合并并发请求：如果已有 in-flight 请求，复用它
-		if (toolListInflight) {
+		if (state.toolListInflight) {
 			publishToIFrame('ai-chat/debug-log', {
 				level: 'info',
 				message: `[REQUEST_TOOLS] 合并到已有 inflight 请求 (requestId=${incomingRequestId})`,
 			});
 			try {
-				const tools = await toolListInflight;
+				const tools = await state.toolListInflight;
 				publishToIFrame(CHAT_TOPICS.TOOLS_DATA, { enabled: true, tools });
 			}
 			catch (error) {
@@ -743,24 +740,24 @@ function setupChatListeners(): void {
 			debugEmitter,
 		);
 
-		toolListInflight = toolOrchestrator.listTools()
+		state.toolListInflight = toolOrchestrator.listTools()
 			.then((tools) => {
 				const mapped = tools.map(tool => ({
 					name: tool.function.name,
 					description: tool.function.description || '',
 				}));
 				// 更新缓存
-				toolListCache = { tools: mapped, timestamp: Date.now() };
+				state.toolListCache = { tools: mapped, timestamp: Date.now() };
 				publishToIFrame('ai-chat/debug-log', {
 					level: 'success',
 					message: `[REQUEST_TOOLS] 工具列表拉取成功，已缓存 ${mapped.length} 个工具`,
 				});
 				return mapped;
 			})
-			.finally(() => { toolListInflight = null; });
+			.finally(() => { state.toolListInflight = null; });
 
 		try {
-			const tools = await toolListInflight;
+			const tools = await state.toolListInflight;
 			publishToIFrame(CHAT_TOPICS.TOOLS_DATA, { enabled: true, tools: tools ?? [] });
 		}
 		catch (error) {
@@ -781,10 +778,10 @@ function setupChatListeners(): void {
 		if (!data || typeof data !== 'object')
 			return;
 		// epoch 校验：丢弃旧版本订阅产生的回调（EDA MessageBus cancel 可能不彻底）
-		if (currentEpoch !== listenerEpoch) {
+		if (currentEpoch !== state.listenerEpoch) {
 			publishDebugLog('warn', '[USER_MESSAGE] 丢弃过期订阅回调', {
 				callbackEpoch: currentEpoch,
-				currentEpoch: listenerEpoch,
+				currentEpoch: state.listenerEpoch,
 				requestId: (data as any)?.requestId,
 			});
 			return;
@@ -796,10 +793,10 @@ function setupChatListeners(): void {
 	subscribe(CHAT_TOPICS.ABORT_REQUEST, (data: any) => {
 		if (!data || typeof data !== 'object')
 			return;
-		if (currentEpoch !== listenerEpoch) {
+		if (currentEpoch !== state.listenerEpoch) {
 			publishDebugLog('warn', '[ABORT_REQUEST] 丢弃过期订阅回调', {
 				callbackEpoch: currentEpoch,
-				currentEpoch: listenerEpoch,
+				currentEpoch: state.listenerEpoch,
 			});
 			return;
 		}
@@ -810,10 +807,10 @@ function setupChatListeners(): void {
 	subscribe(CHAT_TOPICS.REGENERATE_REQUEST, async (data: any) => {
 		if (!data || typeof data !== 'object')
 			return;
-		if (currentEpoch !== listenerEpoch) {
+		if (currentEpoch !== state.listenerEpoch) {
 			publishDebugLog('warn', '[REGENERATE_REQUEST] 丢弃过期订阅回调', {
 				callbackEpoch: currentEpoch,
-				currentEpoch: listenerEpoch,
+				currentEpoch: state.listenerEpoch,
 			});
 			return;
 		}
@@ -822,10 +819,10 @@ function setupChatListeners(): void {
 
 	// 监听定位请求
 	subscribe(CHAT_TOPICS.LOCATE, async (data: any) => {
-		if (currentEpoch !== listenerEpoch) {
+		if (currentEpoch !== state.listenerEpoch) {
 			publishDebugLog('warn', '[LOCATE] 丢弃过期订阅回调', {
 				callbackEpoch: currentEpoch,
-				currentEpoch: listenerEpoch,
+				currentEpoch: state.listenerEpoch,
 			});
 			return;
 		}
@@ -941,7 +938,7 @@ function setupChatListeners(): void {
 		}
 
 		// 配置变更时清空工具缓存，确保下次请求重新拉取
-		toolListCache = null;
+		state.toolListCache = null;
 		clearSessionCache(); // 清空 MCP Session 缓存
 
 		// 记录自定义系统提示词变更
@@ -981,17 +978,17 @@ function setupChatListeners(): void {
 		if (data.schematicFields !== undefined) {
 			const newFields = result.config.schematicFields;
 			publishDebugLog('info', '[CONFIG_UPDATE] schematicFields 已变更，刷新所有会话字段配置', {
-				sessionCount: chatSessions.size,
-				hasData: !!cachedSchematicData,
+				sessionCount: state.chatSessions.size,
+				hasData: !!state.cachedSchematicData,
 			});
-			for (const session of chatSessions.values()) {
+			for (const session of state.chatSessions.values()) {
 				// 无论是否有缓存数据，都先更新字段配置
 				if (newFields) {
 					session.updateSchematicFields(newFields);
 				}
 				// 只有有缓存数据时才重新序列化上下文
-				if (cachedSchematicData) {
-					session.updateSchematicContext(cachedSchematicData);
+				if (state.cachedSchematicData) {
+					session.updateSchematicContext(state.cachedSchematicData);
 				}
 			}
 		}
@@ -1051,10 +1048,10 @@ function setupChatListeners(): void {
 
 	// 监听清空会话请求（支持按 sessionId 清空或全部清空）
 	subscribe(CHAT_TOPICS.CLEAR_SESSION, (data: any) => {
-		if (currentEpoch !== listenerEpoch) {
+		if (currentEpoch !== state.listenerEpoch) {
 			publishDebugLog('warn', '[CLEAR_SESSION] 丢弃过期订阅回调', {
 				callbackEpoch: currentEpoch,
-				currentEpoch: listenerEpoch,
+				currentEpoch: state.listenerEpoch,
 			});
 			return;
 		}
@@ -1064,16 +1061,16 @@ function setupChatListeners(): void {
 
 		if (sessionId) {
 			abortPendingRequestsBySession(sessionId);
-			lastUserMessageBySession.delete(sessionId);
+			state.lastUserMessageBySession.delete(sessionId);
 
-			const session = chatSessions.get(sessionId);
+			const session = state.chatSessions.get(sessionId);
 			if (session) {
 				session.reset();
-				chatSessions.delete(sessionId);
+				state.chatSessions.delete(sessionId);
 			}
 
 			// 清理该会话的 ToolOrchestrator
-			toolOrchestratorsBySession.delete(sessionId);
+			state.toolOrchestratorsBySession.delete(sessionId);
 			return;
 		}
 
@@ -1083,10 +1080,10 @@ function setupChatListeners(): void {
 
 	// 监听恢复会话请求（从历史记录恢复上下文）
 	subscribe('ai-chat/restore-session', (data: any) => {
-		if (currentEpoch !== listenerEpoch) {
+		if (currentEpoch !== state.listenerEpoch) {
 			publishDebugLog('warn', '[RESTORE_SESSION] 丢弃过期订阅回调', {
 				callbackEpoch: currentEpoch,
-				currentEpoch: listenerEpoch,
+				currentEpoch: state.listenerEpoch,
 			});
 			return;
 		}
@@ -1156,12 +1153,12 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		sessionId: msg.sessionId,
 		hasText: !!msg.text,
 		imageCount: msg.images?.length || 0,
-		guardProcessingCount: requestGuard.processingCount,
+		guardProcessingCount: state.requestGuard.processingCount,
 	});
 
 	// 统一防重：tryAcquire 合并了 processing + completed 的检查，且不可被外部 clear
-	if (!requestGuard.tryAcquire(msg.requestId)) {
-		const completed = requestGuard.getCompleted(msg.requestId);
+	if (!state.requestGuard.tryAcquire(msg.requestId)) {
+		const completed = state.requestGuard.getCompleted(msg.requestId);
 		if (completed) {
 			publishDebugLog('info', '[handleUserMessage] 忽略已完成请求', {
 				requestId: msg.requestId,
@@ -1172,7 +1169,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		else {
 			publishDebugLog('warn', '[handleUserMessage] 忽略重复请求（正在处理中）', {
 				requestId: msg.requestId,
-				guardProcessingCount: requestGuard.processingCount,
+				guardProcessingCount: state.requestGuard.processingCount,
 			});
 		}
 		return;
@@ -1234,7 +1231,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 
 		// 创建新的 AbortController
 		const abortController = new AbortController();
-		pendingRequests.set(msg.requestId, {
+		state.pendingRequests.set(msg.requestId, {
 			sessionId: msg.sessionId,
 			abortController,
 			thinkingAccumulated: '',
@@ -1245,14 +1242,14 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		const session = getOrCreateChatSession(msg.sessionId);
 
 		// 获取或创建工具编排器（会话级复用，避免重复 initialize）
-		let toolOrchestrator = toolOrchestratorsBySession.get(msg.sessionId);
+		let toolOrchestrator = state.toolOrchestratorsBySession.get(msg.sessionId);
 		if (!toolOrchestrator) {
 			toolOrchestrator = new ToolOrchestrator(
 				config,
 				{ requestId: msg.requestId, sessionId: msg.sessionId },
 				publishToolEvent,
 			);
-			toolOrchestratorsBySession.set(msg.sessionId, toolOrchestrator);
+			state.toolOrchestratorsBySession.set(msg.sessionId, toolOrchestrator);
 			publishDebugLog('info', '[handleUserMessage] 创建新的 ToolOrchestrator', {
 				requestId: msg.requestId,
 				sessionId: msg.sessionId,
@@ -1307,7 +1304,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 					return;
 
 				// 记录累积内容
-				const pending = pendingRequests.get(msg.requestId);
+				const pending = state.pendingRequests.get(msg.requestId);
 				if (pending) {
 					if (isThinkingBlock(block.type))
 						pending.thinkingAccumulated = block.accumulatedContent;
@@ -1332,7 +1329,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 
 		requestOutcome = 'success';
 		// 保存最后一条用户消息（用于重新生成）
-		lastUserMessageBySession.set(msg.sessionId, cloneUserMessage(msg));
+		state.lastUserMessageBySession.set(msg.sessionId, cloneUserMessage(msg));
 
 		publishToIFrame(CHAT_TOPICS.AI_RESPONSE, {
 			content: reply,
@@ -1374,9 +1371,9 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 	}
 	finally {
 		// 清理进行中请求状态
-		pendingRequests.delete(msg.requestId);
+		state.pendingRequests.delete(msg.requestId);
 		// 释放 RequestGuard 处理权并标记为已完成（过期自动清理）
-		requestGuard.release(msg.requestId, requestOutcome);
+		state.requestGuard.release(msg.requestId, requestOutcome);
 	}
 }
 
@@ -1442,17 +1439,17 @@ async function handleLocateRequest(reference: string): Promise<void> {
  * 获取或创建指定 sessionId 的对话会话
  */
 function getOrCreateChatSession(sessionId: string): ChatSession {
-	const existing = chatSessions.get(sessionId);
+	const existing = state.chatSessions.get(sessionId);
 	if (existing)
 		return existing;
 
 	const config = loadConfig();
 	const session = new ChatSession(undefined, config.schematicFields);
-	if (cachedSchematicData) {
-		session.setSchematicContext(cachedSchematicData);
+	if (state.cachedSchematicData) {
+		session.setSchematicContext(state.cachedSchematicData);
 	}
 
-	chatSessions.set(sessionId, session);
+	state.chatSessions.set(sessionId, session);
 	return session;
 }
 
@@ -1465,14 +1462,14 @@ function clearAllChatSessions(): void {
 	// RequestGuard 为全局不可重置的防重守卫，此处不清空其状态。
 	// 即使 MessageBus 在清理后重新投递旧消息，requestGuard 仍能拦截。
 
-	for (const session of chatSessions.values()) {
+	for (const session of state.chatSessions.values()) {
 		session.reset();
 	}
-	chatSessions.clear();
-	lastUserMessageBySession.clear();
-	toolListCache = null; // 清空工具缓存
+	state.chatSessions.clear();
+	state.lastUserMessageBySession.clear();
+	state.toolListCache = null; // 清空工具缓存
 	clearSessionCache(); // 清空 MCP Session 缓存
-	toolOrchestratorsBySession.clear(); // 清空 ToolOrchestrator 缓存
+	state.toolOrchestratorsBySession.clear(); // 清空 ToolOrchestrator 缓存
 
 	publishDebugLog('info', '[clearAllChatSessions] 已清理所有会话状态（RequestGuard 保持不变）');
 }
@@ -1491,7 +1488,7 @@ function handleAbortRequest(data: AbortRequest): void {
 		return;
 	}
 
-	const pending = pendingRequests.get(requestId);
+	const pending = state.pendingRequests.get(requestId);
 	if (!pending) {
 		publishDebugLog('info', '[abort] 未找到进行中请求', { requestId, sessionId });
 		return;
@@ -1508,7 +1505,7 @@ function handleAbortRequest(data: AbortRequest): void {
 	pending.abortController.abort();
 	publishDebugLog('info', '[abort] 请求已中止', { requestId, sessionId });
 	publishPausedCompleteBlocks(requestId, sessionId, pending);
-	pendingRequests.delete(requestId);
+	state.pendingRequests.delete(requestId);
 }
 
 /**
@@ -1529,7 +1526,7 @@ async function handleRegenerateRequest(data: RegenerateRequest): Promise<void> {
 	// 如果当前会话还有进行中的请求，先中止
 	abortPendingRequestsBySession(sessionId);
 
-	const session = chatSessions.get(sessionId);
+	const session = state.chatSessions.get(sessionId);
 	if (!session) {
 		publishToIFrame(CHAT_TOPICS.ERROR, {
 			message: '未找到可重新生成的会话',
@@ -1540,7 +1537,7 @@ async function handleRegenerateRequest(data: RegenerateRequest): Promise<void> {
 		return;
 	}
 
-	const lastUserMessage = lastUserMessageBySession.get(sessionId);
+	const lastUserMessage = state.lastUserMessageBySession.get(sessionId);
 	if (!lastUserMessage) {
 		publishToIFrame(CHAT_TOPICS.ERROR, {
 			message: '当前会话没有可重新生成的用户消息',
@@ -1566,22 +1563,22 @@ async function handleRegenerateRequest(data: RegenerateRequest): Promise<void> {
  * 中止全部进行中请求
  */
 function abortAllPendingRequests(): void {
-	for (const pending of pendingRequests.values()) {
+	for (const pending of state.pendingRequests.values()) {
 		pending.abortController.abort();
 	}
-	pendingRequests.clear();
+	state.pendingRequests.clear();
 }
 
 /**
  * 中止指定会话的所有进行中请求
  */
 function abortPendingRequestsBySession(sessionId: string): void {
-	for (const [requestId, pending] of pendingRequests.entries()) {
+	for (const [requestId, pending] of state.pendingRequests.entries()) {
 		if (pending.sessionId !== sessionId)
 			continue;
 
 		pending.abortController.abort();
-		pendingRequests.delete(requestId);
+		state.pendingRequests.delete(requestId);
 	}
 }
 
@@ -1726,14 +1723,14 @@ function publishToIFrame(topic: string, data: unknown): void {
  */
 function subscribe(topic: string, handler: (data: any) => void | Promise<void>): void {
 	const task = eda.sys_MessageBus.subscribePublic(topic, handler);
-	subscriptions.push(task);
+	state.subscriptions.push(task);
 }
 
 /**
  * 清理所有订阅
  */
 function cleanupSubscriptions(): void {
-	for (const sub of subscriptions) {
+	for (const sub of state.subscriptions) {
 		try {
 			sub.cancel();
 		}
@@ -1741,5 +1738,5 @@ function cleanupSubscriptions(): void {
 			// ignore cleanup errors
 		}
 	}
-	subscriptions.length = 0;
+	state.subscriptions.length = 0;
 }
