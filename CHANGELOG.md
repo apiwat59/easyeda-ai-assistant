@@ -5,6 +5,44 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.3.1] - 2026-03-06
+
+### 修复的问题 🐛
+
+- 🐛 **修复 orchestrator 模块多实例导致的三重处理问题（关键修复）** - EDA 平台加载 orchestrator.ts 模块 3 次（3 个独立实例），每个实例注册各自的 MessageBus 订阅，导致用户每发一条消息触发 3 次 `handleUserMessage`、产生 3 个并行 AI 请求和 3 个独立响应
+  - 根本原因：模块级变量（`requestGuard`、`listenerEpoch`、`chatSessions` 等 11 个状态）在多实例间不共享，每个实例独立持有自己的防重集合和版本号，各实例的 epoch 校验形同虚设
+  - 解决方案：采用与 `collectionLock` (63615c8) 相同的 `globalThis` 模式，新增 `OrchestratorState` 接口和 `getOrchestratorState()` 初始化函数，将所有关键状态统一收敛到 `globalThis.__aiSchReview_orchestratorState`
+  - 效果：3 个实例共享同一个 `listenerEpoch`，只有最后注册的订阅能通过 epoch 校验；`RequestGuard` 全局共享后，重复 `requestId` 被正确拦截
+
+### 技术改进 🔧
+
+- 🔧 新增 `OrchestratorState` 接口，定义 11 个跨实例共享的状态字段
+- 🔧 新增 `getOrchestratorState()` 惰性初始化函数（与 `getGlobalCollectionLock()` 同模式）
+- 🔧 扩展 `declare global` 块，新增 `__aiSchReview_orchestratorState` 全局变量声明
+- 🔧 模块顶层通过 `const state = getOrchestratorState()` 获取共享引用，约 60+ 处引用更新
+
+---
+
+## [1.3.0] - 2026-03-05
+
+### 新增功能 ✨
+
+- ✨ **DRC 检查结果采集** - 调用 `eda.sch_Drc.check` 自动运行 DRC 检查，将违规信息提供给 AI 分析
+- ✨ **工程元信息采集** - 通过 `eda.dmt_Project.getCurrentProjectInfo` 采集项目名称、描述等元信息
+- ✨ **图形图元采集** - 支持圆弧（Arc）、圆（Circle）、多边形（Polygon）、矩形（Rect）等图形元素采集
+- ✨ **独立引脚图元采集** - 通过 `eda.sch_PrimitivePin.getAll` 采集原理图中的独立引脚信息
+- ✨ **SCH-REVIEW-COMPACT v2 序列化格式** - 新的数据序列化格式，向后兼容 v1
+- ✨ **配置面板增强** - 新增"图形图元"和"增强数据"两个 checkbox 分组
+
+### 设计要点 📐
+
+- 📐 所有新字段默认关闭，不增加默认 Token 消耗
+- 📐 7 个采集函数均有完整 try-catch 降级，不阻塞主流程
+- 📐 DRC/ProjectInfo 与网表并行采集（全局数据，不依赖页面切换）
+- 📐 图形图元在逐页循环中与现有采集并行执行
+
+---
+
 ## [1.2.6] - 2026-02-28
 
 ### 改进 ✨
