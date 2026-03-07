@@ -215,7 +215,6 @@ export async function startAIChat(): Promise<void> {
 		// 打开IFrame面板（不阻塞，不立即采集数据）
 		try {
 			await eda.sys_IFrame.openIFrame('/iframe/chat.html', width, height, 'ai-sch-chat', {
-				maximizeButton: true,
 				minimizeButton: true,
 			});
 		}

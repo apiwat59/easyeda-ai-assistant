@@ -1,5 +1,18 @@
 # 更新日志
 
+## [1.3.2] - 2026-03-07
+
+### 修复
+
+- **修复 Thinking Block 收起/展开按钮失效** - 终止 AI → 刷新 → 继续提问 → AI 回答后，点击思考过程的收起按钮无反应
+  - 将展开状态从 DOM className 提升到数据层 (block.uiExpanded)，renderMessages 全量重建不再丢失状态
+  - StreamManager 新增 reset() 方法，全量重渲染前取消挂起的 RAF 回调，防止旧更新覆写新 DOM
+  - className 操作从字符串拼接/replace 改为 classList API，消除边界条件风险
+
+### 移除
+
+- **移除最大化按钮** - 移除窗口标题栏的最大化按钮（有 bug），保留最小化按钮
+
 ## [1.3.1] - 2026-03-06
 
 ### 修复

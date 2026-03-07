@@ -5,6 +5,24 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.3.2] - 2026-03-07
+
+### 修复的问题 🐛
+
+- 🐛 **修复 Thinking Block 收起/展开按钮在特定操作序列后失效** - 用户终止 AI 回答 → 刷新原理图 → 继续提问 → AI 回答完成后，点击思考过程的收起按钮无反应
+  - 根本原因：展开状态仅存在于 DOM className（纯临时态），`renderMessages()` 全量重建 (`innerHTML = ''`) 后丢失；同时 `StreamManager` 的 RAF 回调可能在 DOM 重建后通过 `getElementById` 找到新 DOM 并覆写 className
+  - 解决方案：将展开状态提升到数据层 `block.uiExpanded`，`createThinkingBlockElement` 根据数据决定初始 class，click handler 同步写回数据层
+  - `StreamManager` 新增 `reset()` 方法（清空 `pendingUpdates` + `cancelAnimationFrame`），`renderMessages()` 开头调用，切断旧 RAF 回调对新 DOM 的覆写
+  - 所有 thinking/text block 的 className 操作从字符串 `replace/indexOf/+=` 改为 `classList` API（`add/remove/contains`），消除边界条件风险
+  - `createThinkingBlockElement` 非流式状态下使用 `parseMarkdown` 渲染内容（与 `StreamManager.applyUpdates` 保持一致）
+  - `createTextBlockElement` paused 状态直接添加 `[已停止生成]` 标记
+
+### 移除 ❌
+
+- ❌ **移除最大化按钮** - 移除窗口标题栏的最大化按钮（有 bug），保留最小化按钮
+
+---
+
 ## [1.3.1] - 2026-03-06
 
 ### 修复的问题 🐛

@@ -1512,19 +1512,14 @@
                                 statusEl.textContent = 'AI已深度思考';
                             }
                         }
-                        // 流式状态下自动展开，完成/暂停后自动折叠（参考 Cherry Studio）
+                        // 流式/完成 class 切换（expanded 由数据层 block.uiExpanded 控制，
+                        // 此处仅在 streaming→complete 过渡时同步 DOM）
                         if (update.status === 'streaming') {
-                            if (el.className.indexOf('streaming') === -1) {
-                                el.className += ' streaming';
-                            }
-                            if (el.className.indexOf('expanded') === -1) {
-                                el.className += ' expanded';
-                            }
+                            el.classList.add('streaming', 'expanded');
                         } else {
-                            el.className = el.className.replace(' streaming', '');
-                            // 完成或暂停后自动折叠（Cherry Studio 的行为）
+                            el.classList.remove('streaming');
                             if (update.status === 'success' || update.status === 'paused') {
-                                el.className = el.className.replace(' expanded', '');
+                                el.classList.remove('expanded');
                             }
                         }
                     } else {
@@ -1532,9 +1527,7 @@
                         if (update.status === 'streaming') {
                             // 流式阶段：轻渲染（仅 textContent，避免 O(n²) 解析）
                             el.textContent = update.content;
-                            if (el.className.indexOf('block-streaming') === -1) {
-                                el.className += ' block-streaming';
-                            }
+                            el.classList.add('block-streaming');
                         } else {
                             // 完成阶段：全量渲染（Markdown + 高亮）
                             addDebugLog('info', '[Text Block] 调用 parseMarkdown', {
@@ -1546,7 +1539,7 @@
                             var html = parseMarkdown(update.content);
                             el.innerHTML = html;
                             highlightReferencesDOM(el);
-                            el.className = el.className.replace(' block-streaming', '');
+                            el.classList.remove('block-streaming');
 
                             // paused 状态添加标记
                             if (update.status === 'paused' && !el.querySelector('.status-paused')) {
@@ -1578,6 +1571,14 @@
                     };
                     if (!rafId) {
                         rafId = requestAnimationFrame(applyUpdates);
+                    }
+                },
+                /** 全量重渲染前调用，取消挂起的 RAF 回调，防止旧更新覆写新 DOM */
+                reset: function() {
+                    pendingUpdates = {};
+                    if (rafId) {
+                        cancelAnimationFrame(rafId);
+                        rafId = null;
                     }
                 }
             };
@@ -2113,6 +2114,7 @@
                     }
                     if (streamMsg.blocks[i].type === 'thinking') {
                         streamMsg.blocks[i].status = 'success';
+                        streamMsg.blocks[i].uiExpanded = false;
                     }
                     if (streamMsg.blocks[i].type === 'tool') {
                         streamMsg.blocks[i].status = streamMsg.blocks[i].status === 'error' ? 'error' : 'success';
@@ -2197,7 +2199,8 @@
                             content: '',
                             thinkingMs: 0,
                             status: 'streaming',
-                            startTime: Date.now()
+                            startTime: Date.now(),
+                            uiExpanded: true
                         };
                         msg.blocks.unshift(thinkingBlock); // 添加到开头，显示在正文上面
                         renderMessages(); // 首次需要完整渲染以插入 DOM
@@ -2224,6 +2227,7 @@
                         thinkingBlock.content = data.accumulatedContent || thinkingBlock.content;
                         thinkingBlock.thinkingMs = Date.now() - (thinkingBlock.startTime || Date.now());
                         thinkingBlock.status = data.status === 'paused' ? 'paused' : 'success';
+                        thinkingBlock.uiExpanded = false; // 完成后折叠
                         StreamManager.updateBlock(
                             thinkingBlock.id,
                             thinkingBlock.content,
@@ -2622,6 +2626,9 @@
         // ============ 渲染 ============
 
         function renderMessages() {
+            // 全量重渲染前取消 StreamManager 挂起的 RAF 回调，防止旧更新覆写新 DOM
+            StreamManager.reset();
+
             var emptyState = messagesContainer.querySelector('.empty-state');
             if (emptyState) emptyState.remove();
 
@@ -2793,10 +2800,16 @@
          */
         function createThinkingBlockElement(block) {
             var container = document.createElement('div');
-            container.className = 'thinking-container';
+            container.classList.add('thinking-container');
             container.id = block.id;
+
+            // 展开状态由数据层 block.uiExpanded 驱动，避免 renderMessages 全量重建丢失状态
+            var shouldExpand = block.status === 'streaming' || !!block.uiExpanded;
             if (block.status === 'streaming') {
-                container.className += ' streaming expanded';
+                container.classList.add('streaming');
+            }
+            if (shouldExpand) {
+                container.classList.add('expanded');
             }
 
             var header = document.createElement('div');
@@ -2833,18 +2846,26 @@
                 header.appendChild(copyBtn);
             }
 
+            // 点击 header 切换展开/折叠，同时写回数据层 block.uiExpanded
             header.addEventListener('click', function() {
-                var isExpanded = container.className.indexOf('expanded') !== -1;
-                if (isExpanded) {
-                    container.className = container.className.replace(' expanded', '');
+                var nowExpanded = container.classList.contains('expanded');
+                if (nowExpanded) {
+                    container.classList.remove('expanded');
+                    block.uiExpanded = false;
                 } else {
-                    container.className += ' expanded';
+                    container.classList.add('expanded');
+                    block.uiExpanded = true;
                 }
             });
 
             var contentDiv = document.createElement('div');
             contentDiv.className = 'thinking-content';
-            contentDiv.textContent = block.content || '';
+            if (block.status !== 'streaming' && block.content) {
+                // 非流式（完成/暂停）：Markdown 渲染，与 StreamManager.applyUpdates 保持一致
+                contentDiv.innerHTML = parseMarkdown(block.content);
+            } else {
+                contentDiv.textContent = block.content || '';
+            }
 
             container.appendChild(header);
             container.appendChild(contentDiv);
@@ -2958,7 +2979,7 @@
                 div.style.color = 'var(--msg-user-text)';
             }
             if (block.status === 'streaming') {
-                div.className += ' block-streaming';
+                div.classList.add('block-streaming');
             }
 
             if (block.status === 'streaming') {
@@ -2976,6 +2997,16 @@
                 var html = parseMarkdown(block.content || '');
                 div.innerHTML = html;
                 highlightReferencesDOM(div);
+
+                // paused 状态显示停止标记
+                if (block.status === 'paused') {
+                    var pausedMark = document.createElement('div');
+                    pausedMark.className = 'status-paused';
+                    pausedMark.style.fontSize = '11px';
+                    pausedMark.style.marginTop = '6px';
+                    pausedMark.textContent = '[已停止生成]';
+                    div.appendChild(pausedMark);
+                }
             }
 
             return div;
