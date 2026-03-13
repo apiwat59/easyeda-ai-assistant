@@ -9,6 +9,7 @@ import type { AbortRequest, AIBlockResponse, ChatToolCall, CollectedData, Messag
 import { ChatSession, setDebugLog } from './chat-adapter';
 import { clearBackgroundNetlistState, collectSchematicData, getBackgroundNetlistState, parseNetlist, setLogToIFrame } from './collector';
 import { loadChatHistory, loadConfig, saveChatHistory, saveConfig, validateConfig } from './config';
+import { initMcpBridge, pushSnapshot } from './mcp-bridge';
 import { clearSessionCache, ToolOrchestrator } from './tool-orchestrator';
 import { CHAT_TOPICS, ChunkType, ErrorCode, ReviewError } from './types';
 
@@ -228,6 +229,11 @@ export async function startAIChat(): Promise<void> {
 		// 设置MessageBus监听
 		setupChatListeners();
 
+		// 初始化本地 MCP Bridge（幂等；多实例共享同一个全局连接状态）
+		if (config.mcpBridgeUrl) {
+			initMcpBridge(config.mcpBridgeUrl);
+		}
+
 		// 异步触发后台采集（不阻塞UI）
 		void triggerBackgroundCollection('start-ai-chat', true);
 	}
@@ -330,6 +336,9 @@ async function executeBackgroundCollection(
 		for (const session of state.chatSessions.values()) {
 			session.setSchematicContext(collected);
 		}
+
+		// 推送最新快照到本地 eda-mcp-server（未连接时仅缓存，待连接后自动发送）
+		pushSnapshot(collected);
 
 		const elapsed = Date.now() - startTime;
 
@@ -546,6 +555,9 @@ async function scheduleNetlistBackfill(
 					session.setSchematicContext(collected);
 				}
 
+				// 网表回填后重新推送快照，保证 eda-mcp-server 拿到最新绑定结果
+				pushSnapshot(collected);
+
 				// 通知 IFrame 数据已更新
 				publishToIFrame(CHAT_TOPICS.SCHEMATIC_DATA, {
 					summary: {
@@ -658,6 +670,7 @@ function setupChatListeners(): void {
 			mcpGatewayUrl: config.mcpGatewayUrl || '',
 			mcpGatewayApiKey: config.mcpGatewayApiKey || '',
 			mcpAutoApprove: config.mcpAutoApprove !== false,
+			mcpBridgeUrl: config.mcpBridgeUrl || 'ws://127.0.0.1:3100',
 			customSystemPrompt: config.customSystemPrompt || '',
 			schematicFields: config.schematicFields || {},
 		});
@@ -864,6 +877,10 @@ function setupChatListeners(): void {
 			publishDebugLog('warn', '配置验证失败: 无效的 mcpGatewayApiKey');
 			return;
 		}
+		if (data.mcpBridgeUrl !== undefined && (typeof data.mcpBridgeUrl !== 'string' || data.mcpBridgeUrl.length > 500)) {
+			publishDebugLog('warn', '配置验证失败: 无效的 mcpBridgeUrl');
+			return;
+		}
 		if (data.customSystemPrompt !== undefined) {
 			if (typeof data.customSystemPrompt !== 'string') {
 				publishDebugLog('warn', '配置验证失败: customSystemPrompt 类型错误');
@@ -935,6 +952,19 @@ function setupChatListeners(): void {
 				return;
 			}
 		}
+		if (typeof data.mcpBridgeUrl === 'string' && data.mcpBridgeUrl.trim().length > 0) {
+			try {
+				const bridgeUrl = new URL(data.mcpBridgeUrl);
+				if (bridgeUrl.protocol !== 'ws:' && bridgeUrl.protocol !== 'wss:') {
+					publishDebugLog('warn', '配置验证失败: mcpBridgeUrl 必须是 ws 或 wss 协议');
+					return;
+				}
+			}
+			catch {
+				publishDebugLog('warn', '配置验证失败: mcpBridgeUrl 格式无效');
+				return;
+			}
+		}
 
 		// 配置变更时清空工具缓存，确保下次请求重新拉取
 		state.toolListCache = null;
@@ -969,9 +999,15 @@ function setupChatListeners(): void {
 			mcpGatewayUrl: result.config.mcpGatewayUrl || '',
 			mcpGatewayApiKey: result.config.mcpGatewayApiKey || '',
 			mcpAutoApprove: result.config.mcpAutoApprove !== false,
+			mcpBridgeUrl: result.config.mcpBridgeUrl || 'ws://127.0.0.1:3100',
 			customSystemPrompt: result.config.customSystemPrompt || '',
 			schematicFields: result.config.schematicFields || {},
 		});
+
+		// MCP Bridge 地址变更后立即生效（幂等，地址未变时无副作用）
+		if (data.mcpBridgeUrl !== undefined) {
+			initMcpBridge(result.config.mcpBridgeUrl);
+		}
 
 		// 若字段配置有变更，刷新所有现有会话
 		if (data.schematicFields !== undefined) {

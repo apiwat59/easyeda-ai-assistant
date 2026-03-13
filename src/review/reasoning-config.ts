@@ -117,9 +117,13 @@ function getDisableReasoningParams(type: ModelType): Record<string, any> {
 		case 'deepseek':
 		case 'qwen':
 		case 'zhipu':
-		case 'kimi':
 		case 'hunyuan':
 			return { enable_thinking: false };
+
+		case 'kimi':
+			return {
+				enable_thinking: false,
+			};
 
 		case 'claude-thinking':
 			return { thinking: { type: 'disabled' } };
@@ -229,8 +233,12 @@ function getEnableReasoningParams(
 			};
 
 		case 'zhipu':
-		case 'kimi':
 		case 'hunyuan':
+			return {
+				enable_thinking: true,
+			};
+
+		case 'kimi':
 			return {
 				enable_thinking: true,
 			};
@@ -256,6 +264,33 @@ function getThinkingBudget(effort: ReasoningEffort): number {
 		default:
 			return 5000;
 	}
+}
+
+/**
+ * 获取模型专属的 temperature 值
+ * 某些模型在特定模式下有硬性 temperature 约束：
+ * - Kimi thinking 模式必须 temperature=1，非 thinking 固定 0.6
+ * - OpenAI o1/o3 reasoning 模型不接受 temperature 参数
+ * 返回 undefined 表示不应发送 temperature 字段
+ */
+export function getModelTemperature(
+	modelId: string,
+	reasoningEffort: ReasoningEffort,
+	fallback: number,
+): number | undefined {
+	const type = getModelType(modelId);
+
+	// OpenAI o1/o3 reasoning 模型不接受显式 temperature
+	if (type === 'openai-reasoning') {
+		return undefined;
+	}
+
+	// Kimi 有硬性约束
+	if (type === 'kimi') {
+		return reasoningEffort === 'none' ? 0.6 : 1;
+	}
+
+	return fallback;
 }
 
 /**

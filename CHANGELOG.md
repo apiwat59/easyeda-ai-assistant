@@ -5,6 +5,58 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.4.0] - 2026-03-07
+
+### 新增功能 ✨
+
+- ✨ **MCP 数据暴露（eda-mcp-server）** - 全新独立 Node.js MCP Server，让外部 AI 工具（Cursor、Claude Code、Codex 等）通过 MCP 协议只读访问原理图数据
+  - **架构**：EDA 扩展 (WebSocket) → eda-mcp-server (Node.js) → stdio → AI 工具
+  - **9 个 Resources**：`eda://schematic/status`、`summary`、`components`、`pins`、`nets`、`drc`、`project-info`、`netlist`、`compact`
+  - **14 个 Tools**：
+    - `schematic_status` — 连接状态与数据版本总览
+    - `query_component` — 查询单个器件及其关联引脚和网络
+    - `query_net` — 查询单个网络及其连接的引脚和器件（支持大小写不敏感回退）
+    - `search_schematic` — 关键词搜索（跨器件名、网络名、引脚名）
+    - `configure_bridge` — 运行时动态修改 WS 监听地址（无需重启/重编译）
+    - `get_bom` — 生成 BOM 清单（复合键去重、自然排序位号）
+    - `find_unconnected_pins` — 查找原理图中悬空/未连接引脚（可选指定器件）
+    - `analyze_power_nets` — 自动识别并分析电源网络拓扑
+    - `check_drc` — 获取 DRC 检查结果摘要
+    - `refresh_data` — 请求扩展重新推送最新快照
+    - `trace_connectivity` — 查找两个器件之间的电气连接路径（直接/间接连接）
+    - `list_components_by_type` — 按器件类型（电阻/电容/IC 等）分组统计
+    - `get_netlist_raw` — 获取原始网表文本
+    - `get_pin_map` — 获取器件引脚映射表（自然排序）
+  - **WebSocket Bridge**：接收 EDA 扩展推送的原理图快照，支持心跳保活、单调递增版本管理、条件化版本基线重置
+
+- ✨ **MCP Bridge（扩展端 WS 客户端）** - 新增 `mcp-bridge.ts` 模块
+  - 通过 `eda.sys_WebSocket` 连接到本地 eda-mcp-server
+  - 数据采集完成后自动推送全量快照（`CollectedData`）
+  - 自动重连、心跳保活、多实例防重（`globalThis` 模式）
+  - 权限错误自动检测并停止重连，避免无限循环
+
+- ✨ **远程连接支持** - server 端支持 `--host` 参数绑定任意网卡
+  - 默认 `127.0.0.1`（仅本地），可设为 `0.0.0.0`（允许远程连接）
+  - 适用场景：EDA 运行在无 IP 的机器上，server 运行在有 IP 的机器上
+
+- ✨ **AI 动态配置** - `configure_bridge` 工具允许 AI 在运行时修改 WS 监听地址
+  - 用户只需告诉 AI "我的 EDA 在 xxx 上启动了"，AI 即可自动调整配置
+  - 启动失败时自动回滚到旧配置并恢复监听
+
+- ✨ **MCP Bridge URL 配置** - 配置面板新增 WS 桥接地址输入框（默认 `ws://127.0.0.1:3100`）
+
+### 技术改进 🔧
+
+- 🔧 新建 `packages/eda-mcp-server/` 独立项目（TypeScript + tsup 打包、支持 `npx eda-mcp-server` 直接启动）
+- 🔧 `restart()` 失败时尝试恢复旧监听地址，避免 Bridge 挂死
+- 🔧 CLI `--port` 参数严格校验（纯数字、1-65535 范围）
+- 🔧 `SnapshotStore.update()` projectUuid 空值 fallback 到 payload
+- 🔧 BOM 位号自然排序（`R2` < `R10`）
+- 🔧 trace_connectivity 预构建索引避免 O(P^2) 复杂度
+- 🔧 analyze_power_nets 扩展电源网络正则覆盖（VCC/VDD/VBUS/VBAT/V3V3 等 30+ 模式）
+
+---
+
 ## [1.3.2] - 2026-03-07
 
 ### 修复的问题 🐛

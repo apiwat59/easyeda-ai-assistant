@@ -413,6 +413,7 @@ export interface ConfigStore {
 	mcpGatewayUrl?: string; // MCP Gateway 地址
 	mcpGatewayApiKey?: string; // MCP Gateway 鉴权 token（可选）
 	mcpAutoApprove?: boolean; // 是否默认自动批准工具调用
+	mcpBridgeUrl?: string; // 本地 eda-mcp-server WebSocket 地址（默认 ws://127.0.0.1:3100）
 	customSystemPrompt?: string; // 用户自定义系统提示词（追加到内置提示词之后）
 	schematicFields?: SchematicFieldsConfig; // 原理图字段选择（控制传给AI的字段）
 }

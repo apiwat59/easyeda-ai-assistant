@@ -5,6 +5,7 @@
  */
 import type { ConfigStore, SchReviewChunk } from './types';
 import { buildSystemPrompt, buildUserPrompt } from './prompt-builder';
+import { getModelTemperature } from './reasoning-config';
 import { ErrorCode, ReviewError } from './types';
 
 /**
@@ -62,15 +63,20 @@ async function callOpenAICompatible(
 ): Promise<AIResponse> {
 	const url = config.apiUrl || 'https://api.openai.com/v1/chat/completions';
 
-	const body = {
+	const body: Record<string, unknown> = {
 		model: config.model,
 		messages: [
 			{ role: 'system', content: systemPrompt },
 			{ role: 'user', content: userPrompt },
 		],
-		temperature: 0.3,
 		response_format: { type: 'json_object' },
 	};
+
+	// temperature 需特殊处理：o1/o3 不接受，Kimi 有硬约束
+	const temperature = getModelTemperature(config.model, 'none', 0.3);
+	if (temperature !== undefined) {
+		body.temperature = temperature;
+	}
 
 	return await makeRequest(url, config.apiKey, body);
 }

@@ -11,7 +11,7 @@
 import type { CollectedData, ConfigStore, SchematicFieldsConfig, UserMessage } from './types';
 import { chunkData } from './chunker';
 import { buildChatSystemPrompt } from './prompt-builder';
-import { extractReasoningFromDelta, getReasoningParams } from './reasoning-config';
+import { extractReasoningFromDelta, getModelTemperature, getReasoningParams } from './reasoning-config';
 import { ChunkType, ErrorCode, ReviewError } from './types';
 
 /**
@@ -456,10 +456,15 @@ async function callOpenAICompatibleChat(
 			}
 			return messageBody;
 		}),
-		temperature: 0.4,
 		stream: true, // 需要流式模式才能获取 reasoning_content（Grok 等模型）
-		...getReasoningParams(config.model, 'medium'), // 🆕 添加模型特定的 reasoning 参数
+		...getReasoningParams(config.model, 'medium'),
 	};
+
+	// temperature 需特殊处理：某些模型有硬约束或不接受该参数
+	const temperature = getModelTemperature(config.model, 'medium', 0.4);
+	if (temperature !== undefined) {
+		body.temperature = temperature;
+	}
 
 	if (tools && tools.length > 0) {
 		body.tools = tools;

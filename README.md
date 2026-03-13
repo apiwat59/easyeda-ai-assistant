@@ -113,6 +113,111 @@
 
 ---
 
+## 🔌 MCP 数据暴露（v1.4.0 新功能）
+
+让 Cursor、Claude Code、Codex 等外部 AI 工具通过 MCP 协议**只读访问**你的原理图数据。
+
+### 架构
+
+```
+┌─────────────────────────────┐
+│  EDA 扩展 (沙盒 WebView)     │
+│  mcp-bridge.ts              │
+└──────────┬──────────────────┘
+           │ WebSocket 出站
+           ▼
+┌─────────────────────────────┐
+│  eda-mcp-server (Node.js)    │
+│  WS Server + MCP Server      │
+└──────────┬──────────────────┘
+           │ stdio transport
+           ▼
+┌─────────────────────────────┐
+│  Cursor / Claude Code / Codex │
+│  等 AI 工具                   │
+└─────────────────────────────┘
+```
+
+### 快速使用
+
+**1. 启动 MCP Server**
+
+```bash
+cd packages/eda-mcp-server
+npm install
+npm run build
+node dist/index.js                        # 默认 127.0.0.1:3100
+node dist/index.js --host 0.0.0.0         # 允许远程连接
+node dist/index.js --host 0.0.0.0 --port 3200  # 自定义端口
+```
+
+**2. 配置 EDA 扩展**
+
+在插件配置面板中设置 MCP Bridge URL：
+- 本机：`ws://127.0.0.1:3100`（默认）
+- 远程：`ws://<server-ip>:3100`
+
+**3. 配置 AI 工具**
+
+**Cursor** (`~/.cursor/mcp.json`)：
+```json
+{
+  "mcpServers": {
+    "eda-schematic": {
+      "command": "node",
+      "args": ["/path/to/eda-mcp-server/dist/index.js", "--host", "0.0.0.0"]
+    }
+  }
+}
+```
+
+**Claude Code** (`~/.claude/mcp.json`)：
+```json
+{
+  "mcpServers": {
+    "eda-schematic": {
+      "command": "node",
+      "args": ["/path/to/eda-mcp-server/dist/index.js", "--host", "0.0.0.0"]
+    }
+  }
+}
+```
+
+### 可用 Resources
+
+| URI | 说明 |
+|-----|------|
+| `eda://schematic/status` | 连接状态、快照版本、时间戳 |
+| `eda://schematic/summary` | 器件/引脚/网络数量、DRC 状态摘要 |
+| `eda://schematic/components` | 全部器件列表 |
+| `eda://schematic/pins` | 全部引脚列表 |
+| `eda://schematic/nets` | 全部网络列表 |
+| `eda://schematic/drc` | DRC 检查结果 |
+| `eda://schematic/project-info` | 工程元信息 |
+| `eda://schematic/netlist` | 原始网表文本 |
+| `eda://schematic/compact` | 紧凑序列化格式（完整输出） |
+
+### 可用 Tools
+
+| Tool | 参数 | 说明 |
+|------|------|------|
+| `schematic_status` | 无 | 返回连接状态、数据版本 |
+| `query_component` | `designator` | 查询单个器件及其关联引脚和网络 |
+| `query_net` | `netName` | 查询网络及连接的引脚/器件 |
+| `search_schematic` | `keyword`, `type?` | 关键词搜索 |
+| `configure_bridge` | `host?`, `port?` | 动态修改 WS 监听地址（均可选） |
+| `get_bom` | `includeBomExcluded?` | 生成 BOM 清单 |
+| `find_unconnected_pins` | `designator?` | 查找悬空引脚（可选指定器件） |
+| `analyze_power_nets` | 无 | 分析电源网络拓扑 |
+| `check_drc` | 无 | 获取 DRC 结果摘要 |
+| `refresh_data` | 无 | 请求扩展重新推送快照 |
+| `trace_connectivity` | `from`, `to` | 查找两器件间的电气连接路径 |
+| `list_components_by_type` | 无 | 按类型分组统计器件 |
+| `get_netlist_raw` | 无 | 获取原始网表 |
+| `get_pin_map` | `designator` | 获取器件引脚映射表 |
+
+---
+
 ## 🚀 快速开始
 
 ### 安装
@@ -258,10 +363,20 @@ npm run fix
 │       ├── types.ts       # 类型定义
 │       ├── config.ts      # 配置管理
 │       ├── collector.ts   # 数据采集
+│       ├── mcp-bridge.ts  # MCP Bridge（WS 客户端）
 │       ├── chat-adapter.ts # AI 通信
 │       └── orchestrator.ts # 流程编排
 ├── iframe/                # 对话 UI
 │   └── chat.html
+├── packages/              # 独立子项目
+│   └── eda-mcp-server/   # MCP Server（对外暴露原理图数据）
+│       ├── src/
+│       │   ├── index.ts          # 入口（CLI 启动）
+│       │   ├── ws-bridge.ts      # WS 接收扩展推送
+│       │   ├── snapshot-store.ts # 快照内存存储
+│       │   ├── mcp-server.ts     # Resources + Tools 注册
+│       │   └── types.ts          # 共享类型
+│       └── package.json
 ├── docs/                  # 文档
 ├── extension.json         # 扩展配置
 ├── package.json           # 项目配置
@@ -275,10 +390,10 @@ npm run fix
 
 ### 近期计划
 
-- [ ] **MCP 集成** - 集成 grok-search MCP，增强联网搜索能力
-- [ ] **多页原理图支持** - 完善跨页数据采集（`allSchematicPages=true`）
-- [ ] **扩展元素类型** - 支持提取文本标注、总线等更多元素
-- [ ] **Markdown 渲染增强** - 完善表格、代码高亮等渲染
+- [x] **MCP 数据暴露** - 独立 MCP Server，让 Cursor/Claude Code/Codex 等外部 AI 工具读取原理图数据（v1.4.0 已完成）
+- [x] **多页原理图支持** - 逐页采集策略（v1.0.0 已实现）
+- [x] **扩展元素类型** - 支持文本标注、总线、网络标记、图形图元等（v1.3.0 已实现）
+- [x] **Markdown 渲染增强** - GFM 表格、代码高亮、脚注等（v1.1.1 已实现）
 
 ### 长期计划
 
@@ -343,6 +458,9 @@ npm run fix
 感谢以下项目和工具：
 
 - [嘉立创 EDA](https://pro.lceda.cn/) - 提供扩展 API
+- [pro-api-sdk](https://github.com/easyeda/pro-api-sdk) - 本项目基于此 SDK 开发，提供了 EDA 扩展开发的基础框架和 API 示例
+- [jlc-eda-mcp](https://github.com/XuF163/jlc-eda-mcp) - MCP 数据暴露功能的架构设计参考，提供了 EDA 扩展与 MCP Server 通过 WebSocket 桥接的思路
+- [@modelcontextprotocol/sdk](https://github.com/modelcontextprotocol/typescript-sdk) - MCP 协议 TypeScript 实现
 - [marked.js](https://marked.js.org/) - Markdown 解析
 - [DOMPurify](https://github.com/cure53/DOMPurify) - XSS 防护
 - [Cherry Studio](https://github.com/kangfenmao/cherry-studio) - 流式响应参考

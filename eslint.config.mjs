@@ -20,5 +20,6 @@ export default antfu({
 		'**/*.html',
 		'iframe/vendor/**',
 		'docs/**',
+		'packages/**',
 	],
 });

@@ -1164,6 +1164,11 @@
                             <label class="form-label">工具预览</label>
                             <div class="form-hint" id="cfg-tools-preview">尚未加载工具列表</div>
                         </div>
+                        <div class="form-group">
+                            <label class="form-label">MCP Bridge 地址（本地数据暴露）</label>
+                            <input type="text" class="form-control" id="cfg-mcp-bridge-url" placeholder="ws://127.0.0.1:3100">
+                            <div class="form-hint">本地 eda-mcp-server WebSocket 地址，用于向外部 AI 工具暴露原理图数据</div>
+                        </div>
                     </div>
                 </div>
 
@@ -1910,6 +1915,7 @@
                 document.getElementById('cfg-mcp-gateway-url').value = data.mcpGatewayUrl || '';
                 document.getElementById('cfg-mcp-gateway-apikey').value = data.mcpGatewayApiKey || '';
                 document.getElementById('cfg-mcp-auto-approve').checked = data.mcpAutoApprove !== false;
+                document.getElementById('cfg-mcp-bridge-url').value = data.mcpBridgeUrl || 'ws://127.0.0.1:3100';
                 document.getElementById('cfg-custom-system-prompt').value = data.customSystemPrompt || '';
                 applySchematicFieldsToForm(data.schematicFields || {});
                 var presetEl = document.getElementById('cfg-api-preset');
@@ -3487,6 +3493,7 @@
             document.getElementById('cfg-mcp-gateway-url').value = currentConfig.mcpGatewayUrl || '';
             document.getElementById('cfg-mcp-gateway-apikey').value = currentConfig.mcpGatewayApiKey || '';
             document.getElementById('cfg-mcp-auto-approve').checked = currentConfig.mcpAutoApprove !== false;
+            document.getElementById('cfg-mcp-bridge-url').value = currentConfig.mcpBridgeUrl || 'ws://127.0.0.1:3100';
             document.getElementById('cfg-custom-system-prompt').value = currentConfig.customSystemPrompt || '';
             applySchematicFieldsToForm(currentConfig.schematicFields || {});
             updateToolsPreviewText();
@@ -3511,6 +3518,7 @@
                 mcpGatewayUrl: document.getElementById('cfg-mcp-gateway-url').value.trim(),
                 mcpGatewayApiKey: document.getElementById('cfg-mcp-gateway-apikey').value.trim(),
                 mcpAutoApprove: !!document.getElementById('cfg-mcp-auto-approve').checked,
+                mcpBridgeUrl: document.getElementById('cfg-mcp-bridge-url').value.trim(),
                 customSystemPrompt: customSystemPrompt,
                 schematicFields: readSchematicFieldsFromForm()
             };
