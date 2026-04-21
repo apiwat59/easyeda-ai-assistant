@@ -1,11 +1,11 @@
 /**
- * AI原理图审查 - AI通信适配器
+ * AI schematic review - AI communication adapter
  *
- * 核心设计：
- * 1. 不使用流式传输（EDA API 不支持真正的 ReadableStream）
- * 2. 请求 stream: false，服务端返回标准 JSON
- * 3. 一次性接收完整响应，然后提取 thinking 和 text 内容
- * 4. 通过 onBlock 回调模拟流式事件，保持前端体验一致
+ * Core design:
+ * 1. Do not use streaming transfer (the EDA API does not support a true ReadableStream)
+ * 2. Request stream: false so the server returns standard JSON
+ * 3. Receive the full response in one shot, then extract thinking and text content
+ * 4. Simulate streaming events through the onBlock callback to keep the frontend experience consistent
  */
 
 import type { CollectedData, ConfigStore, SchematicFieldsConfig, UserMessage } from './types';
@@ -15,7 +15,7 @@ import { extractReasoningFromDelta, getModelTemperature, getReasoningParams } fr
 import { ChunkType, ErrorCode, ReviewError } from './types';
 
 /**
- * 调试日志发送函数（由 orchestrator 注入）
+ * Debug log dispatch function (injected by the orchestrator)
  */
 let debugLog: ((level: string, message: string, data?: any) => void) | null = null;
 
@@ -24,12 +24,12 @@ export function setDebugLog(fn: (level: string, message: string, data?: any) => 
 }
 
 function logDebug(level: string, message: string, data?: any): void {
-	// 发送到前端调试面板
+	// Send to the frontend debug panel
 	if (debugLog) {
 		debugLog(level, `[chat-adapter] ${message}`, data);
 	}
 
-	// 只有 warn/error 才输出到控制台
+	// Only warn/error are printed to the console
 	if (level === 'warn') {
 		console.warn(`[chat-adapter] ${message}`, data || '');
 	}
@@ -39,7 +39,7 @@ function logDebug(level: string, message: string, data?: any): void {
 }
 
 /**
- * 消息块处理器（用于模拟流式体验）
+ * Message block handler (used to simulate a streaming experience)
  */
 export type MessageBlockHandler = (block: {
 	type: ChunkType;
@@ -49,7 +49,7 @@ export type MessageBlockHandler = (block: {
 }) => void;
 
 /**
- * sendMessage 选项
+ * sendMessage options
  */
 export interface SendMessageOptions {
 	tools?: import('./types').ChatToolDefinition[];
@@ -58,7 +58,7 @@ export interface SendMessageOptions {
 }
 
 /**
- * Chat 完成结果
+ * Chat completion result
  */
 export interface ChatCompletionResult {
 	textContent: string;
@@ -67,7 +67,7 @@ export interface ChatCompletionResult {
 }
 
 /**
- * Chat 消息
+ * Chat message
  */
 export interface ChatMessage {
 	role: 'system' | 'user' | 'assistant' | 'tool';
@@ -78,7 +78,7 @@ export interface ChatMessage {
 }
 
 /**
- * Chat 会话类
+ * Chat session class
  */
 export class ChatSession {
 	private history: ChatMessage[] = [];
@@ -96,7 +96,7 @@ export class ChatSession {
 	}
 
 	/**
-	 * 构建数据更新通知消息（包含数据摘要，帮助 AI 确认数据已变化）
+	 * Build a data-update notice message (includes a data summary to help the AI confirm the data changed)
 	 */
 	private static buildDataUpdateNotice(data: CollectedData): string {
 		return `[System Notice] The user modified the schematic and the data was collected again.
@@ -111,7 +111,7 @@ Important: the <schematic_data> block in the first system prompt of this convers
 	}
 
 	/**
-	 * 判断一条消息是否为数据更新通知（用于 clear() 跳过和去重）
+	 * Determine whether a message is a data-update notice (used by clear() to skip and deduplicate)
 	 */
 	private static isDataUpdateNotice(content: string | unknown): boolean {
 		return typeof content === 'string' && content.startsWith('[System Notice] The user modified the schematic and the data was collected again.');
@@ -122,22 +122,22 @@ Important: the <schematic_data> block in the first system prompt of this convers
 	}
 
 	/**
-	 * 设置原理图上下文（用于更新数据）
+	 * Set the schematic context (used when updating data)
 	 *
-	 * 当已有对话历史时，注入一对 user+assistant 消息通知 AI 数据已变化。
-	 * 通知中包含具体的数据摘要（器件数/引脚数/网络数），帮助 AI 确认数据确实变了，
-	 * 并明确告知 AI 从 system prompt 的 <schematic_data> 中查找数据。
+	 * When conversation history already exists, inject a user+assistant pair to notify the AI that the data changed.
+	 * The notice includes a concrete data summary (component/pin/net counts) so the AI can confirm the data really changed,
+	 * and explicitly tells the AI to look up data from the <schematic_data> block in the system prompt.
 	 *
-	 * 去重机制：setSchematicContext 可能被连续调用多次（主采集 + 网表回填），
-	 * 如果末尾已是通知对则替换（因为数据摘要可能不同），避免 history 膨胀。
+	 * Deduplication: setSchematicContext may be called repeatedly in succession (main collection + netlist refill),
+	 * and if the tail already contains the notice pair it is replaced (because the summary may differ), preventing history bloat.
 	 */
 	setSchematicContext(data: CollectedData): void {
 		this.updateSchematicContext(data);
-		// 如果已有对话历史，注入数据更新通知，让 AI 知道数据已变化
+		// If conversation history already exists, inject a data-update notice so the AI knows the data changed
 		if (this.history.length > 0) {
 			const len = this.history.length;
 
-			// 去重：如果末尾已是通知对，替换为最新数据摘要（而非跳过，因为摘要数字可能不同）
+			// Deduplicate: if the tail is already a notice pair, replace it with the latest data summary (not skip it, because the counts may differ)
 			if (
 				len >= 2
 				&& this.history[len - 2].role === 'user'
@@ -177,7 +177,7 @@ Important: the <schematic_data> block in the first system prompt of this convers
 	}
 
 	/**
-	 * 静默更新原理图上下文（不注入 history 通知，用于字段配置变更后刷新）
+	 * Silently update the schematic context (do not inject a history notice; used to refresh after field configuration changes)
 	 */
 	updateSchematicContext(data: CollectedData): void {
 		const chunks = chunkData(data, { maxPinsPerChunk: 1200 }, this.schematicFields);
@@ -187,27 +187,27 @@ Important: the <schematic_data> block in the first system prompt of this convers
 	}
 
 	/**
-	 * 更新原理图字段选择配置
+	 * Update the schematic field selection configuration
 	 */
 	updateSchematicFields(fields: SchematicFieldsConfig): void {
 		this.schematicFields = fields;
 	}
 
 	/**
-	 * 重置会话（清空历史）
+	 * Reset the session (clear history)
 	 */
 	reset(): void {
 		this.history = [];
 	}
 
 	/**
-	 * 发送用户消息并获取AI回复
+	 * Send a user message and get the AI reply
 	 *
-	 * @param userMsg 用户消息对象
-	 * @param config AI 配置
-	 * @param onBlock 可选的分块回调，用于模拟流式体验（实际是一次性发送）
-	 * @param signal 可选的 AbortSignal，用于取消请求
-	 * @param options 可选的工具调用选项
+	 * @param userMsg User message object
+	 * @param config AI configuration
+	 * @param onBlock Optional chunk callback for simulating a streaming experience (the actual send is one-shot)
+	 * @param signal Optional AbortSignal for canceling the request
+	 * @param options Optional tool-call options
 	 */
 	async sendMessage(
 		userMsg: UserMessage,
@@ -231,17 +231,17 @@ Important: the <schematic_data> block in the first system prompt of this convers
 		}
 		const initialHistoryLength = this.history.length;
 
-		// 构建用户消息内容
+		// Build the user message content
 		const userContent = this.buildUserContent(userMsg);
 
-		// 将用户消息加入历史
+		// Add the user message to history
 		this.history.push({ role: 'user', content: userContent });
 
 		const availableTools = options?.tools && options.tools.length > 0
 			? options.tools
 			: undefined;
 		const warnToolRounds = Math.max(1, options?.maxToolRounds || 6);
-		const hardLimitRounds = 20; // 防止真正的死循环
+		const hardLimitRounds = 20; // Prevent actual infinite loops
 
 		try {
 			let round = 1;
@@ -250,18 +250,18 @@ Important: the <schematic_data> block in the first system prompt of this convers
 					throw createAbortReviewError('The request was canceled', undefined, signal.reason);
 				}
 
-				// 硬性上限保护（防止死循环）
+				// Hard limit protection (prevents infinite loops)
 				if (round > hardLimitRounds) {
 					logDebug('warn', `Tool-call rounds reached the hard limit (${hardLimitRounds}). Forcing termination`, { round });
 					throw new Error(`Tool-call rounds exceeded the hard limit (>${hardLimitRounds}), which may indicate a loop`);
 				}
 
-				// 软提醒（超过建议轮次时警告但继续）
+				// Soft warning (warn when exceeding the recommended number of rounds, but continue)
 				if (round > warnToolRounds) {
 					logDebug('warn', `Tool-call rounds exceeded the recommended limit (${warnToolRounds}). Current round: ${round}`, { round, warnToolRounds });
 				}
 
-				// 每轮都基于最新历史重建消息
+				// Rebuild the messages from the latest history each round
 				const messages: ChatMessage[] = [
 					{ role: 'system', content: systemPrompt },
 					...this.history,
@@ -278,7 +278,7 @@ Important: the <schematic_data> block in the first system prompt of this convers
 					historyLength: this.history.length,
 				});
 
-				// 若模型要求调用工具，进入工具执行分支
+				// If the model requests tool calls, enter the tool-execution branch
 				if (result.toolCalls.length > 0) {
 					this.history.push({
 						role: 'assistant',
@@ -287,7 +287,7 @@ Important: the <schematic_data> block in the first system prompt of this convers
 					});
 
 					if (!options?.onToolCalls) {
-						// 无工具执行器时回退成普通文本提示，避免死循环
+						// Fall back to a plain-text prompt when no tool executor is available to avoid a loop
 						const fallbackText = result.textContent || 'The model requested a tool call, but tool execution is not enabled.';
 						this.history.pop();
 						this.history.push({
@@ -327,7 +327,7 @@ Important: the <schematic_data> block in the first system prompt of this convers
 					continue;
 				}
 
-				// 普通文本回答结束：仅在此处向 UI 发送事件，避免工具调用中间轮次重复触发
+				// Plain text response completed: only emit events to the UI here to avoid duplicate triggers during intermediate tool-call rounds
 				logDebug('info', `[sendMessage] Final text response in round ${round}; emitting complete blocks`, {
 					round,
 					textLength: result.textContent.length,
@@ -344,27 +344,28 @@ Important: the <schematic_data> block in the first system prompt of this convers
 			}
 		}
 		catch (error) {
-			// 出错回滚到本轮请求前状态，避免残留半成品 tool message
+			// On error, roll back to the state before this request to avoid leaving behind partial tool messages
 			this.history.splice(initialHistoryLength);
 			throw error;
 		}
 	}
 
 	/**
-	 * 清除最后一轮对话（用于重新生成）
+	 * Clear the last conversation turn (used for regeneration)
 	 *
-	 * 工具调用场景下一轮对话可能包含多条消息：
+	 * In tool-call scenarios, a single turn may contain multiple messages:
 	 *   user → assistant(tool_calls) → tool × N → assistant(final)
-	 * 因此从末尾向前找到最后一条 user 消息，将其及之后的所有消息一并移除。
+	 * Therefore, search backward from the end for the last user message and remove it and everything after it.
 	 *
-	 * 注意：跳过 DATA_UPDATE_NOTICE（数据更新通知），它是由 setSchematicContext
-	 * 自动注入的伪用户消息，不属于真实的用户问答轮次。如果不跳过，当末尾恰好
-	 * 是通知对时，clear() 只会移除通知对而保留真实的上一轮对话，导致重新生成失效。
+	 * Note: DATA_UPDATE_NOTICE (the data-update notice) is skipped because it is a pseudo user message automatically
+	 * injected by setSchematicContext and does not belong to a real user Q&A turn. If it is not skipped and the tail
+	 * happens to be a notice pair, clear() would remove only the notice pair while keeping the real previous turn,
+	 * causing regeneration to fail.
 	 */
 	clear(): void {
 		for (let i = this.history.length - 1; i >= 0; i--) {
 			if (this.history[i].role === 'user') {
-				// 仅当该 user 消息与其后的 assistant 消息组成完整通知对时，才视为伪消息并跳过
+				// Only treat it as a pseudo message and skip it when this user message and the following assistant message form a complete notice pair
 				if (ChatSession.isDataUpdateNotice(this.history[i].content)) {
 					const next = this.history[i + 1];
 					if (next?.role === 'assistant' && ChatSession.isDataUpdateAck(next.content)) {
@@ -385,19 +386,19 @@ Important: the <schematic_data> block in the first system prompt of this convers
 	}
 
 	/**
-	 * 构建用户消息内容（支持文本+图片）
+	 * Build user message content (supports text + images)
 	 */
 	private buildUserContent(userMsg: UserMessage): string | Array<{ type: string; text?: string; image_url?: { url: string } }> {
-		// 如果没有图片，直接返回文本
+		// If there are no images, return the text directly
 		if (!userMsg.images || userMsg.images.length === 0) {
 			return userMsg.text || '';
 		}
 
-		// 有图片时使用 multipart 格式
+		// Use multipart format when images are present
 		const parts: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
 
 		for (const img of userMsg.images) {
-			// img.data 可能是完整 data URL（data:image/...;base64,...）或纯 base64 字符串
+			// img.data may be a full data URL (data:image/...;base64,...) or a plain base64 string
 			const url = img.data.startsWith('data:')
 				? img.data
 				: `data:${img.type};base64,${img.data}`;
@@ -415,19 +416,19 @@ Important: the <schematic_data> block in the first system prompt of this convers
 	}
 }
 
-// ============ 文本规范化 ============
+// ============ Text normalization ============
 
 function normalizeChunkText(text: unknown): string {
 	if (typeof text !== 'string')
 		return '';
-	// 不要 trim，保留空白和换行，避免文本粘连
+	// Do not trim; preserve whitespace and newlines to avoid text concatenation
 	return text;
 }
 
-// ============ AI API 调用 ============
+// ============ AI API call ============
 
 /**
- * 调用OpenAI兼容格式的Chat API
+ * Call the OpenAI-compatible Chat API
  */
 async function callOpenAICompatibleChat(
 	messages: ChatMessage[],
@@ -456,11 +457,11 @@ async function callOpenAICompatibleChat(
 			}
 			return messageBody;
 		}),
-		stream: true, // 需要流式模式才能获取 reasoning_content（Grok 等模型）
+		stream: true, // Streaming mode is required to obtain reasoning_content (for Grok and similar models)
 		...getReasoningParams(config.model, 'medium'),
 	};
 
-	// temperature 需特殊处理：某些模型有硬约束或不接受该参数
+	// temperature needs special handling: some models have hard constraints or do not accept this parameter
 	const temperature = getModelTemperature(config.model, 'medium', 0.4);
 	if (temperature !== undefined) {
 		body.temperature = temperature;
@@ -475,7 +476,7 @@ async function callOpenAICompatibleChat(
 }
 
 /**
- * 发送HTTP请求
+ * Send the HTTP request
  */
 async function makeRequest(
 	url: string,
@@ -514,7 +515,7 @@ async function makeRequest(
 			},
 		) as Promise<unknown>;
 
-		// 只支持用户主动取消，不设置超时限制（有些 AI 推理时间很长）
+		// Only user-initiated cancellation is supported; no timeout is set (some AI inference runs for a long time)
 		const response = abortPromise
 			? await Promise.race([requestPromise, abortPromise]) as Response
 			: await requestPromise as Response;
@@ -533,11 +534,11 @@ async function makeRequest(
 			throw createAbortReviewError('The request was canceled', url, signal.reason);
 		}
 
-		// 读取完整响应（EDA API 不支持真正的流式传输）
+		// Read the full response (the EDA API does not support true streaming transfer)
 		let responseText = '';
 		try {
 			const rawResponseText = await response.text();
-			// 防御性类型转换：确保是字符串
+			// Defensive type conversion: ensure the value is a string
 			responseText = coerceToString(rawResponseText);
 			logDebug('info', 'response.text() succeeded', {
 				url,
@@ -561,7 +562,7 @@ async function makeRequest(
 			throw createAbortReviewError('The request was canceled', url, signal.reason);
 		}
 
-		// 检查是否是 SSE 格式
+		// Check whether the response is SSE format
 		const contentType = response.headers.get('content-type') || '';
 		const isSSE = contentType.includes('text/event-stream')
 			|| contentType.includes('text/plain')
@@ -575,11 +576,11 @@ async function makeRequest(
 		});
 
 		if (isSSE) {
-			// SSE 格式：解析所有事件，累积 reasoning 和 content
+			// SSE format: parse all events and accumulate reasoning and content
 			return parseSSEResponse(responseText);
 		}
 
-		// 标准 JSON 响应
+		// Standard JSON response
 		let data: any;
 		try {
 			data = JSON.parse(responseText);
@@ -600,7 +601,7 @@ async function makeRequest(
 			);
 		}
 
-		// 提取 text、reasoning 和 tool_calls 内容
+		// Extract text, reasoning, and tool_calls content
 		const textContent = extractResponseText(data);
 		const reasoningContent = extractReasoningText(data);
 		const toolCalls = extractToolCalls(data);
@@ -623,10 +624,10 @@ async function makeRequest(
 			);
 		}
 
-		// 提取 <think> 标签（如果 AI 在 content 中包含了思考过程）
+		// Extract <think> tags (if the AI included its thought process in content)
 		const { finalText, extractedReasoning } = extractThinkTags(textContent);
 
-		// 合并提取的 reasoning（优先使用非空白的 reasoningContent）
+		// Merge the extracted reasoning (prefer the non-whitespace reasoningContent)
 		const finalReasoning = hasNonWhitespace(reasoningContent) ? reasoningContent : extractedReasoning;
 
 		logDebug('info', 'Final extraction result', {
@@ -647,7 +648,7 @@ async function makeRequest(
 			throw error;
 		}
 
-		// 捕获外部交互权限错误
+		// Catch external interaction permission errors
 		if (error instanceof Error) {
 			const msg = error.message.toLowerCase();
 			const permissionKeywords = [
@@ -687,18 +688,18 @@ async function makeRequest(
 	}
 }
 
-// ============ SSE 解析 ============
+// ============ SSE parsing ============
 
 /**
- * 解析 SSE 响应
+ * Parse an SSE response
  *
- * 策略：
- * 1. 解析所有 SSE 事件，累积完整的 text 和 reasoning 内容
- * 2. 提取 <think> 标签（如果有）
- * 3. 返回累积结果（事件发送由 sendMessage 统一控制）
+ * Strategy:
+ * 1. Parse all SSE events and accumulate the full text and reasoning content
+ * 2. Extract <think> tags if present
+ * 3. Return the accumulated result (event emission is centrally controlled by sendMessage)
  */
 function parseSSEResponse(text: string): ChatCompletionResult {
-	// 防御性检查
+	// Defensive check
 	if (!text || typeof text !== 'string') {
 		logDebug('error', 'The SSE response is empty or malformed', {
 			textType: typeof text,
@@ -719,11 +720,11 @@ function parseSSEResponse(text: string): ChatCompletionResult {
 	let currentEventData: string[] = [];
 	let parseErrorCount = 0;
 
-	// 第一阶段：解析所有 SSE 事件，累积内容
+	// First phase: parse all SSE events and accumulate content
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i].trim();
 
-		// 空行表示事件结束
+		// A blank line indicates the end of an event
 		if (line === '') {
 			if (currentEventData.length > 0) {
 				processEvent(currentEventData.join(''));
@@ -732,11 +733,11 @@ function parseSSEResponse(text: string): ChatCompletionResult {
 			continue;
 		}
 
-		// 处理 data: 行
+		// Handle data: lines
 		if (line.startsWith('data:')) {
 			const dataContent = line.substring(5).trim();
 
-			// 跳过 [DONE] 标记
+			// Skip the [DONE] marker
 			if (dataContent === '[DONE]') {
 				if (currentEventData.length > 0) {
 					processEvent(currentEventData.join(''));
@@ -749,12 +750,12 @@ function parseSSEResponse(text: string): ChatCompletionResult {
 		}
 	}
 
-	// 处理最后一个事件
+	// Process the last event
 	if (currentEventData.length > 0) {
 		processEvent(currentEventData.join(''));
 	}
 
-	// 解析单个 SSE 事件
+	// Parse a single SSE event
 	function processEvent(eventText: string): void {
 		try {
 			const chunk = JSON.parse(eventText);
@@ -762,10 +763,10 @@ function parseSSEResponse(text: string): ChatCompletionResult {
 			if (!delta)
 				return;
 
-			// 累积 SSE 中的 tool_calls delta
+			// Accumulate tool_calls deltas from the SSE stream
 			appendSseToolCalls(delta.tool_calls, toolCallsBuffer);
 
-			// 🆕 使用统一的 reasoning 提取函数（支持所有模型）
+			// 🆕 Use the unified reasoning extraction function (supports all models)
 			const reasoning = normalizeChunkText(extractReasoningFromDelta(delta));
 			const content = normalizeChunkText(delta.content);
 
@@ -777,7 +778,7 @@ function parseSSEResponse(text: string): ChatCompletionResult {
 			}
 		}
 		catch {
-			// 忽略单个事件的解析错误
+			// Ignore parsing errors for individual events
 			parseErrorCount++;
 		}
 	}
@@ -791,9 +792,9 @@ function parseSSEResponse(text: string): ChatCompletionResult {
 		logDebug('warn', 'Some SSE event fragments failed to parse', { parseErrorCount });
 	}
 
-	// 第二阶段：提取标签
+	// Second phase: extract tags
 	if (!reasoningContent && textContent) {
-		// 提取 <think> 标签（贪婪匹配，确保提取完整内容）
+		// Extract <think> tags (greedy match to ensure the full content is captured)
 		const thinkTagRegex = /<think>[\s\S]*<\/think>|<thought>[\s\S]*<\/thought>|<thinking>[\s\S]*<\/thinking>/gi;
 		const thinkMatches = textContent.match(thinkTagRegex);
 		if (thinkMatches && thinkMatches.length > 0) {
@@ -830,17 +831,17 @@ function parseSSEResponse(text: string): ChatCompletionResult {
 	return { textContent, reasoningContent, toolCalls };
 }
 
-// ============ 辅助函数 ============
+// ============ Helper functions ============
 
 /**
- * 从文本中提取 <think> 标签
+ * Extract <think> tags from text
  */
 function extractThinkTags(text: string): { finalText: string; extractedReasoning: string } {
 	if (!text) {
 		return { finalText: '', extractedReasoning: '' };
 	}
 
-	// 提取 <think> 标签
+	// Extract <think> tags
 	const thinkTagRegex = /<think>[\s\S]*?<\/think>|<thought>[\s\S]*?<\/thought>|<thinking>[\s\S]*?<\/thinking>/gi;
 	const thinkMatches = text.match(thinkTagRegex);
 
@@ -852,7 +853,7 @@ function extractThinkTags(text: string): { finalText: string; extractedReasoning
 		return { finalText, extractedReasoning };
 	}
 
-	// 提取 Grok 格式
+	// Extract Grok format
 	const hasGrokMarkers = /\[(?:Agent\s+\d+|Grok)\]\[/.test(text) || /browse_page\s*\{/.test(text);
 	if (hasGrokMarkers) {
 		const contentLines = text.split('\n');
@@ -886,11 +887,11 @@ function emitCompleteBlocks(
 	onBlock?: MessageBlockHandler,
 ): void {
 	if (!onBlock) {
-		logDebug('debug', 'onBlock 回调为空，跳过事件发送');
+		logDebug('debug', 'onBlock callback is empty; skipping event emission');
 		return;
 	}
 
-	logDebug('debug', '准备发送事件', {
+	logDebug('debug', 'Preparing to emit events', {
 		hasReasoning: !!reasoningContent,
 		hasText: !!textContent,
 		reasoningLength: reasoningContent.length,
@@ -898,23 +899,23 @@ function emitCompleteBlocks(
 	});
 
 	if (reasoningContent) {
-		logDebug('debug', '发送 THINKING 事件', { length: reasoningContent.length });
+		logDebug('debug', 'Emitting THINKING events', { length: reasoningContent.length });
 		onBlock({ type: ChunkType.THINKING_START, content: '', accumulatedContent: '' });
 		onBlock({ type: ChunkType.THINKING_DELTA, content: reasoningContent, accumulatedContent: reasoningContent });
 		onBlock({ type: ChunkType.THINKING_COMPLETE, content: '', accumulatedContent: reasoningContent, status: 'success' });
 	}
 	else {
-		logDebug('debug', '没有 reasoning 内容，跳过 THINKING 事件');
+		logDebug('debug', 'No reasoning content; skipping THINKING events');
 	}
 
 	if (textContent) {
-		logDebug('debug', '发送 TEXT 事件', { length: textContent.length });
+		logDebug('debug', 'Emitting TEXT events', { length: textContent.length });
 		onBlock({ type: ChunkType.TEXT_START, content: '', accumulatedContent: '' });
 		onBlock({ type: ChunkType.TEXT_DELTA, content: textContent, accumulatedContent: textContent });
 		onBlock({ type: ChunkType.TEXT_COMPLETE, content: '', accumulatedContent: textContent, status: 'success' });
 	}
 	else {
-		logDebug('debug', '没有 text 内容，跳过 TEXT 事件');
+		logDebug('debug', 'No text content; skipping TEXT events');
 	}
 }
 
@@ -1001,14 +1002,14 @@ function handleHttpError(status: number, errorText: unknown, url: string): never
 }
 
 /**
- * 检查字符串是否包含非空白字符
+ * Check whether a string contains any non-whitespace characters
  */
 function hasNonWhitespace(text: string): boolean {
 	return text.trim().length > 0;
 }
 
 /**
- * 将未知类型强制转换为字符串
+ * Force-convert an unknown type to a string
  */
 function coerceToString(value: unknown): string {
 	if (typeof value === 'string') {
@@ -1028,7 +1029,7 @@ function coerceToString(value: unknown): string {
 	return String(value);
 }
 
-// ============ Tool Calls 辅助函数 ============
+// ============ Tool Calls helper functions ============
 
 function normalizeToolCalls(rawToolCalls: unknown): import('./types').ChatToolCall[] {
 	if (!Array.isArray(rawToolCalls)) {

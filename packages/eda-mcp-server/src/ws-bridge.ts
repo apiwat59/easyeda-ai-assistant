@@ -1,13 +1,12 @@
 /**
  * eda-mcp-server - WebSocket Bridge
  *
- * 接收来自 EDA 扩展的 WS 连接，处理 hello/snapshot/pong 消息。
- * 在收到 snapshot 后更新 SnapshotStore。
+ * Receives WS connections from the EDA extension and handles hello/snapshot/pong messages.
+ * Updates the SnapshotStore when a snapshot is received.
  */
 import { WebSocketServer, WebSocket } from 'ws';
 import type {
 	BridgeHelloMessage,
-	BridgeInboundMessage,
 	BridgeSnapshotMessage,
 	ServerAckMessage,
 	ServerPingMessage,
@@ -15,10 +14,10 @@ import type {
 } from './types.js';
 import type { SnapshotStore } from './snapshot-store.js';
 
-/** 心跳间隔（每 15 秒发送一次 ping） */
+/** Heartbeat interval (send ping every 15 seconds) */
 const PING_INTERVAL_MS = 15_000;
 
-/** 连接超时（60 秒无消息则断开） */
+/** Connection timeout (disconnect if no messages arrive for 60 seconds) */
 const CONNECTION_TIMEOUT_MS = 60_000;
 
 export interface WsBridgeOptions {
@@ -59,7 +58,7 @@ export class WsBridge {
 	}
 
 	/**
-	 * 启动 WebSocket 服务
+	 * Start the WebSocket server
 	 */
 	start(): Promise<void> {
 		if (this.wss) return Promise.resolve();
@@ -68,13 +67,13 @@ export class WsBridge {
 			const wss = new WebSocketServer({ port: this.port, host: this.host });
 
 			const onStartupError = (error: Error) => {
-				// 启动失败：不保留 wss 引用，允许重试
+				// Startup failed: do not retain the wss reference, allowing retry
 				this.log('error', `WebSocket server failed to start: ${error.message}`);
 				reject(error);
 			};
 
 			wss.once('listening', () => {
-				// 启动成功：移除启动期 error 处理器，注册运行期处理器
+				// Startup succeeded: remove the startup-time error handler and register runtime handlers
 				wss.removeListener('error', onStartupError);
 				this.wss = wss;
 				wss.on('error', (error) => {
@@ -90,7 +89,7 @@ export class WsBridge {
 	}
 
 	/**
-	 * 停止 WebSocket 服务
+	 * Stop the WebSocket server
 	 */
 	stop(): Promise<void> {
 		this.cleanupClient();
@@ -104,10 +103,10 @@ export class WsBridge {
 	}
 
 	/**
-	 * 用新的 host/port 重启 WebSocket 服务
+	 * Restart the WebSocket server with a new host/port
 	 *
-	 * 等待旧服务完全关闭后再启动新服务，避免端口竞态。
-	 * 启动失败时回滚 host/port 到变更前的值。
+	 * Wait for the old server to fully close before starting the new one to avoid port races.
+	 * If startup fails, roll host/port back to their previous values.
 	 */
 	async restart(host: string, port: number): Promise<void> {
 		const prevHost = this.host;
@@ -118,17 +117,17 @@ export class WsBridge {
 		try {
 			await this.start();
 		} catch (error) {
-			// 启动失败，回滚配置并尝试恢复旧监听
+			// Startup failed, roll back configuration and try to restore the old listener
 			this.host = prevHost;
 			this.port = prevPort;
 			try {
 				await this.start();
-				this.log('warn', '新地址启动失败，已恢复旧监听', {
+				this.log('warn', 'Failed to start the new address; restored the previous listener', {
 					restoredHost: prevHost,
 					restoredPort: prevPort,
 				});
 			} catch (restoreError) {
-				this.log('error', '新地址启动失败，且恢复旧监听也失败', {
+				this.log('error', 'Failed to start the new address, and restoring the previous listener also failed', {
 					restoreError: restoreError instanceof Error ? restoreError.message : String(restoreError),
 				});
 			}
@@ -137,14 +136,14 @@ export class WsBridge {
 	}
 
 	/**
-	 * 获取当前监听地址
+	 * Get the current listen address
 	 */
 	getListenInfo(): { host: string; port: number } {
 		return { host: this.host, port: this.port };
 	}
 
 	/**
-	 * 向客户端发送 request_data 消息
+	 * Send a request_data message to the client
 	 */
 	requestData(): void {
 		if (!this.client || this.client.ws.readyState !== WebSocket.OPEN) return;
@@ -154,14 +153,14 @@ export class WsBridge {
 	}
 
 	/**
-	 * 是否有活跃的客户端连接
+	 * Whether there is an active client connection
 	 */
 	isClientConnected(): boolean {
 		return this.client !== null && this.client.ws.readyState === WebSocket.OPEN;
 	}
 
 	/**
-	 * 获取客户端信息摘要
+	 * Get a summary of the client information
 	 */
 	getClientInfo(): { connected: boolean; appName?: string; appVersion?: string; projectName?: string } {
 		if (!this.client) return { connected: false };
@@ -173,12 +172,12 @@ export class WsBridge {
 		};
 	}
 
-	// ============ 内部方法 ============
+	// ============ Internal methods ============
 
 	private handleConnection(ws: WebSocket): void {
-		// 仅允许单客户端连接（MVP 阶段）
+		// Only allow a single client connection (MVP stage)
 		if (this.client) {
-			this.log('info', '新客户端连接，断开旧客户端');
+			this.log('info', 'A new client connected, disconnecting the old client');
 			this.cleanupClient();
 		}
 
@@ -195,9 +194,9 @@ export class WsBridge {
 		};
 
 		this.client = client;
-		this.log('info', '客户端已连接');
+		this.log('info', 'Client connected');
 
-		// 启动心跳
+		// Start heartbeat
 		client.pingTimer = setInterval(() => this.sendPing(client), PING_INTERVAL_MS);
 
 		ws.on('message', (data) => {
@@ -207,22 +206,22 @@ export class WsBridge {
 				client.lastMessageAt = Date.now();
 				this.handleMessage(client, msg);
 			} catch {
-				this.log('warn', '收到无法解析的消息');
+				this.log('warn', 'Received an unparseable message');
 			}
 		});
 
 		ws.on('close', (code, reason) => {
-			this.log('info', `客户端断开 (code=${code}, reason=${reason.toString('utf-8')})`);
+			this.log('info', `Client disconnected (code=${code}, reason=${reason.toString('utf-8')})`);
 			if (this.client === client) {
 				this.cleanupClient();
 			}
 		});
 
 		ws.on('error', (error) => {
-			this.log('error', `客户端连接错误: ${error.message}`);
+			this.log('error', `Client connection error: ${error.message}`);
 		});
 
-		// 如果 store 中没有数据，主动请求
+		// If the store has no data, request it proactively
 		if (!this.store.hasData()) {
 			setTimeout(() => {
 				if (client.ws.readyState === WebSocket.OPEN) {
@@ -245,11 +244,11 @@ export class WsBridge {
 				break;
 
 			case 'pong':
-				// 心跳回复，仅更新 lastMessageAt（已在上层更新）
+				// Heartbeat reply; lastMessageAt is already updated above
 				break;
 
 			default:
-				this.log('warn', `收到未知消息类型: ${type}`);
+				this.log('warn', `Received unknown message type: ${type}`);
 				break;
 		}
 	}
@@ -265,71 +264,71 @@ export class WsBridge {
 		const storeProjectUuid = this.store.getProjectInfo()?.projectUuid ?? '';
 		const clientProjectUuid = msg.project?.uuid ?? '';
 
-		// 条件化版本基线重置：
-		// 1. 客户端版本 < store 版本 → 扩展重启，需重置基线
-		// 2. 项目 UUID 变化 → 切换到不同项目，清空旧数据
+		// Conditional version baseline reset:
+		// 1. Client version < store version -> extension restart, baseline needs to reset
+		// 2. Project UUID changes -> switched to a different project, clear old data
 		if (clientProjectUuid && storeProjectUuid && clientProjectUuid !== storeProjectUuid) {
-			this.log('info', '项目已切换，清空旧快照', {
+			this.log('info', 'Project switched; clearing the old snapshot', {
 				oldProject: storeProjectUuid,
 				newProject: clientProjectUuid,
 			});
 			this.store.clear();
 		} else if (clientVersion < storeVersion) {
-			this.log('info', '客户端版本回退，重置版本基线', {
+			this.log('info', 'Client version rolled back; resetting the version baseline', {
 				clientVersion,
 				storeVersion,
 			});
 			this.store.resetVersionBaseline();
 		}
 
-		this.log('info', '收到 hello 握手', {
+		this.log('info', 'Received hello handshake', {
 			app: `${client.appName} v${client.appVersion}`,
-			project: client.projectName || '(未知)',
+			project: client.projectName || '(unknown)',
 			snapshotVersion: clientVersion,
 		});
 	}
 
 	private handleSnapshot(client: ClientState, msg: BridgeSnapshotMessage): void {
 		if (!msg.payload) {
-			this.log('warn', '收到 snapshot 但缺少 payload');
+			this.log('warn', 'Received a snapshot but the payload is missing');
 			return;
 		}
 
 		const accepted = this.store.update(msg.version, msg.projectUuid ?? '', msg.timestamp, msg.payload);
 		if (!accepted) {
-			this.log('warn', `快照 v${msg.version} 已过期，忽略（当前版本 v${this.store.getVersion()}）`);
+			this.log('warn', `Snapshot v${msg.version} is stale and will be ignored (current version v${this.store.getVersion()})`);
 			return;
 		}
 
-		// 更新客户端 project 信息
+		// Update client project information
 		if (msg.payload.projectInfo) {
 			client.projectUuid = msg.payload.projectInfo.projectUuid ?? client.projectUuid;
 			client.projectName = msg.payload.projectInfo.projectName ?? client.projectName;
 		}
 
-		this.log('info', `收到快照 v${msg.version}`, {
+		this.log('info', `Received snapshot v${msg.version}`, {
 			components: msg.payload.components?.length ?? 0,
 			pins: msg.payload.pins?.length ?? 0,
 			nets: msg.payload.nets?.length ?? 0,
 		});
 
-		// 发送确认
+		// Send confirmation
 		const ack: ServerAckMessage = { type: 'ack', version: msg.version };
 		if (client.ws.readyState === WebSocket.OPEN) {
 			client.ws.send(JSON.stringify(ack));
 		}
 
-		// 通知上层
+		// Notify upstream
 		this.onSnapshot?.(msg.version);
 	}
 
 	private sendPing(client: ClientState): void {
 		if (client.ws.readyState !== WebSocket.OPEN) return;
 
-		// 检查连接超时
+		// Check for connection timeout
 		const idleMs = Date.now() - client.lastMessageAt;
 		if (idleMs > CONNECTION_TIMEOUT_MS) {
-			this.log('warn', '客户端心跳超时，断开连接', { idleMs });
+			this.log('warn', 'Client heartbeat timed out; closing the connection', { idleMs });
 			client.ws.close(4000, 'heartbeat-timeout');
 			return;
 		}

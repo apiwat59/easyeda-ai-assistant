@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * eda-mcp-server - 入口文件
+ * eda-mcp-server - entry point
  *
- * 启动 WS server（接收扩展推送）+ MCP server（通过 stdio transport 暴露给 AI 工具）。
+ * Starts the WS server (receiving extension pushes) + MCP server (exposed to AI tools via stdio transport).
  *
- * 使用方式：
- *   npx eda-mcp-server                          # 默认 127.0.0.1:3100
- *   npx eda-mcp-server --port 3200              # 自定义端口
- *   npx eda-mcp-server --host 0.0.0.0           # 监听所有网卡（允许远程连接）
+ * Usage:
+ *   npx eda-mcp-server                          # default 127.0.0.1:3100
+ *   npx eda-mcp-server --port 3200              # custom port
+ *   npx eda-mcp-server --host 0.0.0.0           # listen on all interfaces (allow remote connections)
  *   npx eda-mcp-server --host 0.0.0.0 --port 3200
  */
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -15,7 +15,7 @@ import { SnapshotStore } from './snapshot-store.js';
 import { WsBridge } from './ws-bridge.js';
 import { createMcpServer } from './mcp-server.js';
 
-// ============ 命令行参数解析 ============
+// ============ Command-line argument parsing ============
 
 function parseArgs(): { port: number; host: string } {
 	const args = process.argv.slice(2);
@@ -26,11 +26,11 @@ function parseArgs(): { port: number; host: string } {
 		if (args[i] === '--port') {
 			const raw = args[i + 1];
 			if (!raw || !/^\d+$/.test(raw)) {
-				throw new Error(`无效的 --port 参数: ${raw ?? '(缺失)'}`);
+				throw new Error(`Invalid --port argument: ${raw ?? '(missing)'}`);
 			}
 			const parsed = Number(raw);
 			if (parsed < 1 || parsed > 65535) {
-				throw new Error(`端口超出范围: ${raw}（应为 1-65535）`);
+				throw new Error(`Port out of range: ${raw} (expected 1-65535)`);
 			}
 			port = parsed;
 			i++;
@@ -38,7 +38,7 @@ function parseArgs(): { port: number; host: string } {
 		}
 		if (args[i] === '--host') {
 			if (!args[i + 1]) {
-				throw new Error('缺少 --host 参数值');
+				throw new Error('Missing --host argument value');
 			}
 			host = args[i + 1];
 			i++;
@@ -48,7 +48,7 @@ function parseArgs(): { port: number; host: string } {
 	return { port, host };
 }
 
-// ============ 日志 ============
+// ============ Logging ============
 
 function createLogger(prefix: string) {
 	return (level: string, message: string, data?: unknown) => {
@@ -58,7 +58,7 @@ function createLogger(prefix: string) {
 	};
 }
 
-// ============ 主入口 ============
+// ============ Main entry ============
 
 async function main() {
 	const { port, host } = parseArgs();
@@ -66,10 +66,10 @@ async function main() {
 
 	mainLog('info', `eda-mcp-server starting (ws=${host}:${port})`);
 
-	// 1. 创建快照存储
+	// 1. Create snapshot storage
 	const store = new SnapshotStore();
 
-	// 2. 启动 WS Bridge（接收扩展推送）
+	// 2. Start the WS bridge (receives extension pushes)
 	const bridge = new WsBridge({
 		port,
 		host,
@@ -81,20 +81,20 @@ async function main() {
 	});
 	await bridge.start();
 
-	// 3. 创建 MCP Server
+	// 3. Create the MCP server
 	const mcpServer = createMcpServer({
 		store,
 		bridge,
 		logger: createLogger('mcp'),
 	});
 
-	// 4. 启动 stdio transport（连接到 Cursor/Claude Code 等）
+	// 4. Start stdio transport (connects to Cursor/Claude Code, etc.)
 	const transport = new StdioServerTransport();
 	await mcpServer.connect(transport);
 
 	mainLog('info', 'MCP server connected via stdio transport');
 
-	// 5. 优雅退出
+	// 5. Graceful shutdown
 	const shutdown = async () => {
 		mainLog('info', 'Shutting down...');
 		await bridge.stop();

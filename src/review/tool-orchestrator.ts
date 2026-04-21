@@ -1,14 +1,14 @@
 /**
- * AI原理图审查 - MCP 工具编排器
+ * AI schematic review - MCP tool orchestrator
  *
- * 职责：
- * 1. 拉取可用工具列表（Gateway -> /tools/list 或 JSON-RPC tools/list）
- * 2. 执行工具调用（Gateway -> /tools/call 或 JSON-RPC tools/call）
- * 3. 向 IFrame 发出可观测的工具事件
+ * Responsibilities:
+ * 1. Fetch the available tool list (Gateway -> /tools/list or JSON-RPC tools/list)
+ * 2. Execute tool calls (Gateway -> /tools/call or JSON-RPC tools/call)
+ * 3. Emit observable tool events to the IFrame
  *
- * 支持两种 Gateway 模式：
- * - REST Gateway: 自定义 REST API（/tools/list, /tools/call）
- * - MCP Streamable HTTP: JSON-RPC 2.0 协议（单一端点，如 /mcp）
+ * Supports two Gateway modes:
+ * - REST Gateway: custom REST API (/tools/list, /tools/call)
+ * - MCP Streamable HTTP: JSON-RPC 2.0 protocol (single endpoint, such as /mcp)
  */
 import type {
 	ChatToolCall,
@@ -28,7 +28,7 @@ interface ToolListResponseShape {
 	result?: {
 		tools?: unknown;
 	};
-	// JSON-RPC 格式
+	// JSON-RPC format
 	jsonrpc?: string;
 	id?: number | string;
 }
@@ -39,21 +39,21 @@ interface ToolCallResponseShape {
 	output?: unknown;
 	isError?: boolean;
 	error?: unknown;
-	// JSON-RPC 格式
+	// JSON-RPC format
 	jsonrpc?: string;
 	id?: number | string;
 }
 
 /**
- * Gateway 类型
+ * Gateway type
  */
 enum GatewayType {
-	REST = 'rest', // 自定义 REST API
+	REST = 'rest', // custom REST API
 	JSON_RPC = 'json-rpc', // MCP Streamable HTTP (JSON-RPC 2.0)
 }
 
 /**
- * JSON-RPC 请求
+ * JSON-RPC request
  */
 interface JsonRpcRequest {
 	jsonrpc: '2.0';
@@ -63,7 +63,7 @@ interface JsonRpcRequest {
 }
 
 /**
- * JSON-RPC 响应（预留类型定义，暂未直接使用）
+ * JSON-RPC response (reserved type definition, not used directly yet)
  */
 interface _JsonRpcResponse {
 	jsonrpc: '2.0';
@@ -77,32 +77,32 @@ interface _JsonRpcResponse {
 }
 
 /**
- * 模块级 MCP Session 缓存（避免每次创建 ToolOrchestrator 都重新 initialize）
+ * Module-level MCP session cache (avoids re-running initialize every time ToolOrchestrator is created)
  *
- * 策略：
- * - 按 gatewayBaseUrl 缓存 session ID 或 stateless 标记
- * - 30 分钟 TTL，过期自动清理
- * - 配置变更时清空缓存
+ * Strategy:
+ * - Cache session ID or a stateless marker by gatewayBaseUrl
+ * - 30-minute TTL with automatic expiration cleanup
+ * - Clear the cache when configuration changes
  */
 interface SessionCacheEntry {
 	mode: 'session' | 'stateless';
-	sessionId?: string; // mode=session 时存在
+	sessionId?: string; // present when mode=session
 	timestamp: number;
 }
 
 const sessionCache = new Map<string, SessionCacheEntry>();
-const SESSION_CACHE_TTL_MS = 30 * 60 * 1000; // 30 分钟
+const SESSION_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 /**
- * Initialize 结果类型
+ * Initialize result type
  */
 interface InitializeResult {
 	mode: 'session' | 'stateless';
-	sessionId?: string; // mode=session 时存在
+	sessionId?: string; // present when mode=session
 }
 
 /**
- * 获取缓存的 Session ID 或 stateless 标记（如果未过期）
+ * Get the cached session ID or stateless marker (if not expired)
  */
 function getCachedSessionId(gatewayBaseUrl: string): InitializeResult | null {
 	const entry = sessionCache.get(gatewayBaseUrl);
@@ -110,7 +110,7 @@ function getCachedSessionId(gatewayBaseUrl: string): InitializeResult | null {
 		return null;
 	}
 
-	// 检查是否过期
+	// Check expiration
 	if (Date.now() - entry.timestamp > SESSION_CACHE_TTL_MS) {
 		sessionCache.delete(gatewayBaseUrl);
 		return null;
@@ -127,7 +127,7 @@ function getCachedSessionId(gatewayBaseUrl: string): InitializeResult | null {
 }
 
 /**
- * 保存 Session ID 或 stateless 标记到缓存
+ * Save the session ID or stateless marker to the cache
  */
 function setCachedSessionId(gatewayBaseUrl: string, result: InitializeResult): void {
 	if (result.mode === 'session' && result.sessionId) {
@@ -146,22 +146,22 @@ function setCachedSessionId(gatewayBaseUrl: string, result: InitializeResult): v
 }
 
 /**
- * 模块级 initialize inflight promise（跨实例合并并发 initialize 请求）
- * 按 gatewayBaseUrl 分桶，避免不同 gateway 的请求互相阻塞
+ * Module-level initialize inflight promise (merges concurrent initialize requests across instances)
+ * Bucketed by gatewayBaseUrl to avoid blocking requests for different gateways
  */
 const initializeInflight = new Map<string, Promise<InitializeResult | null>>();
 
 /**
- * 清空所有缓存的 Session ID（配置变更时调用）
+ * Clear all cached session IDs (called when configuration changes)
  */
 export function clearSessionCache(): void {
 	sessionCache.clear();
-	// 同时清空模块级 inflight promise
+	// Also clear the module-level inflight promises
 	initializeInflight.clear();
 }
 
 /**
- * 工具编排器
+ * Tool orchestrator
  */
 export class ToolOrchestrator {
 	private readonly gatewayBaseUrl: string;
@@ -177,7 +177,7 @@ export class ToolOrchestrator {
 		this.gatewayBaseUrl = normalizeGatewayBaseUrl(config.mcpGatewayUrl || '');
 		this.gatewayType = detectGatewayType(this.gatewayBaseUrl);
 
-		// 从模块级缓存恢复 Session ID 或 stateless 标记，避免重复 initialize
+		// Restore the session ID or stateless marker from the module-level cache to avoid repeated initialize calls
 		if (this.gatewayType === GatewayType.JSON_RPC) {
 			const cached = getCachedSessionId(this.gatewayBaseUrl);
 			if (cached) {
@@ -185,7 +185,7 @@ export class ToolOrchestrator {
 					this.mcpSessionId = cached.sessionId;
 				}
 				else if (cached.mode === 'stateless') {
-					// 无状态模式已初始化，mcpSessionId 保持 null 但不再重复 initialize
+					// Stateless mode was already initialized; keep mcpSessionId null and skip repeated initialize calls
 					this.mcpSessionId = null;
 				}
 			}
@@ -193,11 +193,11 @@ export class ToolOrchestrator {
 	}
 
 	/**
-	 * 更新当前请求上下文（每次新请求复用时必须调用）
+	 * Update the current request context (must be called whenever reusing for a new request)
 	 *
-	 * ToolOrchestrator 按 sessionId 复用，但 requestId 每次请求不同。
-	 * 不更新会导致工具事件携带旧 requestId，前端匹配不到当前消息，
-	 * 从而创建多余的工具调用提示框。
+	 * ToolOrchestrator is reused by sessionId, but requestId changes for each request.
+	 * If not updated, tool events will carry the old requestId, the frontend will fail to match them
+	 * to the current message, and redundant tool-call prompt boxes will be created.
 	 */
 	updateRequestContext(requestId: string): void {
 		const oldRequestId = this.context.requestId;
@@ -205,11 +205,11 @@ export class ToolOrchestrator {
 			return;
 		}
 		this.context.requestId = requestId;
-		// 注意：不能用 this.emit()，它会走 TOOL_EVENT 通道被前端渲染成工具提示框
-		// 仅输出控制台调试信息（非警告级别，属于正常流程）
+		// Note: do not use this.emit(); it goes through the TOOL_EVENT channel and the frontend renders it as a tool prompt box
+		// Only output console debug information here (not warning level; this is part of normal flow)
 		// eslint-disable-next-line no-console
 		console.log(
-			`[tool-orchestrator] requestId updated: ${oldRequestId.substring(0, 12)}→${requestId.substring(0, 12)}`,
+			`[tool-orchestrator] requestId updated: ${oldRequestId.substring(0, 12)}->${requestId.substring(0, 12)}`,
 		);
 	}
 
@@ -229,7 +229,7 @@ export class ToolOrchestrator {
 		});
 
 		try {
-			// JSON-RPC 模式需要先初始化会话
+			// JSON-RPC mode requires initializing the session first
 			if (this.gatewayType === GatewayType.JSON_RPC) {
 				await this.ensureInitialized(signal);
 			}
@@ -307,7 +307,7 @@ export class ToolOrchestrator {
 			});
 
 			try {
-				// JSON-RPC 模式需要先初始化会话
+				// JSON-RPC mode requires initializing the session first
 				if (this.gatewayType === GatewayType.JSON_RPC) {
 					await this.ensureInitialized(signal);
 				}
@@ -397,14 +397,14 @@ export class ToolOrchestrator {
 	}
 
 	/**
-	 * 确保 MCP 会话已初始化（仅 JSON-RPC 模式需要）
+	 * Ensure the MCP session has been initialized (required only for JSON-RPC mode)
 	 *
-	 * 使用模块级 inflight promise 合并跨实例的并发 initialize 请求
-	 * 按 gatewayBaseUrl 分桶，避免不同 gateway 的请求互相阻塞
-	 * 支持 stateless 模式：如果 session ID 不可达（CORS），标记为已初始化但无 session ID
+	 * Uses a module-level inflight promise to merge concurrent initialize requests across instances.
+	 * Bucketed by gatewayBaseUrl to avoid blocking requests for different gateways.
+	 * Supports stateless mode: if the session ID is inaccessible (CORS), mark as initialized without a session ID.
 	 */
 	private async ensureInitialized(signal?: AbortSignal): Promise<void> {
-		// 检查缓存：session 模式或 stateless 模式都算已初始化
+		// Check the cache: both session mode and stateless mode count as initialized
 		const cached = getCachedSessionId(this.gatewayBaseUrl);
 		if (cached) {
 			if (cached.mode === 'session' && cached.sessionId) {
@@ -425,7 +425,7 @@ export class ToolOrchestrator {
 			return;
 		}
 
-		// 模块级 inflight：如果有其他实例正在 initialize，等待它完成（按 gateway 分桶）
+		// Module-level inflight: if another instance is already initializing, wait for it to finish (bucketed by gateway)
 		const existingInflight = initializeInflight.get(this.gatewayBaseUrl);
 		if (existingInflight) {
 			this.emit({
@@ -447,7 +447,7 @@ export class ToolOrchestrator {
 			return;
 		}
 
-		// 发起新的 initialize，使用模块级 inflight 防并发（按 gateway 分桶）
+		// Start a new initialize call and use module-level inflight deduplication (bucketed by gateway)
 		this.emit({
 			stage: 'mcp-session',
 			status: 'running',
@@ -467,11 +467,11 @@ export class ToolOrchestrator {
 	}
 
 	/**
-	 * 执行 MCP initialize 握手
+	 * Perform the MCP initialize handshake
 	 *
-	 * 返回 InitializeResult：
-	 * - mode=session: 成功获取 session ID
-	 * - mode=stateless: header 不可达（CORS）但请求成功，降级为无状态模式
+	 * Returns InitializeResult:
+	 * - mode=session: successfully obtained a session ID
+	 * - mode=stateless: header was inaccessible (CORS) but the request succeeded, so fall back to stateless mode
 	 */
 	private async performInitialize(signal?: AbortSignal): Promise<InitializeResult | null> {
 		const initRequest: JsonRpcRequest = {
@@ -492,10 +492,10 @@ export class ToolOrchestrator {
 			'',
 			initRequest,
 			signal,
-			true, // skipSessionHeader = true（初始化时不带 session ID）
+			true, // skipSessionHeader = true (do not send a session ID during initialize)
 		);
 
-		// 如果成功获取了 session ID，保存到模块级缓存
+		// If a session ID was obtained successfully, save it to the module-level cache
 		if (this.mcpSessionId) {
 			const result: InitializeResult = { mode: 'session', sessionId: this.mcpSessionId };
 			this.emit({
@@ -507,8 +507,8 @@ export class ToolOrchestrator {
 			return result;
 		}
 
-		// Session ID 未获取到（CORS 限制等），降级为无状态模式继续工作
-		// 不抛出错误，允许后续请求在没有 session ID 的情况下发送
+		// Session ID was not obtained (for example due to CORS restrictions), so fall back to stateless mode
+		// Do not throw; allow follow-up requests to proceed without a session ID
 		const result: InitializeResult = { mode: 'stateless' };
 		this.emit({
 			stage: 'mcp-session',
@@ -535,7 +535,7 @@ export class ToolOrchestrator {
 		const abortPromise = signal
 			? new Promise<never>((_, reject) => {
 					const onAbort = (): void => {
-						reject(new Error('Gateway 请求已取消'));
+						reject(new Error('Gateway request was canceled'));
 					};
 
 					if (signal.aborted) {
@@ -551,7 +551,7 @@ export class ToolOrchestrator {
 		try {
 			const headers = buildGatewayHeaders(this.config, this.gatewayType);
 
-			// JSON-RPC 模式：添加 MCP session ID（除非是 initialize 请求）
+			// JSON-RPC mode: add the MCP session ID unless this is an initialize request
 			if (this.gatewayType === GatewayType.JSON_RPC && !skipSessionHeader && this.mcpSessionId) {
 				headers['Mcp-Session-Id'] = this.mcpSessionId;
 			}
@@ -563,14 +563,14 @@ export class ToolOrchestrator {
 				{ headers },
 			) as Promise<unknown>;
 
-			// 只支持用户主动取消，不设置超时限制（有些 MCP 工具执行时间很长）
+			// Only support explicit user cancellation; do not set a timeout because some MCP tools run for a long time
 			const response = abortPromise
 				? await Promise.race([requestPromise, abortPromise]) as Response
 				: await requestPromise as Response;
 			if (!response.ok) {
 				const text = await response.text();
 
-				// Session 失效（supergateway 重启等场景）：清除缓存，允许后续请求重新 initialize
+				// Session became invalid (for example after a supergateway restart): clear cache so later requests re-initialize
 				if (this.gatewayType === GatewayType.JSON_RPC && !skipSessionHeader
 					&& (response.status === 404 || response.status === 400 || response.status === 410)) {
 					this.mcpSessionId = null;
@@ -586,7 +586,7 @@ export class ToolOrchestrator {
 				throw new Error(`Gateway HTTP ${response.status}: ${truncateText(text, 500)}`);
 			}
 
-			// JSON-RPC 模式：提取 MCP session ID（仅在 initialize 时）
+			// JSON-RPC mode: extract the MCP session ID (only during initialize)
 			if (this.gatewayType === GatewayType.JSON_RPC && skipSessionHeader) {
 				const sessionId = response.headers.get('mcp-session-id');
 				if (sessionId) {
@@ -599,7 +599,7 @@ export class ToolOrchestrator {
 				return {} as T;
 			}
 
-			// MCP Streamable HTTP 使用 SSE 格式
+			// MCP Streamable HTTP uses SSE format
 			if (this.gatewayType === GatewayType.JSON_RPC && rawText.startsWith('event:')) {
 				return parseSSEResponse(rawText) as T;
 			}
@@ -629,14 +629,14 @@ export class ToolOrchestrator {
 	}
 }
 
-// ============ 辅助函数 ============
+// ============ Helper Functions ============
 
 function buildGatewayHeaders(config: ConfigStore, gatewayType: GatewayType): Record<string, string> {
 	const headers: Record<string, string> = {
 		'Content-Type': 'application/json',
 	};
 
-	// MCP Streamable HTTP 需要同时接受 JSON 和 SSE
+	// MCP Streamable HTTP must accept both JSON and SSE
 	if (gatewayType === GatewayType.JSON_RPC) {
 		headers.Accept = 'application/json, text/event-stream';
 	}
@@ -645,7 +645,7 @@ function buildGatewayHeaders(config: ConfigStore, gatewayType: GatewayType): Rec
 		headers.Authorization = `Bearer ${config.mcpGatewayApiKey.trim()}`;
 	}
 
-	// REST Gateway 专用头
+	// REST Gateway-specific header
 	if (gatewayType === GatewayType.REST) {
 		headers['X-MCP-Auto-Approve'] = config.mcpAutoApprove === false ? 'false' : 'true';
 	}
@@ -659,16 +659,16 @@ function normalizeGatewayBaseUrl(url: string): string {
 }
 
 /**
- * 检测 Gateway 类型
+ * Detect the Gateway type
  *
- * 规则：
- * - 如果 URL 以 /mcp、/sse、/http 等 MCP 传输层路径结尾，判定为 JSON-RPC
- * - 否则判定为 REST Gateway
+ * Rules:
+ * - If the URL ends with an MCP transport path such as /mcp, /sse, or /http, treat it as JSON-RPC
+ * - Otherwise treat it as a REST Gateway
  */
 function detectGatewayType(url: string): GatewayType {
 	const lowerUrl = url.toLowerCase();
 
-	// MCP Streamable HTTP 常见端点模式
+	// Common MCP Streamable HTTP endpoint patterns
 	const jsonRpcPatterns = [
 		'/mcp',
 		'/sse',
@@ -720,18 +720,18 @@ function extractRawTools(payload: unknown): unknown[] {
 	if (!isRecord(payload))
 		return [];
 
-	// JSON-RPC 响应格式：{ jsonrpc: "2.0", result: { tools: [...] }, id: 1 }
+	// JSON-RPC response format: { jsonrpc: "2.0", result: { tools: [...] }, id: 1 }
 	if (payload.jsonrpc === '2.0' && isRecord(payload.result)) {
 		if (Array.isArray(payload.result.tools)) {
 			return payload.result.tools;
 		}
-		// 有些实现直接返回 result: [...]
+		// Some implementations return result: [...] directly
 		if (Array.isArray(payload.result)) {
 			return payload.result;
 		}
 	}
 
-	// REST 响应格式：{ tools: [...] } 或 { result: { tools: [...] } }
+	// REST response format: { tools: [...] } or { result: { tools: [...] } }
 	if (Array.isArray(payload.tools)) {
 		return payload.tools;
 	}
@@ -759,7 +759,7 @@ function coerceToolResultToText(response: unknown): string {
 		return stringifyUnknown(response);
 	}
 
-	// JSON-RPC 错误响应：{ jsonrpc: "2.0", error: {...}, id: 1 }
+	// JSON-RPC error response: { jsonrpc: "2.0", error: {...}, id: 1 }
 	if (response.jsonrpc === '2.0' && isRecord(response.error)) {
 		const error = response.error;
 		const message = typeof error.message === 'string' ? error.message : '';
@@ -767,27 +767,27 @@ function coerceToolResultToText(response: unknown): string {
 		return `JSON-RPC Error ${code}: ${message}`;
 	}
 
-	// JSON-RPC 成功响应：{ jsonrpc: "2.0", result: {...}, id: 1 }
+	// JSON-RPC success response: { jsonrpc: "2.0", result: {...}, id: 1 }
 	if (response.jsonrpc === '2.0' && response.result !== undefined) {
 		return coerceToolResultToText(response.result);
 	}
 
-	// 递归处理嵌套的 result
+	// Recursively handle nested result values
 	if (isRecord(response.result)) {
 		return coerceToolResultToText(response.result);
 	}
 
-	// MCP 标准 content 数组格式
+	// MCP standard content-array format
 	if (Array.isArray(response.content)) {
 		return extractTextFromContentArray(response.content);
 	}
 
-	// 简单字符串 content
+	// Simple string content
 	if (typeof response.content === 'string') {
 		return response.content;
 	}
 
-	// 其他字段
+	// Other fields
 	if (response.output !== undefined) {
 		return stringifyUnknown(response.output);
 	}
@@ -835,9 +835,9 @@ function isRecord(value: unknown): value is Record<string, any> {
 }
 
 /**
- * 解析 SSE 响应（MCP Streamable HTTP）
+ * Parse an SSE response (MCP Streamable HTTP)
  *
- * 格式：
+ * Format:
  * event: message
  * data: {"jsonrpc":"2.0","result":{...},"id":1}
  */
@@ -865,37 +865,37 @@ function parseSSEResponse(text: string): unknown {
 }
 
 /**
- * 递归检测工具响应中的错误状态
+ * Recursively detect error status in a tool response
  *
- * 支持两种格式：
+ * Supports two formats:
  * 1. JSON-RPC 2.0: { jsonrpc: "2.0", error: {...}, id: 1 }
- * 2. MCP 规范: { result: { isError: true } } 或 { error: "..." }
+ * 2. MCP spec: { result: { isError: true } } or { error: "..." }
  *
- * 递归检查所有嵌套的 result 层级，避免深层错误漏检
+ * Recursively checks all nested result levels to avoid missing deep errors.
  */
 function detectToolError(response: unknown, visited = new Set<any>()): boolean {
 	if (!isRecord(response)) {
 		return false;
 	}
 
-	// 防止循环引用导致无限递归
+	// Prevent infinite recursion caused by circular references
 	if (visited.has(response)) {
 		return false;
 	}
 	visited.add(response);
 
-	// JSON-RPC 错误响应
+	// JSON-RPC error response
 	if (response.jsonrpc === '2.0' && response.error !== undefined) {
 		return true;
 	}
 
-	// 检查顶层 isError
+	// Check top-level isError
 	if (response.isError === true) {
 		return true;
 	}
 
-	// 检查顶层 error 字段（协议级错误）
-	// 只有非空对象或有意义的字符串才算错误
+	// Check top-level error field (protocol-level errors)
+	// Only non-empty objects or meaningful strings count as errors
 	if (response.error !== undefined && response.error !== null && response.error !== false) {
 		if (typeof response.error === 'string' && response.error.trim().length > 0) {
 			return true;
@@ -905,7 +905,7 @@ function detectToolError(response: unknown, visited = new Set<any>()): boolean {
 		}
 	}
 
-	// 递归检查嵌套的 result
+	// Recursively check nested result
 	if (isRecord(response.result)) {
 		if (detectToolError(response.result, visited)) {
 			return true;

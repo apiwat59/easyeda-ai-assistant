@@ -280,7 +280,7 @@
             border: 1px solid var(--border-color);
         }
 
-        /* --- Thinking Block 样式 --- */
+        /* --- Thinking Block Styles --- */
         .thinking-container {
             margin-bottom: 8px;
             border: 1px solid var(--border-color);
@@ -321,7 +321,7 @@
         }
         .thinking-container.expanded .thinking-content { display: block; }
 
-        /* 流式光标动画 */
+        /* Streaming cursor animation */
         .block-streaming::after {
             content: '';
             display: inline-block;
@@ -334,11 +334,11 @@
         }
         @keyframes cursor-blink { 0%,100%{opacity:1} 50%{opacity:0} }
 
-        /* 思考中脉冲动画 */
+        /* Thinking pulse animation */
         @keyframes thinking-pulse { 0%,100%{opacity:0.6} 50%{opacity:1} }
         .thinking-container.streaming .thinking-status-text { animation: thinking-pulse 1.5s infinite; }
 
-        /* --- Tool Block 样式（紫色主题） --- */
+        /* --- Tool Block Styles (purple theme) --- */
         .tool-container {
             margin-bottom: 8px;
             border: 1px solid rgba(156, 39, 176, 0.3);
@@ -539,7 +539,7 @@
         .empty-state-text { font-size: 15px; color: var(--text-primary); }
         .empty-state-hint { font-size: 12px; }
 
-        /* --- 系统事件消息（刷新提示等） --- */
+        /* --- System event messages (refresh notices, etc.) --- */
         .system-event {
             align-self: center;
             max-width: 90%;
@@ -553,7 +553,7 @@
             animation: slideIn 0.2s ease;
         }
 
-        /* --- 停止生成按钮 --- */
+        /* --- Stop generation button --- */
         #send-btn.generating {
             background: var(--error-color);
             border-color: var(--error-color);
@@ -562,7 +562,7 @@
             opacity: 0.85;
         }
 
-        /* --- 错误消息卡片 --- */
+        /* --- Error message card --- */
         .error-message-card {
             background: rgba(245, 108, 108, 0.08);
             border: 1px solid var(--error-color);
@@ -599,7 +599,7 @@
             color: var(--accent-color);
         }
 
-        /* --- 消息操作栏 --- */
+        /* --- Message action bar --- */
         .message-actions {
             display: flex;
             gap: 4px;
@@ -629,7 +629,7 @@
             color: var(--text-primary);
         }
 
-        /* --- ThinkingBlock 优化 --- */
+        /* --- ThinkingBlock optimization --- */
         .thinking-copy-btn {
             background: none;
             border: 1px solid transparent;
@@ -660,7 +660,7 @@
             font-style: italic;
         }
 
-        /* --- 错误详情模态框 --- */
+        /* --- Error details modal --- */
         #error-modal {
             display: none;
             position: fixed;
@@ -715,7 +715,7 @@
             border-top: 1px solid var(--border-color);
         }
 
-        /* --- 调试日志模态框 --- */
+        /* --- Debug log modal --- */
         #debug-modal {
             display: none;
             position: fixed;
@@ -822,7 +822,7 @@
             color: var(--text-secondary);
         }
 
-        /* Markdown 样式 */
+        /* Markdown styles */
         .message-content h1 { font-size: 1.5em; font-weight: 600; margin: 0.8em 0 0.5em 0; border-bottom: 1px solid var(--border-color); padding-bottom: 0.3em; }
         .message-content h2 { font-size: 1.3em; font-weight: 600; margin: 0.7em 0 0.4em 0; }
         .message-content h3 { font-size: 1.1em; font-weight: 600; margin: 0.6em 0 0.3em 0; }
@@ -839,7 +839,7 @@
         .message-content a { color: var(--accent-color); text-decoration: none; }
         .message-content a:hover { text-decoration: underline; }
 
-        /* 脚注样式 */
+        /* Footnote styles */
         .message-content .footnotes { margin-top: 1.5em; padding-top: 0.8em; border-top: 1px solid var(--border-color); font-size: 0.85em; }
         .message-content .footnotes ol { padding-left: 1.5em; }
         .message-content .footnotes li { margin: 0.4em 0; color: var(--text-secondary); }
@@ -847,50 +847,50 @@
         .message-content sup a { color: var(--accent-color); text-decoration: none; font-weight: 600; }
         .message-content sup a:hover { text-decoration: underline; }
 
-        /* 任务列表样式 */
+        /* Task list styles */
         .message-content li input[type="checkbox"] {
             margin-right: 0.4em; vertical-align: middle; cursor: default;
             accent-color: var(--accent-color);
         }
 
-        /* 删除线 */
+        /* Strikethrough */
         .message-content del { text-decoration: line-through; color: var(--text-secondary); }
 
-        /* 水平线 */
+        /* Horizontal rule */
         .message-content hr { border: none; border-top: 1px solid var(--border-color); margin: 1em 0; }
 
-        /* 嵌套块引用 */
+        /* Nested blockquote */
         .message-content blockquote blockquote {
             border-left-color: var(--text-secondary);
             margin-left: 0;
         }
 
-        /* 图片在消息内的适配 */
+        /* Image fit inside messages */
         .message-content img { max-width: 100%; height: auto; border-radius: var(--radius-sm); }
     </style>
-    <!-- Markdown 渲染库：动态加载（CDN 优先，失败时回退到本地） -->
+    <!-- Markdown rendering libraries: load dynamically (prefer CDN, fall back to local on failure) -->
     <script>
         (function() {
-            // 动态加载脚本（CDN 优先，失败时回退到本地）
+            // Dynamically load scripts (prefer CDN, fall back to local on failure)
             function loadScript(cdnUrl, localUrl, name) {
                 return new Promise((resolve, reject) => {
                     var script = document.createElement('script');
                     script.src = cdnUrl;
                     script.onload = function() {
-                        console.log('[Vendor] ' + name + ' 从 CDN 加载成功');
+                        console.log('[Vendor] ' + name + ' loaded successfully from CDN');
                         resolve('cdn');
                     };
                     script.onerror = function() {
-                        console.warn('[Vendor] ' + name + ' CDN 加载失败，尝试本地文件');
+                        console.warn('[Vendor] ' + name + ' CDN load failed, trying the local file');
                         var localScript = document.createElement('script');
                         localScript.src = localUrl;
                         localScript.onload = function() {
-                            console.log('[Vendor] ' + name + ' 从本地加载成功');
+                            console.log('[Vendor] ' + name + ' loaded successfully from local file');
                             resolve('local');
                         };
                         localScript.onerror = function() {
-                            console.error('[Vendor] ' + name + ' CDN 和本地都加载失败');
-                            reject(new Error(name + ' 加载失败'));
+                            console.error('[Vendor] ' + name + ' failed to load from both CDN and local file');
+                            reject(new Error(name + ' load failed'));
                         };
                         document.head.appendChild(localScript);
                     };
@@ -898,28 +898,28 @@
                 });
             }
 
-            // 动态加载 CSS（CDN 优先，失败时回退到本地）
+            // Dynamically load CSS (prefer CDN, fall back to local on failure)
             function loadCSS(cdnUrl, localUrl, name) {
                 return new Promise((resolve, reject) => {
                     var link = document.createElement('link');
                     link.rel = 'stylesheet';
                     link.href = cdnUrl;
                     link.onload = function() {
-                        console.log('[Vendor] ' + name + ' CSS 从 CDN 加载成功');
+                        console.log('[Vendor] ' + name + ' CSS loaded successfully from CDN');
                         resolve('cdn');
                     };
                     link.onerror = function() {
-                        console.warn('[Vendor] ' + name + ' CSS CDN 加载失败，尝试本地文件');
+                        console.warn('[Vendor] ' + name + ' CSS CDN load failed, trying the local file');
                         var localLink = document.createElement('link');
                         localLink.rel = 'stylesheet';
                         localLink.href = localUrl;
                         localLink.onload = function() {
-                            console.log('[Vendor] ' + name + ' CSS 从本地加载成功');
+                            console.log('[Vendor] ' + name + ' CSS loaded successfully from local file');
                             resolve('local');
                         };
                         localLink.onerror = function() {
-                            console.error('[Vendor] ' + name + ' CSS CDN 和本地都加载失败');
-                            reject(new Error(name + ' CSS 加载失败'));
+                            console.error('[Vendor] ' + name + ' CSS failed to load from both CDN and local file');
+                            reject(new Error(name + ' CSS load failed'));
                         };
                         document.head.appendChild(localLink);
                     };
@@ -927,7 +927,7 @@
                 });
             }
 
-            // 按顺序加载所有库
+            // Load all libraries in order
             Promise.resolve()
                 // 1. marked.js
                 .then(function() {
@@ -961,7 +961,7 @@
                         'highlight.js'
                     );
                 })
-                // 5. highlight.js 核心
+                // 5. highlight.js core
                 .then(function() {
                     return loadScript(
                         'https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/highlight.min.js',
@@ -969,7 +969,7 @@
                         'highlight.js'
                     );
                 })
-                // 6. 语言包（并行加载）
+                // 6. Language packs (loaded in parallel)
                 .then(function() {
                     return Promise.all([
                         loadScript(
@@ -1010,12 +1010,12 @@
                     ]);
                 })
                 .then(function() {
-                    console.log('[Vendor] 所有库加载完成');
-                    // 触发自定义事件，通知页面库已加载完成
+                    console.log('[Vendor] All libraries loaded');
+                    // Trigger a custom event to notify the page that the libraries have loaded
                     window.dispatchEvent(new Event('vendorLibsLoaded'));
                 })
                 .catch(function(error) {
-                    console.error('[Vendor] 库加载失败:', error);
+                    console.error('[Vendor] Library load failed:', error);
                 });
         })();
     </script>
@@ -1320,49 +1320,49 @@
     </div>
 
     <script>
-        // ============ 状态管理 ============
+        // ============ State management ============
 
-        var messages = [];           // 当前会话的消息列表
-        var attachedFiles = [];      // 待发送的附件
-        var schematicData = null;    // 原理图数据
-        var isThinking = false;      // AI 是否正在处理
-        var currentConfig = {};      // 当前 AI 配置
-        var historySessions = [];    // 历史会话列表
-        var currentSessionId = null; // 当前会话 ID
-        var pendingRequests = {};    // 待处理的请求 {requestId: {sessionId, timestamp}}
-        var saveHistoryTimer = null; // 历史保存节流定时器
-        var activeRequestId = null;  // 当前正在进行的请求ID（用于 abort）
-        var availableTools = [];     // MCP 工具清单
-        var _initialized = false;    // init() 幂等保护
-        var _toolsBootstrapped = false; // 工具列表是否已首次加载
-        var _subscriptions = [];     // MessageBus 订阅引用（用于清理）
+        var messages = [];           // Current conversation message list
+        var attachedFiles = [];      // Pending attachments
+        var schematicData = null;    // Schematic data
+        var isThinking = false;      // Whether the AI is currently processing
+        var currentConfig = {};      // Current AI configuration
+        var historySessions = [];    // Conversation history list
+        var currentSessionId = null; // Current conversation ID
+        var pendingRequests = {};    // Pending requests {requestId: {sessionId, timestamp}}
+        var saveHistoryTimer = null; // History save throttle timer
+        var activeRequestId = null;  // Current request in progress (for abort)
+        var availableTools = [];     // MCP tool list
+        var _initialized = false;    // init() idempotency guard
+        var _toolsBootstrapped = false; // Whether the tool list has been loaded once
+        var _subscriptions = [];     // MessageBus subscription references (for cleanup)
 
-        // 不触发历史保存的系统错误（避免错误循环）
+        // System errors that do not trigger history saving (avoid error loops)
         var NON_PERSIST_SYSTEM_ERROR = {
             HISTORY_SAVE_FAILED: true,
             CONFIG_SAVE_FAILED: true
         };
 
-        // ============ 调试日志 ============
+        // ============ Debug logs ============
 
         var debugLogs = [];
         var MAX_DEBUG_LOGS = 500;
 
         /**
-         * 高频低价值日志过滤器
-         * 过滤掉渲染路径和 Markdown 处理的 info 级日志，减少调试面板噪声
+         * High-frequency low-value log filter
+         * Filters out info-level logs from render paths and Markdown processing to reduce debug panel noise
          */
         function shouldSkipDebugLog(level, message) {
             if (level !== 'info' || !message) return false;
-            // 过滤 Markdown 渲染相关的高频日志
+            // Filter high-frequency Markdown rendering logs
             if (message.indexOf('[Markdown]') === 0) return true;
-            // 过滤 Block 渲染相关的高频日志
+            // Filter high-frequency Block rendering logs
             if (message.indexOf('[Thinking Block]') === 0) return true;
             if (message.indexOf('[Text Block]') === 0) return true;
             if (message.indexOf('[createTextBlockElement]') === 0) return true;
-            if (message === 'renderMessages - blocks 排序') return true;
-            if (message.indexOf('Thinking 事件:') === 0) return true;
-            if (message.indexOf('Text 事件:') === 0) return true;
+            if (message === 'renderMessages - blocks sorting') return true;
+            if (message.indexOf('Thinking event:') === 0) return true;
+            if (message.indexOf('Text event:') === 0) return true;
             return false;
         }
 
@@ -1438,7 +1438,7 @@
             document.getElementById('debug-modal').classList.remove('active');
         }
 
-        // ============ DOM 引用 ============
+        // ============ DOM references ============
 
         var sidebar = document.getElementById('sidebar');
         var messagesContainer = document.getElementById('messages');
@@ -1452,7 +1452,7 @@
         var configModal = document.getElementById('config-modal');
         var historyList = document.getElementById('history-list');
 
-        // ============ 初始化 ============
+        // ============ Initialization ============
 
         init();
 
@@ -1472,10 +1472,10 @@
             publishMessage('ai-chat/request-data', {});
             publishMessage('ai-chat/request-config', {});
             publishMessage('ai-chat/request-history', {});
-            // request-tools 由 handleConfigData 首次收到配置时统一触发，避免重复
+            // request-tools is triggered once when handleConfigData first receives the config to avoid duplicates
         }
 
-        // ============ 流式更新管理器（参考 Cherry Studio StreamManager） ============
+        // ============ Streaming update manager (based on Cherry Studio StreamManager) ============
 
         var StreamManager = (function() {
             var pendingUpdates = {};
@@ -1491,12 +1491,12 @@
                     if (update.blockType === 'thinking') {
                         var contentEl = el.querySelector('.thinking-content');
                         if (contentEl) {
-                            // 流式阶段使用 textContent（性能优化）
+                            // Use textContent during the streaming phase (performance optimization)
                             if (update.status === 'streaming') {
                                 contentEl.textContent = update.content;
                             } else {
-                                // 完成后使用 Markdown 渲染
-                                addDebugLog('info', '[Thinking Block] 调用 parseMarkdown', {
+                                // Render with Markdown after completion
+                                addDebugLog('info', '[Thinking Block] parseMarkdown called', {
                                     blockId: update.blockId,
                                     status: update.status,
                                     contentLength: update.content ? update.content.length : 0
@@ -1513,12 +1513,12 @@
                             } else if (update.status === 'paused') {
                                 statusEl.innerHTML = '<span class="status-paused">Thinking stopped</span>';
                             } else {
-                                // 由于后端一次性发送所有事件，时间计算不准确，改为固定文案
+                                // Because the backend sends all events at once, elapsed time is inaccurate, so use fixed text
                                 statusEl.textContent = 'AI completed deep reasoning';
                             }
                         }
-                        // 流式/完成 class 切换（expanded 由数据层 block.uiExpanded 控制，
-                        // 此处仅在 streaming→complete 过渡时同步 DOM）
+                        // Toggle streaming/complete classes (expanded is controlled by block.uiExpanded in the data layer,
+                        // this only syncs the DOM during the streaming -> complete transition)
                         if (update.status === 'streaming') {
                             el.classList.add('streaming', 'expanded');
                         } else {
@@ -1528,14 +1528,14 @@
                             }
                         }
                     } else {
-                        // text block 更新（参考 Cherry Studio 的平滑流式渲染）
+                        // Text block update (based on Cherry Studio's smooth streaming rendering)
                         if (update.status === 'streaming') {
-                            // 流式阶段：轻渲染（仅 textContent，避免 O(n²) 解析）
+                            // Streaming phase: light rendering (textContent only, avoid O(n²) parsing)
                             el.textContent = update.content;
                             el.classList.add('block-streaming');
                         } else {
-                            // 完成阶段：全量渲染（Markdown + 高亮）
-                            addDebugLog('info', '[Text Block] 调用 parseMarkdown', {
+                            // Completion phase: full rendering (Markdown + highlighting)
+                            addDebugLog('info', '[Text Block] parseMarkdown called', {
                                 blockId: update.blockId,
                                 status: update.status,
                                 contentLength: update.content ? update.content.length : 0,
@@ -1546,7 +1546,7 @@
                             highlightReferencesDOM(el);
                             el.classList.remove('block-streaming');
 
-                            // paused 状态添加标记
+                            // Add a marker for paused state
                             if (update.status === 'paused' && !el.querySelector('.status-paused')) {
                                 var pausedMark = document.createElement('div');
                                 pausedMark.className = 'status-paused';
@@ -1561,7 +1561,7 @@
                 pendingUpdates = {};
                 rafId = null;
 
-                // 自动滚动到底部
+                // Auto-scroll to the bottom
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
             }
 
@@ -1578,7 +1578,7 @@
                         rafId = requestAnimationFrame(applyUpdates);
                     }
                 },
-                /** 全量重渲染前调用，取消挂起的 RAF 回调，防止旧更新覆写新 DOM */
+                /** Call before a full rerender to cancel pending RAF callbacks and prevent stale updates from overwriting new DOM */
                 reset: function() {
                     pendingUpdates = {};
                     if (rafId) {
@@ -1589,7 +1589,7 @@
             };
         })();
 
-        // ============ 历史记录管理 ============
+        // ============ History management ============
 
         function saveHistory() {
             if (saveHistoryTimer) clearTimeout(saveHistoryTimer);
@@ -1610,16 +1610,16 @@
         function doSaveHistory() {
             if (messages.length === 0) return;
 
-            // 序列化消息：将 blocks 转为纯文本（thinking + text 合并）
+            // Serialize messages: convert blocks to plain text (merge thinking + text)
             var lightweight = messages
                 .filter(function(msg) {
-                    // 过滤掉临时消息和系统事件消息（系统事件仅用于前端展示，不参与历史保存）
+                    // Filter out transient messages and system-event messages (system events are only for frontend display and are not saved to history)
                     return !msg.transient && msg.role !== 'system-event';
                 })
                 .map(function(msg) {
                     var content = '';
                     if (msg.blocks && msg.blocks.length > 0) {
-                        // 从 blocks 中提取 text 和 error 内容
+                        // Extract text and error content from blocks
                         for (var i = 0; i < msg.blocks.length; i++) {
                             var block = msg.blocks[i];
                             if (block.type === 'text' && block.content) {
@@ -1635,7 +1635,7 @@
                     if (msg.images && msg.images.length > 0) {
                         copy.imageCount = msg.images.length;
                     }
-                    // 保存 thinking 摘要
+                    // Save the thinking summary
                     if (msg.blocks) {
                         for (var j = 0; j < msg.blocks.length; j++) {
                             if (msg.blocks[j].type === 'thinking' && msg.blocks[j].content) {
@@ -1713,10 +1713,10 @@
             for (var i = 0; i < historySessions.length; i++) {
                 if (historySessions[i].id === sessionId) {
                     currentSessionId = sessionId;
-                    // 从历史记录恢复消息（转为 block 架构）
+                    // Restore messages from history (convert to block structure)
                     messages = historySessions[i].messages.slice().map(function(msg) {
                         var blocks = [];
-                        // 恢复 thinking block（如果有摘要）
+                        // Restore the thinking block (if a summary exists)
                         if (msg.thinkingSummary) {
                             blocks.push({
                                 id: generateUUID(),
@@ -1747,14 +1747,14 @@
                     });
 
                     isThinking = false;
-                    setStatus('ready', '就绪');
+                    setStatus('ready', 'Ready');
                     activeRequestId = null;
                     updateSendButton();
                     pendingRequests = {};
                     renderMessages();
                     renderHistoryList();
-                    // 不清空会话，而是重建历史上下文
-                    // 将历史消息发送给后端，让 ChatSession 重建 history
+                    // Do not clear the conversation; rebuild the historical context instead
+                    // Send historical messages to the backend so ChatSession can rebuild the history
                     var historyMessages = messages.map(function(msg) {
                         return {
                             role: msg.role === 'user' ? 'user' : 'assistant',
@@ -1773,7 +1773,7 @@
             }
         }
 
-        // ============ 事件监听 ============
+        // ============ Event listeners ============
 
         function setupEventListeners() {
             document.getElementById('toggle-sidebar').addEventListener('click', function() {
@@ -1807,7 +1807,7 @@
                 messageInput.style.height = messageInput.scrollHeight + 'px';
             });
 
-            // 引用标签点击（事件委托，兼容流式渲染后动态插入的 ref-tag）
+            // Reference tag clicks (event delegation, compatible with ref-tags inserted dynamically after streaming render)
             messagesContainer.addEventListener('click', function(e) {
                 var target = e.target;
                 if (!target || typeof target.closest !== 'function') return;
@@ -1816,7 +1816,7 @@
                 locateReference(refTag.dataset.ref);
             });
 
-            // 键盘快捷键：Ctrl+D 打开调试日志
+            // Keyboard shortcut: Ctrl+D opens the debug log
             document.addEventListener('keydown', function(e) {
                 if (e.ctrlKey && e.key === 'd') {
                     e.preventDefault();
@@ -1824,23 +1824,23 @@
                 }
             });
 
-            // 拦截所有链接点击，在默认浏览器中打开
+            // Intercept all link clicks and open them in the default browser
             document.addEventListener('click', function(e) {
                 var target = e.target;
-                // 向上查找，找到 <a> 标签
+                // Walk upward to find the <a> tag
                 while (target && target.tagName !== 'A') {
                     target = target.parentElement;
                 }
                 if (target && target.tagName === 'A' && target.href) {
                     e.preventDefault();
                     e.stopPropagation();
-                    // 在新窗口打开链接（会使用默认浏览器）
+                    // Open the link in a new window (uses the default browser)
                     window.open(target.href, '_blank', 'noopener,noreferrer');
                 }
-            }, true); // 使用捕获阶段，确保优先处理
+            }, true); // Use the capture phase to ensure it is handled first
 
             if (typeof eda !== 'undefined' && eda.sys_MessageBus) {
-                // 先清理旧订阅，防止订阅泄漏
+                // Clean up old subscriptions first to prevent leaks
                 _subscriptions.forEach(function(s) { if (s && s.cancel) s.cancel(); });
                 _subscriptions = [];
 
@@ -1857,7 +1857,7 @@
             }
         }
 
-        // ============ 前端生命周期清理 ============
+        // ============ Frontend lifecycle cleanup ============
 
         function cleanup() {
             _subscriptions.forEach(function(s) { if (s && s.cancel) s.cancel(); });
@@ -1867,7 +1867,7 @@
         }
         window.addEventListener('beforeunload', cleanup);
 
-        // ============ MessageBus 处理器 ============
+        // ============ MessageBus handlers ============
 
         function handleDebugLog(data) {
             if (!data) return;
@@ -1891,7 +1891,7 @@
                     timestamp: data.timestamp
                 });
 
-                // 如果正在等待刷新完成，触发完成回调
+                // If we're waiting for a refresh to complete, trigger the completion callback
                 if (_refreshPending) {
                     onRefreshComplete({ components: c, pins: p, nets: n }, data.timestamp);
                 }
@@ -1921,7 +1921,7 @@
                 var presetEl = document.getElementById('cfg-api-preset');
                 if (presetEl) presetEl.value = 'custom';
             }
-            // 仅首次收到配置且 MCP 已启用时触发一次工具列表请求
+            // Trigger the tool-list request only once when the config is first received and MCP is enabled
             if (data.mcpEnabled && !_toolsBootstrapped) {
                 _toolsBootstrapped = true;
                 publishMessage('ai-chat/request-tools', {
@@ -1969,11 +1969,11 @@
             availableTools = Array.isArray(data.tools) ? data.tools : [];
 
             if (data.error) {
-                addDebugLog('warn', '工具列表加载失败', {
+                addDebugLog('warn', 'Tool list load failed', {
                     error: data.error
                 });
             } else {
-                addDebugLog('info', '工具列表更新', {
+                addDebugLog('info', 'Tool list updated', {
                     enabled: !!data.enabled,
                     count: availableTools.length
                 });
@@ -1999,7 +1999,7 @@
             if (!data || !data.requestId || !data.sessionId) return;
             if (data.sessionId !== currentSessionId) return;
 
-            addDebugLog(data.status === 'error' ? 'error' : 'info', '工具事件: ' + (data.title || ''), {
+            addDebugLog(data.status === 'error' ? 'error' : 'info', 'Tool event: ' + (data.title || ''), {
                 requestId: data.requestId,
                 toolName: data.toolName,
                 status: data.status,
@@ -2016,7 +2016,7 @@
                     entries: []
                 };
 
-                // 插在 thinking 之后
+                // Insert after thinking
                 var insertIndex = msg.blocks.length;
                 for (var i = 0; i < msg.blocks.length; i++) {
                     if (msg.blocks[i].type === 'thinking') {
@@ -2074,7 +2074,7 @@
         }
 
         /**
-         * 处理 AI 完整响应（请求结束后的最终文本）
+         * Handle the full AI response (final text after the request ends)
          */
         function handleAIResponse(data) {
             if (!data || !data.content) {
@@ -2105,10 +2105,10 @@
             delete pendingRequests[data.requestId];
             finishPendingRequest(data.requestId);
 
-            // 查找流式创建的 AI 消息，更新其状态为 success
+            // Find the AI message created by streaming and update its status to success
             var streamMsg = findStreamingMessage(data.requestId);
             if (streamMsg) {
-                // 确保 text block 有最终内容
+                // Ensure the text block has the final content
                 var hasTextBlock = false;
                 for (var i = 0; i < streamMsg.blocks.length; i++) {
                     if (streamMsg.blocks[i].type === 'text') {
@@ -2143,7 +2143,7 @@
                 }
                 streamMsg.status = 'success';
             } else {
-                // 没有流式消息（可能是非流式响应），创建新消息
+                // No streaming message (possibly a non-streaming response), create a new message
                 messages.push({
                     id: generateUUID(),
                     role: 'ai',
@@ -2163,12 +2163,12 @@
         }
 
         /**
-         * 处理 AI Thinking 流式块
+         * Handle AI Thinking streaming blocks
          */
         function handleAIThinking(data) {
-            // 只记录 START 和 COMPLETE 事件，不记录每个 DELTA
+            // Only record START and COMPLETE events, not each DELTA
             if (data.type === 'THINKING_START' || data.type === 'THINKING_COMPLETE') {
-                addDebugLog('info', 'Thinking 事件: ' + (data.type || 'unknown'), {
+                addDebugLog('info', 'Thinking event: ' + (data.type || 'unknown'), {
                     type: data.type,
                     requestId: data.requestId,
                     sessionId: data.sessionId,
@@ -2178,15 +2178,15 @@
             }
 
             if (!data || !data.requestId || !data.sessionId) {
-                addDebugLog('warn', 'Thinking 事件缺少必要字段', data);
+                addDebugLog('warn', 'Thinking event is missing required fields', data);
                 return;
             }
 
-            // 修复：不再严格要求 pendingRequests 存在
-            // 因为 AI_RESPONSE 可能先到，导致 pending 被清理
-            // 只要 sessionId 匹配就处理事件
+            // Fix: no longer require pendingRequests to exist strictly
+            // Because AI_RESPONSE may arrive first, causing pending state to be cleared
+            // Process the event as long as the sessionId matches
             if (data.sessionId !== currentSessionId) {
-                addDebugLog('warn', 'Thinking sessionId 不匹配', {
+                addDebugLog('warn', 'Thinking sessionId mismatch', {
                     currentSessionId: currentSessionId,
                     eventSessionId: data.sessionId
                 });
@@ -2208,8 +2208,8 @@
                             startTime: Date.now(),
                             uiExpanded: true
                         };
-                        msg.blocks.unshift(thinkingBlock); // 添加到开头，显示在正文上面
-                        renderMessages(); // 首次需要完整渲染以插入 DOM
+                        msg.blocks.unshift(thinkingBlock); // Add to the beginning so it appears above the main text
+                        renderMessages(); // The first render needs to rebuild the DOM
                     }
                     break;
 
@@ -2233,7 +2233,7 @@
                         thinkingBlock.content = data.accumulatedContent || thinkingBlock.content;
                         thinkingBlock.thinkingMs = Date.now() - (thinkingBlock.startTime || Date.now());
                         thinkingBlock.status = data.status === 'paused' ? 'paused' : 'success';
-                        thinkingBlock.uiExpanded = false; // 完成后折叠
+                        thinkingBlock.uiExpanded = false; // Collapse after completion
                         StreamManager.updateBlock(
                             thinkingBlock.id,
                             thinkingBlock.content,
@@ -2243,20 +2243,20 @@
                             thinkingBlock.thinkingMs
                         );
                     }
-                    // 注意：paused 状态不在此清理 pending，
-                    // 后端会先发 THINKING_COMPLETE 再发 TEXT_COMPLETE，
-                    // 清理推迟到 TEXT_COMPLETE(paused) 统一处理
+                    // Note: do not clear pending here for paused state,
+                    // the backend sends THINKING_COMPLETE before TEXT_COMPLETE,
+                    // so cleanup is deferred to TEXT_COMPLETE(paused)
                     break;
             }
         }
 
         /**
-         * 处理 AI Text 流式块
+         * Handle AI Text streaming blocks
          */
         function handleAIText(data) {
-            // 只记录 START 和 COMPLETE 事件，不记录每个 DELTA
+            // Only record START and COMPLETE events, not each DELTA
             if (data.type === 'TEXT_START' || data.type === 'TEXT_COMPLETE') {
-                addDebugLog('info', 'Text 事件: ' + (data.type || 'unknown'), {
+                addDebugLog('info', 'Text event: ' + (data.type || 'unknown'), {
                     type: data.type,
                     requestId: data.requestId,
                     sessionId: data.sessionId,
@@ -2266,15 +2266,15 @@
             }
 
             if (!data || !data.requestId || !data.sessionId) {
-                addDebugLog('warn', 'Text 事件缺少必要字段', data);
+                addDebugLog('warn', 'Text event is missing required fields', data);
                 return;
             }
 
-            // 修复：不再严格要求 pendingRequests 存在
-            // 因为 AI_RESPONSE 可能先到，导致 pending 被清理
-            // 只要 sessionId 匹配就处理事件
+            // Fix: no longer require pendingRequests to exist strictly
+            // Because AI_RESPONSE may arrive first, causing pending state to be cleared
+            // Process the event as long as the sessionId matches
             if (data.sessionId !== currentSessionId) {
-                addDebugLog('warn', 'Text sessionId 不匹配', {
+                addDebugLog('warn', 'Text sessionId mismatch', {
                     currentSessionId: currentSessionId,
                     eventSessionId: data.sessionId
                 });
@@ -2294,7 +2294,7 @@
                             status: 'streaming'
                         };
                         msg.blocks.push(textBlock);
-                        renderMessages(); // 首次需要完整渲染以插入 DOM
+                        renderMessages(); // The first render needs to rebuild the DOM
                     }
                     break;
 
@@ -2321,17 +2321,17 @@
                             textBlock.status
                         );
                     }
-                    // paused 状态需要清理 thinking 状态
+                    // Paused state needs to clear the thinking state
                     if (data.status === 'paused') {
                         finishPendingRequest(data.requestId);
-                        renderMessages(); // 确保 DOM 更新
+                        renderMessages(); // Ensure the DOM updates
                     }
                     break;
             }
         }
 
         /**
-         * 获取或创建流式消息
+         * Get or create a streaming message
          */
         function getOrCreateStreamingMessage(requestId) {
             for (var i = messages.length - 1; i >= 0; i--) {
@@ -2339,7 +2339,7 @@
                     return messages[i];
                 }
             }
-            // 创建新的流式 AI 消息
+            // Create a new streaming AI message
             var msg = {
                 id: generateUUID(),
                 role: 'ai',
@@ -2386,9 +2386,9 @@
                 details: data.details
             });
 
-            // 如果正在等待刷新完成，收到错误时恢复刷新按钮状态
+            // If we're waiting for a refresh to complete, restore the refresh button state when an error arrives
             if (_refreshPending && !data.requestId) {
-                addDebugLog('warn', '[刷新失败] 收到系统错误，恢复刷新按钮状态');
+                addDebugLog('warn', '[Refresh failed] System error received, restoring refresh button state');
                 resetRefreshButton();
             }
 
@@ -2402,7 +2402,7 @@
                 delete pendingRequests[data.requestId];
                 finishPendingRequest(data.requestId);
 
-                // 查找已有的流式消息，在其上追加错误 block
+                // Find an existing streaming message and append an error block to it
                 var streamMsg = findStreamingMessage(data.requestId);
                 if (streamMsg) {
                     streamMsg.blocks.push({
@@ -2443,7 +2443,7 @@
                 return;
             }
 
-            // 系统错误（无 requestId）
+            // System error (no requestId)
             messages.push({
                 id: generateUUID(),
                 role: 'ai',
@@ -2461,7 +2461,7 @@
             renderMessages();
         }
 
-        // ============ 发送消息 ============
+        // ============ Send messages ============
 
         function handleSendOrAbort() {
             if (isThinking && activeRequestId) {
@@ -2483,8 +2483,8 @@
             var requestId = generateUUID();
             activeRequestId = requestId;
 
-            // 审计日志：用户发送消息
-            addDebugLog('info', '[用户操作] 发送消息', {
+            // Audit log: user sent a message
+            addDebugLog('info', '[User action] Send message', {
                 requestId: requestId,
                 sessionId: currentSessionId,
                 hasText: !!text,
@@ -2492,7 +2492,7 @@
                 imageCount: attachedFiles.length
             });
 
-            // 创建用户消息（Block 架构）
+            // Create the user message (block structure)
             var userBlocks = [];
             if (text) {
                 userBlocks.push({ id: generateUUID(), type: 'text', content: text, status: 'success' });
@@ -2536,8 +2536,8 @@
         function abortGeneration() {
             if (!activeRequestId) return;
 
-            // 审计日志：用户中止生成
-            addDebugLog('info', '[用户操作] 中止生成', {
+            // Audit log: user aborted generation
+            addDebugLog('info', '[User action] Abort generation', {
                 requestId: activeRequestId,
                 sessionId: currentSessionId
             });
@@ -2547,8 +2547,8 @@
                 sessionId: currentSessionId
             });
 
-            // 不立即清理状态，等后端返回 paused 状态后再清理
-            // 但如果后端不返回（极端情况），设置超时兜底
+            // Do not clear state immediately; wait for the backend to return a paused state
+            // If the backend never responds (extreme case), use a timeout fallback
             var abortedRequestId = activeRequestId;
             setTimeout(function() {
                 if (activeRequestId === abortedRequestId) {
@@ -2562,7 +2562,7 @@
             if (isThinking) return;
             if (messages.length < 2) return;
 
-            // 找到最后一条用户消息（确保存在）
+            // Find the last user message (ensure it exists)
             var lastUserMsg = null;
             for (var i = messages.length - 1; i >= 0; i--) {
                 if (messages[i].role === 'user') {
@@ -2572,13 +2572,13 @@
             }
             if (!lastUserMsg) return;
 
-            // 审计日志：用户重新生成回复
-            addDebugLog('info', '[用户操作] 重新生成回复', {
+            // Audit log: user regenerated the reply
+            addDebugLog('info', '[User action] Regenerate reply', {
                 sessionId: currentSessionId,
                 messageCount: messages.length
             });
 
-            // 标记最后一条 AI 消息为待替换（不立即删除，等收到新回复时替换）
+            // Mark the last AI message as pending replacement (do not delete immediately; replace when the new reply arrives)
             for (var j = messages.length - 1; j >= 0; j--) {
                 if (messages[j].role === 'ai' && !messages[j].transient) {
                     messages.splice(j, 1);
@@ -2606,33 +2606,33 @@
         }
 
         function finishPendingRequest(requestId) {
-            // 只有当前活跃请求才清理全局状态
+            // Only the currently active request can clear the global state
             if (activeRequestId === requestId) {
                 activeRequestId = null;
                 isThinking = false;
                 setStatus('ready', 'Ready');
                 updateSendButton();
             }
-            // 清理 pendingRequests
+            // Clear pendingRequests
             delete pendingRequests[requestId];
         }
 
         function updateSendButton() {
             if (isThinking) {
                 sendBtn.classList.add('generating');
-                sendBtn.innerHTML = '&#9632;'; // 方块图标
+                sendBtn.innerHTML = '&#9632;'; // Square icon
                 sendBtn.title = 'Stop generation';
             } else {
                 sendBtn.classList.remove('generating');
-                sendBtn.innerHTML = '&#10148;'; // 发送图标
+                sendBtn.innerHTML = '&#10148;'; // Send icon
                 sendBtn.title = 'Send';
             }
         }
 
-        // ============ 渲染 ============
+        // ============ Rendering ============
 
         function renderMessages() {
-            // 全量重渲染前取消 StreamManager 挂起的 RAF 回调，防止旧更新覆写新 DOM
+            // Cancel pending RAF callbacks from StreamManager before a full rerender to prevent stale updates from overwriting the new DOM
             StreamManager.reset();
 
             var emptyState = messagesContainer.querySelector('.empty-state');
@@ -2667,10 +2667,10 @@
         }
 
         /**
-         * 创建消息 DOM 元素（支持 Block 架构）
+         * Create a message DOM element (supports the block structure)
          */
         function createMessageElement(msg) {
-            // 系统事件消息（刷新提示等）
+            // System event messages (refresh notices, etc.)
             if (msg.role === 'system-event') {
                 var eventEl = document.createElement('div');
                 eventEl.className = 'system-event';
@@ -2690,15 +2690,15 @@
             bodyDiv.className = 'message-body';
 
             if (msg.blocks && msg.blocks.length > 0) {
-                // 按类型排序：thinking block 始终在 text block 前面
+                // Sort by type: thinking blocks always come before text blocks
                 var sortedBlocks = msg.blocks.slice().sort(function(a, b) {
                     var order = { 'thinking': 0, 'tool': 1, 'text': 2, 'error': 3 };
                     var aOrder = order[a.type] !== undefined ? order[a.type] : 99;
                     var bOrder = order[b.type] !== undefined ? order[b.type] : 99;
 
-                    // 调试：记录排序比较
+                    // Debug: record sort comparison
                     if (aOrder === 99 || bOrder === 99) {
-                        addDebugLog('warn', 'blocks 排序 - 未知类型', {
+                        addDebugLog('warn', 'blocks sorting - unknown type', {
                             aType: a.type,
                             bType: b.type,
                             aOrder: aOrder,
@@ -2709,8 +2709,8 @@
                     return aOrder - bOrder;
                 });
 
-                // 调试日志：检查排序结果
-                addDebugLog('info', 'renderMessages - blocks 排序', {
+                // Debug log: inspect the sort result
+                addDebugLog('info', 'renderMessages - blocks sorting', {
                     originalOrder: msg.blocks.map(function(b) { return b.type; }),
                     sortedOrder: sortedBlocks.map(function(b) { return b.type; }),
                     blockCount: sortedBlocks.length
@@ -2729,7 +2729,7 @@
                     }
                 }
             } else if (msg.content) {
-                // 兼容旧格式
+                // Compatibility with the legacy format
                 bodyDiv.appendChild(createTextBlockElement({
                     id: msg.id + '-text',
                     type: 'text',
@@ -2738,12 +2738,12 @@
                 }, msg.role));
             }
 
-            // 添加操作栏（仅 AI 消息且非错误且非历史会话）
+            // Add the action bar (only for AI messages that are not errors and not from history)
             if (msg.role === 'ai' && !msg.blocks.some(function(b) { return b.type === 'error'; }) && !msg.transient) {
                 var actionsDiv = document.createElement('div');
                 actionsDiv.className = 'message-actions';
 
-                // 复制按钮
+                // Copy button
                 var copyBtn = document.createElement('button');
                 copyBtn.className = 'action-btn';
                 copyBtn.innerHTML = '&#128203; Copy';
@@ -2759,7 +2759,7 @@
                 });
                 actionsDiv.appendChild(copyBtn);
 
-                // 重新生成按钮（仅最后一条 AI 消息且当前会话有效）
+                // Regenerate button (only for the last AI message and when the current session is valid)
                 if (messages[messages.length - 1] === msg && currentSessionId && !isThinking) {
                     var regenBtn = document.createElement('button');
                     regenBtn.className = 'action-btn';
@@ -2772,7 +2772,7 @@
                 bodyDiv.appendChild(actionsDiv);
             }
 
-            // 图片
+            // Images
             if (msg.images && msg.images.length > 0) {
                 var imagesDiv = document.createElement('div');
                 imagesDiv.className = 'message-images';
@@ -2802,14 +2802,14 @@
         }
 
         /**
-         * 创建 ThinkingBlock DOM 元素
+         * Create a ThinkingBlock DOM element
          */
         function createThinkingBlockElement(block) {
             var container = document.createElement('div');
             container.classList.add('thinking-container');
             container.id = block.id;
 
-            // 展开状态由数据层 block.uiExpanded 驱动，避免 renderMessages 全量重建丢失状态
+            // Expanded state is driven by block.uiExpanded in the data layer to avoid losing state during full rerenders
             var shouldExpand = block.status === 'streaming' || !!block.uiExpanded;
             if (block.status === 'streaming') {
                 container.classList.add('streaming');
@@ -2832,11 +2832,11 @@
             } else if (block.status === 'paused') {
                 statusSpan.innerHTML = '<span class="status-paused">Thinking stopped</span>';
             } else {
-                // 由于后端一次性发送所有事件，时间计算不准确，改为固定文案
+                // Because the backend sends all events at once, elapsed time is inaccurate, so use fixed text
                 statusSpan.textContent = 'AI completed deep reasoning';
             }
 
-            // 复制思考内容按钮
+            // Copy thinking content button
             var copyBtn = document.createElement('button');
             copyBtn.className = 'thinking-copy-btn';
             copyBtn.textContent = 'Copy';
@@ -2852,7 +2852,7 @@
                 header.appendChild(copyBtn);
             }
 
-            // 点击 header 切换展开/折叠，同时写回数据层 block.uiExpanded
+            // Clicking the header toggles expand/collapse and writes back to block.uiExpanded in the data layer
             header.addEventListener('click', function() {
                 var nowExpanded = container.classList.contains('expanded');
                 if (nowExpanded) {
@@ -2867,7 +2867,7 @@
             var contentDiv = document.createElement('div');
             contentDiv.className = 'thinking-content';
             if (block.status !== 'streaming' && block.content) {
-                // 非流式（完成/暂停）：Markdown 渲染，与 StreamManager.applyUpdates 保持一致
+                // Non-streaming (complete/paused): Markdown rendering, kept consistent with StreamManager.applyUpdates
                 contentDiv.innerHTML = parseMarkdown(block.content);
             } else {
                 contentDiv.textContent = block.content || '';
@@ -2974,7 +2974,7 @@
         }
 
         /**
-         * 创建 TextBlock DOM 元素
+         * Create a TextBlock DOM element
          */
         function createTextBlockElement(block, role) {
             var div = document.createElement('div');
@@ -2989,11 +2989,11 @@
             }
 
             if (block.status === 'streaming') {
-                // 流式阶段：轻渲染
+                // Streaming phase: light rendering
                 div.textContent = block.content || '';
             } else {
-                // 完成阶段：全量渲染
-                addDebugLog('info', '[createTextBlockElement] 调用 parseMarkdown', {
+                // Completion phase: full rendering
+                addDebugLog('info', '[createTextBlockElement] parseMarkdown called', {
                     blockId: block.id,
                     status: block.status,
                     role: role,
@@ -3004,7 +3004,7 @@
                 div.innerHTML = html;
                 highlightReferencesDOM(div);
 
-                // paused 状态显示停止标记
+                // Show a stopped marker for paused state
                 if (block.status === 'paused') {
                     var pausedMark = document.createElement('div');
                     pausedMark.className = 'status-paused';
@@ -3019,7 +3019,7 @@
         }
 
         /**
-         * 创建错误 Block DOM 元素
+         * Create an error block DOM element
          */
         function createErrorBlockElement(block) {
             var card = document.createElement('div');
@@ -3050,16 +3050,16 @@
             return card;
         }
 
-        // ============ Markdown / 工具函数 ============
+        // ============ Markdown / utility functions ============
 
         /**
-         * 解析 Markdown 文本为安全 HTML
-         * 使用 marked.js 解析 + DOMPurify 净化 XSS + highlight.js 代码高亮
-         * 降级：如果 CDN 库未加载，使用简单正则替换
+         * Parse Markdown text into safe HTML
+         * Uses marked.js parsing + DOMPurify XSS sanitization + highlight.js code highlighting
+         * Fallback: if the CDN libraries are not loaded, use simple regex replacements
          */
         function parseMarkdown(text) {
-            // 调试日志：记录输入和库加载状态
-            addDebugLog('info', '[Markdown] 开始解析', {
+            // Debug log: record input and library load state
+            addDebugLog('info', '[Markdown] Start parsing', {
                 textLength: text ? text.length : 0,
                 textPreview: text ? text.substring(0, 100) : '',
                 markedLoaded: typeof marked !== 'undefined',
@@ -3070,28 +3070,28 @@
 
             if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
                 try {
-                    // 创建 marked 实例并配置扩展（只配置一次）
+                    // Create the marked instance and configure extensions (only once)
                     if (!window._markedInstance) {
-                        addDebugLog('info', '[Markdown] 创建 marked 实例');
+                        addDebugLog('info', '[Markdown] Create marked instance');
                         window._markedInstance = new marked.Marked({
                             breaks: true,
                             gfm: true
                         });
 
-                        // 添加脚注扩展（如果可用）
+                        // Add footnote extension (if available)
                         if (typeof markedFootnote !== 'undefined') {
-                            addDebugLog('info', '[Markdown] 添加 markedFootnote 扩展');
+                            addDebugLog('info', '[Markdown] Add markedFootnote extension');
                             window._markedInstance.use(markedFootnote());
                         }
                     }
 
                     var rawHtml = window._markedInstance.parse(text);
-                    addDebugLog('info', '[Markdown] marked.parse() 完成', {
+                    addDebugLog('info', '[Markdown] marked.parse() complete', {
                         rawHtmlLength: rawHtml.length,
                         rawHtmlPreview: rawHtml.substring(0, 300)
                     });
 
-                    // DOMPurify 配置：保留所有 Markdown 常用标签和属性（包括脚注）
+                    // DOMPurify config: preserve all common Markdown tags and attributes (including footnotes)
                     var safeHtml = DOMPurify.sanitize(rawHtml, {
                         ALLOWED_TAGS: [
                             'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
@@ -3101,7 +3101,7 @@
                             'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td',
                             'hr', 'span', 'div', 'img',
                             'sup', 'sub', 'abbr', 'cite', 'q', 'dfn', 'time',
-                            'input', 'section'  // section 用于脚注
+                            'input', 'section'  // section is used for footnotes
                         ],
                         ALLOWED_ATTR: [
                             'href', 'title', 'target', 'rel', 'class', 'id',
@@ -3109,28 +3109,28 @@
                             'colspan', 'rowspan', 'start', 'type',
                             'align', 'valign', 'lang', 'dir',
                             'checked', 'disabled',
-                            'data-footnote-id', 'data-footnote-backref'  // 脚注属性
+                            'data-footnote-id', 'data-footnote-backref'  // Footnote attributes
                         ],
                         ALLOW_DATA_ATTR: false
                     });
-                    addDebugLog('info', '[Markdown] DOMPurify.sanitize() 完成', {
+                    addDebugLog('info', '[Markdown] DOMPurify.sanitize() complete', {
                         safeHtmlLength: safeHtml.length,
                         safeHtmlPreview: safeHtml.substring(0, 300)
                     });
 
-                    // 渲染后使用 highlight.js 高亮代码块
+                    // Use highlight.js to highlight code blocks after rendering
                     if (typeof hljs !== 'undefined') {
-                        addDebugLog('info', '[Markdown] 开始代码高亮');
-                        // 创建临时容器解析 HTML
+                        addDebugLog('info', '[Markdown] Start code highlighting');
+                        // Create a temporary container to parse HTML
                         var tempDiv = document.createElement('div');
                         tempDiv.innerHTML = safeHtml;
 
-                        // 查找所有 code 块并高亮
+                        // Find all code blocks and highlight them
                         var codeBlocks = tempDiv.querySelectorAll('pre code');
-                        addDebugLog('info', '[Markdown] 找到代码块数量: ' + codeBlocks.length);
+                        addDebugLog('info', '[Markdown] Code block count: ' + codeBlocks.length);
                         for (var i = 0; i < codeBlocks.length; i++) {
                             var block = codeBlocks[i];
-                            // 检测语言（从 class="language-xxx" 中提取）
+                            // Detect the language (extract from class="language-xxx")
                             var className = block.className || '';
                             var langMatch = className.match(/language-(\w+)/);
                             var lang = langMatch ? langMatch[1] : '';
@@ -3141,47 +3141,47 @@
                                     block.innerHTML = highlighted.value;
                                     block.className = 'hljs ' + className;
                                 } catch (e) {
-                                    addDebugLog('warn', '[Markdown] 代码高亮失败: ' + e.message);
+                                    addDebugLog('warn', '[Markdown] Code highlighting failed: ' + e.message);
                                 }
                             } else {
-                                // 自动检测语言
+                                // Auto-detect the language
                                 try {
                                     var result = hljs.highlightAuto(block.textContent);
                                     block.innerHTML = result.value;
                                     block.className = 'hljs';
                                 } catch (e) {
-                                    addDebugLog('warn', '[Markdown] 代码自动高亮失败: ' + e.message);
+                                    addDebugLog('warn', '[Markdown] Automatic code highlighting failed: ' + e.message);
                                 }
                             }
                         }
 
-                        addDebugLog('info', '[Markdown] 代码高亮完成，返回结果');
+                        addDebugLog('info', '[Markdown] Code highlighting complete, returning result');
                         return tempDiv.innerHTML;
                     }
 
-                    addDebugLog('info', '[Markdown] 无 hljs，直接返回 safeHtml');
+                    addDebugLog('info', '[Markdown] No hljs available, returning safeHtml directly');
                     return safeHtml;
                 } catch (e) {
-                    addDebugLog('error', '[Markdown] 解析失败，使用降级渲染', {
+                    addDebugLog('error', '[Markdown] Parse failed, using fallback rendering', {
                         error: e.message,
                         stack: e.stack,
                         textPreview: text ? text.substring(0, 100) : ''
                     });
                 }
             } else {
-                addDebugLog('warn', '[Markdown] marked 或 DOMPurify 未加载，使用降级渲染', {
+                addDebugLog('warn', '[Markdown] marked or DOMPurify not loaded, using fallback rendering', {
                     markedLoaded: typeof marked !== 'undefined',
                     DOMPurifyLoaded: typeof DOMPurify !== 'undefined'
                 });
             }
-            // 降级渲染
-            addDebugLog('info', '[Markdown] 执行降级渲染');
+            // Fallback rendering
+            addDebugLog('info', '[Markdown] Running fallback rendering');
             var t = escapeHtml(text);
             t = t.replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
             t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
             t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
             t = t.replace(/\n/g, '<br>');
-            addDebugLog('info', '[Markdown] 降级渲染完成', {
+            addDebugLog('info', '[Markdown] Fallback rendering complete', {
                 resultLength: t.length,
                 resultPreview: t.substring(0, 300)
             });
@@ -3189,8 +3189,8 @@
         }
 
         /**
-         * 在 DOM 容器中高亮器件位号和网络名引用
-         * 使用 TreeWalker 遍历文本节点，跳过 pre/code/a 标签内的内容
+         * Highlight designators and net-name references inside a DOM container
+         * Uses TreeWalker to traverse text nodes while skipping content inside pre/code/a tags
          */
         function highlightReferencesDOM(containerElement) {
             if (!containerElement) return;
@@ -3203,11 +3203,11 @@
                         var parent = node.parentElement;
                         while (parent && parent !== containerElement) {
                             var tag = parent.tagName;
-                            // 跳过代码块（<pre> 及其内部）和链接
+                            // Skip code blocks (<pre> and descendants) and links
                             if (tag === 'PRE' || tag === 'A') {
                                 return NodeFilter.FILTER_REJECT;
                             }
-                            // 跳过已经是 ref-tag 的 span
+                            // Skip spans that are already ref-tags
                             if (tag === 'SPAN' && parent.classList.contains('ref-tag')) {
                                 return NodeFilter.FILTER_REJECT;
                             }
@@ -3228,19 +3228,19 @@
             textNodes.forEach(function(node) {
                 var text = node.textContent;
                 if (!refPattern.test(text)) return;
-                refPattern.lastIndex = 0; // 重置正则状态
+                refPattern.lastIndex = 0; // Reset regex state
 
                 var fragment = document.createDocumentFragment();
                 var lastIndex = 0;
                 var match;
 
                 while ((match = refPattern.exec(text)) !== null) {
-                    // 添加匹配之前的文本
+                    // Add the text before the match
                     if (match.index > lastIndex) {
                         fragment.appendChild(document.createTextNode(text.substring(lastIndex, match.index)));
                     }
 
-                    // 创建高亮 span
+                    // Create the highlight span
                     var span = document.createElement('span');
                     span.className = 'ref-tag';
                     span.dataset.ref = match[1];
@@ -3251,7 +3251,7 @@
                     lastIndex = refPattern.lastIndex;
                 }
 
-                // 添加剩余文本
+                // Add the remaining text
                 if (lastIndex < text.length) {
                     fragment.appendChild(document.createTextNode(text.substring(lastIndex)));
                 }
@@ -3261,7 +3261,7 @@
         }
 
         /**
-         * 字符串级别的引用高亮（仅用于降级场景）
+         * String-level reference highlighting (fallback only)
          */
         function highlightReferences(t) {
             t = t.replace(/\b([URCLDQJK]\d+)\b/g, '<span class="ref-tag" data-ref="$1" data-type="component">$1</span>');
@@ -3270,7 +3270,7 @@
         }
 
         function locateReference(ref) {
-            addDebugLog('info', '[定位] 点击引用标签', { reference: ref });
+            addDebugLog('info', '[Locate] Reference tag clicked', { reference: ref });
             publishMessage('ai-chat/locate', { reference: ref });
         }
 
@@ -3284,7 +3284,7 @@
             if (navigator.clipboard) {
                 navigator.clipboard.writeText(text);
             } else {
-                // 降级方案
+                // Fallback path
                 var textarea = document.createElement('textarea');
                 textarea.value = text;
                 textarea.style.position = 'fixed';
@@ -3311,21 +3311,21 @@
             document.getElementById('error-modal').classList.remove('active');
         }
 
-        // ============ 文件处理 ============
+        // ============ File handling ============
 
         /**
-         * 压缩图片（使用 Canvas API）
-         * @param {File} file - 原始图片文件
-         * @param {number} maxDimension - 最大尺寸（宽或高）
-         * @param {number} quality - JPEG 质量 (0-1)
-         * @returns {Promise<string>} - 压缩后的 data URL
+         * Compress an image (uses the Canvas API)
+         * @param {File} file - original image file
+         * @param {number} maxDimension - maximum dimension (width or height)
+         * @param {number} quality - JPEG quality (0-1)
+         * @returns {Promise<string>} - compressed data URL
          */
         function compressImage(file, maxDimension, quality) {
             return new Promise(function(resolve, reject) {
                 var img = new Image();
                 img.onload = function() {
                     try {
-                        // 计算新尺寸（保持宽高比）
+                        // Compute the new size (preserve aspect ratio)
                         var width = img.width;
                         var height = img.height;
 
@@ -3335,7 +3335,7 @@
                             height = Math.round(height * ratio);
                         }
 
-                        // 创建 Canvas 并绘制
+                        // Create a canvas and draw into it
                         var canvas = document.createElement('canvas');
                         canvas.width = width;
                         canvas.height = height;
@@ -3343,10 +3343,10 @@
                         ctx.imageSmoothingQuality = 'high';
                         ctx.drawImage(img, 0, 0, width, height);
 
-                        // 输出压缩后的 data URL
+                        // Output the compressed data URL
                         var compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
 
-                        // 清理
+                        // Cleanup
                         URL.revokeObjectURL(img.src);
                         resolve(compressedDataUrl);
                     } catch (error) {
@@ -3354,7 +3354,7 @@
                     }
                 };
                 img.onerror = function() {
-                    // 清理 blob URL，防止内存泄漏
+                    // Clean up the blob URL to prevent memory leaks
                     URL.revokeObjectURL(img.src);
                     reject(new Error('Failed to load image'));
                 };
@@ -3366,12 +3366,12 @@
             var files = Array.from(e.target.files);
             files.forEach(function(file) {
                 if (file.type.indexOf('image/') === 0) {
-                    // 压缩图片（最大 1024px，质量 0.75）
+                    // Compress the image (max 1024px, quality 0.75)
                     compressImage(file, 1024, 0.75)
                         .then(function(compressedDataUrl) {
                             attachedFiles.push({
                                 name: file.name,
-                                type: 'image/jpeg', // 压缩后统一为 JPEG
+                                type: 'image/jpeg', // Normalize to JPEG after compression
                                 data: compressedDataUrl
                             });
                             renderFilePreviews();
@@ -3408,7 +3408,7 @@
             });
         }
 
-        // ============ 配置管理 ============
+        // ============ Configuration management ============
 
         var DEFAULT_SCHEMATIC_FIELDS = {
             componentName: true, componentValue: true, componentManufacturer: true,
@@ -3505,7 +3505,7 @@
         function saveConfig() {
             var customSystemPrompt = document.getElementById('cfg-custom-system-prompt').value.trim();
             if (customSystemPrompt.length > 5000) {
-                addDebugLog('warn', '[配置] 自定义系统提示词超过 5000 字符限制 (' + customSystemPrompt.length + ')');
+                addDebugLog('warn', '[Config] Custom system prompt exceeds the 5000 character limit (' + customSystemPrompt.length + ')');
                 alert('The custom system prompt can be at most 5000 characters. Current length: ' + customSystemPrompt.length);
                 return;
             }
@@ -3522,19 +3522,19 @@
                 customSystemPrompt: customSystemPrompt,
                 schematicFields: readSchematicFieldsFromForm()
             };
-            // 重置 bootstrap flag，允许配置变更后重新加载工具列表
+            // Reset the bootstrap flag so the tool list can be reloaded after config changes
             _toolsBootstrapped = false;
             publishMessage('ai-chat/config-update', config);
             publishMessage('ai-chat/request-tools', {
                 requestId: 'config-tools-' + Date.now(),
                 sessionId: currentSessionId || 'config-refresh'
             });
-            // 立即设置为 true，防止 handleConfigData 再次触发
+            // Set it back to true immediately to prevent handleConfigData from triggering again
             _toolsBootstrapped = true;
             closeConfigModal();
         }
 
-        // ============ UI 设置管理 ============
+        // ============ UI settings management ============
 
         function openUISettingsModal() {
             var uiSettingsModal = document.getElementById('ui-settings-modal');
@@ -3578,11 +3578,11 @@
             renderHistoryList();
         }
 
-        // ============ 刷新原理图数据 ============
+        // ============ Refresh schematic data ============
 
         var _refreshPending = false;
-        var _refreshTimestamp = 0; // 用于关联刷新请求，防止竞态条件
-        var _refreshTimeoutId = null; // 超时定时器引用
+        var _refreshTimestamp = 0; // Used to correlate refresh requests and prevent race conditions
+        var _refreshTimeoutId = null; // Timeout timer reference
 
         function refreshSchematicData() {
             if (_refreshPending || isThinking) return;
@@ -3593,27 +3593,27 @@
             btn.disabled = true;
             btn.classList.add('refreshing');
 
-            addDebugLog('info', '[用户操作] 手动刷新原理图数据', { timestamp: _refreshTimestamp });
+            addDebugLog('info', '[User action] Manual schematic data refresh', { timestamp: _refreshTimestamp });
             setStatus('thinking', 'Collecting schematic data...');
             publishMessage('ai-chat/refresh-data', { timestamp: _refreshTimestamp });
 
-            // 设置超时兜底：如果 30 秒后仍未收到响应，强制恢复按钮状态
+            // Set a timeout fallback: if no response arrives after 30 seconds, force the button state to recover
             _refreshTimeoutId = setTimeout(function() {
                 if (_refreshPending) {
-                    addDebugLog('warn', '[刷新超时] 30秒未收到响应，强制恢复按钮状态');
+                    addDebugLog('warn', '[Refresh timeout] No response after 30 seconds, forcing the button state to recover');
                     resetRefreshButton();
                 }
             }, 30000);
         }
 
         /**
-         * 重置刷新按钮状态（失败/超时时调用）
+         * Reset the refresh button state (called on failure/timeout)
          */
         function resetRefreshButton() {
             _refreshPending = false;
             _refreshTimestamp = 0;
 
-            // 清理超时定时器
+            // Clear the timeout timer
             if (_refreshTimeoutId) {
                 clearTimeout(_refreshTimeoutId);
                 _refreshTimeoutId = null;
@@ -3631,28 +3631,28 @@
         }
 
         /**
-         * 刷新完成后恢复按钮状态，并在对话中插入系统事件消息
+         * Restore the button state after refresh completes and insert a system event message into the conversation
          */
         function onRefreshComplete(summary, timestamp) {
-            // 检查是否是本次刷新的响应（防止竞态条件）
+            // Check whether this is the response for the current refresh (prevents race conditions)
             if (!_refreshPending) {
-                addDebugLog('info', '[刷新完成] 但当前没有待处理的刷新请求，忽略');
+                addDebugLog('info', '[Refresh complete] No pending refresh request exists, ignoring');
                 return;
             }
 
-            // 如果有 timestamp，验证是否匹配
-            // 后端采集通常 < 10 秒，如果收到的 timestamp 远早于本次刷新请求，说明是旧的采集结果
+            // If a timestamp is present, verify whether it matches
+            // Backend collection is usually < 10 seconds; if the timestamp is far earlier than this refresh request, it is an old collection result
             if (timestamp && _refreshTimestamp && timestamp < _refreshTimestamp) {
-                addDebugLog('info', '[刷新完成] 收到的是刷新请求之前的采集结果，等待本次采集完成', {
+                addDebugLog('info', '[Refresh complete] Received a collection result from before the refresh request, waiting for the current collection to finish', {
                     refreshRequestTime: _refreshTimestamp,
                     dataTimestamp: timestamp
                 });
-                return; // 忽略旧结果，等本次采集完成或超时兜底
+                return; // Ignore the stale result and wait for the current collection to finish or time out
             }
 
             resetRefreshButton();
 
-            // 如果有对话历史，插入一条系统事件消息提示数据已更新
+            // If there is conversation history, insert a system event message to indicate the data has been updated
             if (messages.length > 0) {
                 var eventMsg = {
                     id: generateUUID(),
@@ -3667,7 +3667,7 @@
             }
         }
 
-        // ============ 通用工具 ============
+        // ============ General utilities ============
 
         function setStatus(type, text) {
             statusDot.className = 'status-dot ' + type;

@@ -1,42 +1,42 @@
 /**
- * Reasoning 模型配置
- * 参考 Cherry Studio 的实现，支持所有主流 reasoning 模型
+ * Reasoning model configuration
+ * Based on Cherry Studio's implementation, with support for all mainstream reasoning models
  */
 
 export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'auto';
 
 export type ModelType
-	= | 'openai-reasoning' // OpenAI o1, o3 系列
-		| 'grok' // Grok 系列
-		| 'deepseek' // DeepSeek R1, Hybrid
+	= | 'openai-reasoning' // OpenAI o1 and o3 series
+		| 'grok' // Grok series
+		| 'deepseek' // DeepSeek R1 and Hybrid
 		| 'claude-thinking' // Claude 3.7 Sonnet
-		| 'gemini' // Gemini 2.0/3.0
-		| 'gemini-flash' // Gemini Flash 系列
-		| 'qwen' // 通义千问
-		| 'doubao' // 豆包
-		| 'doubao-seed' // 豆包 Seed 系列
-		| 'zhipu' // 智谱 GLM
+		| 'gemini' // Gemini 2.0 and 3.0
+		| 'gemini-flash' // Gemini Flash series
+		| 'qwen' // Qwen
+		| 'doubao' // Doubao
+		| 'doubao-seed' // Doubao Seed series
+		| 'zhipu' // Zhipu GLM
 		| 'kimi' // Kimi
-		| 'hunyuan' // 混元
+		| 'hunyuan' // Hunyuan
 		| 'unknown';
 
 /**
- * 检测模型类型
+ * Detect the model type
  */
 export function getModelType(modelId: string): ModelType {
 	const id = modelId.toLowerCase();
 
-	// OpenAI o1/o3 系列
+	// OpenAI o1/o3 series
 	if (/o1|o3/.test(id)) {
 		return 'openai-reasoning';
 	}
 
-	// Grok 系列
+	// Grok series
 	if (/grok/i.test(id)) {
 		return 'grok';
 	}
 
-	// DeepSeek 系列
+	// DeepSeek series
 	if (/deepseek/i.test(id)) {
 		return 'deepseek';
 	}
@@ -46,7 +46,7 @@ export function getModelType(modelId: string): ModelType {
 		return 'claude-thinking';
 	}
 
-	// Gemini 系列
+	// Gemini series
 	if (/gemini/i.test(id)) {
 		if (/flash/i.test(id)) {
 			return 'gemini-flash';
@@ -54,12 +54,12 @@ export function getModelType(modelId: string): ModelType {
 		return 'gemini';
 	}
 
-	// 通义千问
+	// Qwen
 	if (/qwen/i.test(id)) {
 		return 'qwen';
 	}
 
-	// 豆包
+	// Doubao
 	if (/doubao/i.test(id)) {
 		if (/seed/i.test(id)) {
 			return 'doubao-seed';
@@ -67,7 +67,7 @@ export function getModelType(modelId: string): ModelType {
 		return 'doubao';
 	}
 
-	// 智谱 GLM
+	// Zhipu GLM
 	if (/glm|zhipu/i.test(id)) {
 		return 'zhipu';
 	}
@@ -77,7 +77,7 @@ export function getModelType(modelId: string): ModelType {
 		return 'kimi';
 	}
 
-	// 混元
+	// Hunyuan
 	if (/hunyuan/i.test(id)) {
 		return 'hunyuan';
 	}
@@ -86,7 +86,7 @@ export function getModelType(modelId: string): ModelType {
 }
 
 /**
- * 获取 reasoning 请求参数
+ * Get reasoning request parameters
  */
 export function getReasoningParams(
 	modelId: string,
@@ -94,17 +94,17 @@ export function getReasoningParams(
 ): Record<string, any> {
 	const type = getModelType(modelId);
 
-	// 如果明确禁用 reasoning
+	// If reasoning is explicitly disabled
 	if (reasoningEffort === 'none') {
 		return getDisableReasoningParams(type);
 	}
 
-	// 启用 reasoning
+	// Enable reasoning
 	return getEnableReasoningParams(type, reasoningEffort);
 }
 
 /**
- * 获取禁用 reasoning 的参数
+ * Get parameters for disabling reasoning
  */
 function getDisableReasoningParams(type: ModelType): Record<string, any> {
 	switch (type) {
@@ -146,7 +146,7 @@ function getDisableReasoningParams(type: ModelType): Record<string, any> {
 			};
 
 		case 'gemini':
-			// Gemini 3.0 不支持禁用 reasoning
+			// Gemini 3.0 does not support disabling reasoning
 			return {};
 
 		default:
@@ -155,7 +155,7 @@ function getDisableReasoningParams(type: ModelType): Record<string, any> {
 }
 
 /**
- * 获取启用 reasoning 的参数
+ * Get parameters for enabling reasoning
  */
 function getEnableReasoningParams(
 	type: ModelType,
@@ -193,7 +193,7 @@ function getEnableReasoningParams(
 				extra_body: {
 					google: {
 						thinking_config: {
-							thinking_budget: -1, // -1 表示自动
+							thinking_budget: -1, // -1 means automatic
 							include_thoughts: true,
 						},
 					},
@@ -249,7 +249,7 @@ function getEnableReasoningParams(
 }
 
 /**
- * 根据 effort 级别计算 thinking budget
+ * Calculate the thinking budget based on the effort level
  */
 function getThinkingBudget(effort: ReasoningEffort): number {
 	switch (effort) {
@@ -260,18 +260,18 @@ function getThinkingBudget(effort: ReasoningEffort): number {
 		case 'high':
 			return 10000;
 		case 'auto':
-			return -1; // 自动
+			return -1; // Automatic
 		default:
 			return 5000;
 	}
 }
 
 /**
- * 获取模型专属的 temperature 值
- * 某些模型在特定模式下有硬性 temperature 约束：
- * - Kimi thinking 模式必须 temperature=1，非 thinking 固定 0.6
- * - OpenAI o1/o3 reasoning 模型不接受 temperature 参数
- * 返回 undefined 表示不应发送 temperature 字段
+ * Get the model-specific temperature value
+ * Some models have hard temperature constraints in specific modes:
+ * - Kimi in thinking mode must use temperature=1, and non-thinking mode is fixed at 0.6
+ * - OpenAI o1/o3 reasoning models do not accept a temperature parameter
+ * Returning undefined means the temperature field should not be sent
  */
 export function getModelTemperature(
 	modelId: string,
@@ -280,12 +280,12 @@ export function getModelTemperature(
 ): number | undefined {
 	const type = getModelType(modelId);
 
-	// OpenAI o1/o3 reasoning 模型不接受显式 temperature
+	// OpenAI o1/o3 reasoning models do not accept explicit temperature
 	if (type === 'openai-reasoning') {
 		return undefined;
 	}
 
-	// Kimi 有硬性约束
+	// Kimi has hard constraints
 	if (type === 'kimi') {
 		return reasoningEffort === 'none' ? 0.6 : 1;
 	}
@@ -294,15 +294,15 @@ export function getModelTemperature(
 }
 
 /**
- * 从 SSE delta 中提取 reasoning 内容
- * 支持所有模型的不同字段名
+ * Extract reasoning content from an SSE delta
+ * Supports the different field names used by all models
  */
 export function extractReasoningFromDelta(delta: any): string {
 	if (!delta) {
 		return '';
 	}
 
-	// 尝试所有可能的字段名
+	// Try all possible field names
 	return (
 		delta.reasoning_content // DeepSeek, Qwen, Doubao, Kimi, Zhipu, Hunyuan
 		|| delta.reasoning // OpenAI
@@ -313,7 +313,7 @@ export function extractReasoningFromDelta(delta: any): string {
 }
 
 /**
- * 获取支持的模型列表（用于文档）
+ * Get the list of supported models for documentation
  */
 export function getSupportedModels(): Array<{ name: string; type: ModelType; example: string }> {
 	return [
@@ -322,10 +322,10 @@ export function getSupportedModels(): Array<{ name: string; type: ModelType; exa
 		{ name: 'DeepSeek', type: 'deepseek', example: 'deepseek-reasoner, deepseek-r1' },
 		{ name: 'Claude 3.7', type: 'claude-thinking', example: 'claude-3-7-sonnet' },
 		{ name: 'Gemini', type: 'gemini', example: 'gemini-2.0-flash, gemini-3.0' },
-		{ name: 'Qwen (通义千问)', type: 'qwen', example: 'qwen-max, qwen-plus' },
-		{ name: 'Doubao (豆包)', type: 'doubao', example: 'doubao-pro' },
-		{ name: 'Zhipu (智谱)', type: 'zhipu', example: 'glm-4-plus' },
+		{ name: 'Qwen', type: 'qwen', example: 'qwen-max, qwen-plus' },
+		{ name: 'Doubao', type: 'doubao', example: 'doubao-pro' },
+		{ name: 'Zhipu', type: 'zhipu', example: 'glm-4-plus' },
 		{ name: 'Kimi', type: 'kimi', example: 'kimi-k1' },
-		{ name: 'Hunyuan (混元)', type: 'hunyuan', example: 'hunyuan-turbo' },
+		{ name: 'Hunyuan', type: 'hunyuan', example: 'hunyuan-turbo' },
 	];
 }

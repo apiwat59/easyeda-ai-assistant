@@ -1,8 +1,8 @@
 /**
- * AI原理图审查 - 数据序列化模块
+ * AI Schematic Review - data serialization module
  *
- * 将CollectedData转换为SCH-REVIEW-COMPACT v1 tuple格式
- * 支持根据 SchematicFieldsConfig 动态选择字段，并在 chunk 中嵌入 fields 元数据
+ * Convert CollectedData into SCH-REVIEW-COMPACT v1 tuple format
+ * Supports dynamic field selection based on SchematicFieldsConfig and embeds fields metadata in each chunk
  */
 import type {
 	CollectedData,
@@ -19,19 +19,19 @@ type RawPin = CollectedData['pins'][number];
 type RawNet = CollectedData['nets'][number];
 
 /**
- * 归一化字段配置，未设置的项使用默认值
+ * Normalize field configuration and use defaults for unset entries
  */
 function resolveSchematicFields(fields?: SchematicFieldsConfig): Required<SchematicFieldsConfig> {
 	return { ...DEFAULT_SCHEMATIC_FIELDS, ...(fields || {}) };
 }
 
 /**
- * 序列化为紧凑格式
+ * Serialize to compact format
  *
- * @param data         采集的原始数据
- * @param chunkId      当前块ID
- * @param chunkCount   总块数
- * @param fields       字段选择配置（未传时使用所有默认字段）
+ * @param data         The collected source data
+ * @param chunkId      Current chunk ID
+ * @param chunkCount   Total number of chunks
+ * @param fields       Field selection configuration. If omitted, all default fields are used
  */
 export function serializeToCompactFormat(
 	data: CollectedData,
@@ -42,13 +42,13 @@ export function serializeToCompactFormat(
 	if (!data || !data.components || !data.pins || !data.nets) {
 		throw new ReviewError(
 			ErrorCode.SERIALIZE_INVALID_DATA,
-			'数据格式无效',
+			'Invalid data format',
 		);
 	}
 
 	const resolvedFields = resolveSchematicFields(fields);
 
-	// 判断是否存在 v2 扩展数据，决定 schema 版本
+	// Determine the schema version based on whether v2 extension data exists
 	const hasV2Data = (
 		(resolvedFields.includeArcs && !!data.arcs?.length)
 		|| (resolvedFields.includeCircles && !!data.circles?.length)
@@ -60,7 +60,7 @@ export function serializeToCompactFormat(
 	);
 	const schema = hasV2Data ? 'sch-review-compact-v2' as const : 'sch-review-compact-v1' as const;
 
-	// ---------- 构建器件字段顺序（designator 为核心字段，强制保留）----------
+	// ---------- Build component field order. designator is a core field and is always retained ----------
 	const componentFields: SchComponentFieldKey[] = ['designator'];
 	if (resolvedFields.componentName)
 		componentFields.push('name');
@@ -81,20 +81,20 @@ export function serializeToCompactFormat(
 	if (resolvedFields.componentRotation)
 		componentFields.push('rotation');
 
-	// ---------- 构建引脚字段顺序（componentDesignator / pinNumber / netName 为核心字段，强制保留）----------
+	// ---------- Build pin field order. componentDesignator, pinNumber, and netName are core fields and always retained ----------
 	const pinFields: SchPinFieldKey[] = ['componentDesignator', 'pinNumber'];
 	if (resolvedFields.pinPinName)
 		pinFields.push('pinName');
 	if (resolvedFields.pinPinType)
 		pinFields.push('pinType');
-	pinFields.push('netName'); // 核心字段，强制放在末尾
+	pinFields.push('netName'); // Core field, always placed at the end
 
-	// ---------- 构建网络字段顺序（netName 为核心字段，强制保留）----------
+	// ---------- Build net field order. netName is a core field and is always retained ----------
 	const netFields: SchNetFieldKey[] = ['netName'];
 	if (resolvedFields.netPinCount)
 		netFields.push('pinCount');
 
-	// ---------- 字段取值器（避免 switch 链，提升可读性）----------
+	// ---------- Field getters to avoid switch chains and keep the code readable ----------
 	const componentFieldGetters: Record<SchComponentFieldKey, (c: RawComponent) => string | number> = {
 		designator: c => c.designator,
 		name: c => c.name,
@@ -122,7 +122,7 @@ export function serializeToCompactFormat(
 		pinCount: n => n.pinCount,
 	};
 
-	// ---------- 序列化三类数据 ----------
+	// ---------- Serialize the three main data groups ----------
 	const components = data.components.map(c =>
 		componentFields.map(field => componentFieldGetters[field](c)),
 	);
@@ -135,7 +135,7 @@ export function serializeToCompactFormat(
 		netFields.map(field => netFieldGetters[field](n)),
 	);
 
-	// ---------- 组装 chunk ----------
+	// ---------- Assemble the chunk ----------
 	const chunk: SchReviewChunk = {
 		schema,
 		summary: {
@@ -155,7 +155,7 @@ export function serializeToCompactFormat(
 		nets,
 	};
 
-	// ---------- 可选扩展数据（仅当对应字段启用且源数据存在时附加）----------
+	// ---------- Optional extension data, attached only when the matching field is enabled and source data exists ----------
 	if (resolvedFields.includeTexts && data.texts && data.texts.length > 0) {
 		chunk.texts = data.texts.map(t => [t.primitiveId, t.content, t.x, t.y]);
 	}
@@ -168,7 +168,7 @@ export function serializeToCompactFormat(
 		chunk.netLabels = data.netLabels.map(l => [l.primitiveId, l.netName, l.x, l.y, l.type]);
 	}
 
-	// ---------- v2 图形图元 tuple 数据 ----------
+	// ---------- v2 graphic primitive tuple data ----------
 	if (resolvedFields.includeArcs && data.arcs && data.arcs.length > 0) {
 		chunk.arcs = data.arcs.map(a => [a.primitiveId, a.cx, a.cy, a.radius, a.startAngle, a.endAngle]);
 	}
@@ -189,7 +189,7 @@ export function serializeToCompactFormat(
 		chunk.primitivePins = data.primitivePins.map(p => [p.primitiveId, p.pinNumber, p.pinName, p.pinType, p.x, p.y]);
 	}
 
-	// ---------- v2 独立顶层字段 ----------
+	// ---------- v2 standalone top-level fields ----------
 	if (resolvedFields.includeDrc && data.drcResult) {
 		chunk.drcResult = { ...data.drcResult };
 	}
@@ -202,12 +202,12 @@ export function serializeToCompactFormat(
 }
 
 /**
- * 估算序列化后的JSON字节大小（UTF-8编码）
+ * Estimate the serialized JSON size in bytes using UTF-8 encoding
  */
 export function estimateJsonSize(chunk: SchReviewChunk): number {
 	try {
 		const json = JSON.stringify(chunk);
-		// 使用TextEncoder计算UTF-8字节数
+		// Use TextEncoder to compute the UTF-8 byte length
 		const encoder = new TextEncoder();
 		return encoder.encode(json).length;
 	}

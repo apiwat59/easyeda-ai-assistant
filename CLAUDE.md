@@ -1,3 +1,3 @@
-1，在我说之前，不要自己上传到github里。并且务必要注意上传到github里的文件有没有敏感信息！！！！
-2，npm编译前必须要清除缓存！！
-3，由于实在不知道缓存是什么机制，以后编译必须使用新版本号（比如1.2.1 beta1）
+1. Do not upload anything to GitHub before I say so. Also make sure to check whether the files being uploaded to GitHub contain sensitive information!!!!
+2. You must clear the cache before running `npm` builds!!
+3. Since the cache mechanism is unclear, future builds must use a new version number (for example `1.2.1 beta1`)

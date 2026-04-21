@@ -1,55 +1,55 @@
 name: Feature Request
-description: 提出一个新功能建议
+description: Suggest a new feature
 title: '[Feature]: '
 labels: [enhancement]
 body:
   - type: markdown
     attributes:
       value: |
-        感谢你提出功能建议！
+        Thank you for submitting a feature suggestion!
 
   - type: textarea
     id: problem
     attributes:
-      label: 问题描述
-      description: 你遇到了什么问题？这个功能将解决什么问题？
-      placeholder: 我总是感到沮丧，当...
+      label: Problem Description
+      description: What problem are you encountering? What problem would this feature solve?
+      placeholder: I am always frustrated when...
     validations:
       required: true
 
   - type: textarea
     id: solution
     attributes:
-      label: 建议的解决方案
-      description: 你希望看到什么样的解决方案？
-      placeholder: 我希望能够...
+      label: Proposed Solution
+      description: What kind of solution would you like to see?
+      placeholder: I would like to...
     validations:
       required: true
 
   - type: textarea
     id: alternatives
     attributes:
-      label: 替代方案
-      description: 你考虑过哪些替代解决方案或功能？
+      label: Alternatives Considered
+      description: What alternative solutions or features have you considered?
 
   - type: textarea
     id: use-case
     attributes:
-      label: 使用场景
-      description: 描述一个具体的使用场景
+      label: Use Case
+      description: Describe a specific use case
       placeholder: |
-        作为一个电路设计师，
-        我想要...
-        这样我就可以...
+        As a circuit designer,
+        I want to...
+        so that I can...
 
   - type: textarea
     id: examples
     attributes:
-      label: 示例
-      description: 如果可能，提供示例或参考
+      label: Examples
+      description: If possible, provide examples or references
 
   - type: textarea
     id: additional
     attributes:
-      label: 附加信息
-      description: 添加任何其他关于功能请求的信息
+      label: Additional Information
+      description: Add any other information about the feature request here

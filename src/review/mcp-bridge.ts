@@ -1,92 +1,92 @@
 /**
- * AI原理图审查 - MCP Bridge WebSocket 客户端
+ * AI Schematic Review - MCP Bridge WebSocket client
  *
- * 职责：
- * 1. 通过 eda.sys_WebSocket 连接到本地 eda-mcp-server
- * 2. 在 cachedSchematicData 更新时主动推送全量快照（CollectedData）
- * 3. 响应 server 的 request_data 拉取请求（server 重启后重连场景）
- * 4. 连接管理：自动重连、心跳保活、多实例防重（复用 globalThis 模式）
+ * Responsibilities:
+ * 1. Connect to the local eda-mcp-server through eda.sys_WebSocket
+ * 2. Proactively push the full snapshot (CollectedData) when cachedSchematicData updates
+ * 3. Respond to server-side request_data pull requests after reconnect scenarios such as server restarts
+ * 4. Manage the connection lifecycle: auto-reconnect, heartbeat keepalive, and duplicate-instance prevention using the globalThis pattern
  *
- * 协议（JSON 消息）：
+ * Protocol (JSON messages):
  *
- * 扩展 → Server:
+ * Extension -> Server:
  *   { type: "hello", app: { name, version }, project: { uuid, name } }
  *   { type: "snapshot", version, projectUuid, timestamp, payload }
  *   { type: "pong", timestamp, nonce? }
  *
- * Server → 扩展:
+ * Server -> Extension:
  *   { type: "request_data" }
  *   { type: "ping", nonce? }
  *   { type: "ack", version }
  */
 import type { CollectedData } from './types';
 
-// ============ 常量 ============
+// ============ Constants ============
 
-/** WebSocket 连接唯一标识符（EDA sys_WebSocket API 要求） */
+/** Unique WebSocket identifier required by the EDA sys_WebSocket API */
 const WS_ID = 'eda_ai_mcp_bridge_ws_v1';
 
-/** 默认 MCP Bridge 服务端地址 */
+/** Default MCP Bridge server URL */
 const DEFAULT_BRIDGE_URL = 'ws://127.0.0.1:3100';
 
-/** 调试日志 MessageBus 主题 */
+/** Debug log MessageBus topic */
 const DEBUG_TOPIC = 'ai-chat/debug-log';
 
-/** 自动重连基础延迟（首次 3 秒） */
+/** Base auto-reconnect delay in milliseconds (first retry is 3 seconds) */
 const RECONNECT_BASE_MS = 3_000;
 
-/** 自动重连最大延迟 */
+/** Maximum auto-reconnect delay */
 const RECONNECT_MAX_MS = 30_000;
 
-/** 连接超时（8 秒内未收到 onConnected 则视为失败） */
+/** Connection timeout. If onConnected is not received within 8 seconds, treat it as a failure */
 const CONNECT_TIMEOUT_MS = 8_000;
 
-/** 健康检查间隔 */
+/** Health check interval */
 const HEALTH_CHECK_INTERVAL_MS = 5_000;
 
-/** 心跳超时（最后一次收到消息后 45 秒内无任何消息则视为断连） */
+/** Heartbeat timeout. If no message arrives within 45 seconds after the last received message, treat the connection as lost */
 const HEARTBEAT_TIMEOUT_MS = 45_000;
 
-/** 定时器 ID 前缀（EDA sys_Timer API 要求全局唯一） */
+/** Timer ID prefixes. The EDA sys_Timer API requires globally unique IDs */
 const TIMER_RECONNECT = 'eda_ai_mcp_bridge_reconnect';
 const TIMER_CONNECT_TIMEOUT = 'eda_ai_mcp_bridge_connect_timeout';
 const TIMER_HEALTH_CHECK = 'eda_ai_mcp_bridge_health';
 
-// ============ 状态类型 ============
+// ============ State Types ============
 
-/** 预序列化的快照缓存（避免重复 JSON.stringify） */
+/** Pre-serialized snapshot cache to avoid repeated JSON.stringify calls */
 interface CachedSnapshot {
 	version: number;
 	json: string;
 }
 
 /**
- * Bridge 全局状态（跨 EDA 多实例共享）
+ * Global bridge state shared across multiple EDA instances
  *
- * 与 orchestrator.ts 一致，使用 globalThis 模式确保只有一个 WS 连接。
+ * Consistent with orchestrator.ts, this uses the globalThis pattern to ensure that only one WebSocket connection exists.
  */
 interface McpBridgeState {
-	/** 目标 WS 地址 */
+	/** Target WebSocket URL */
 	url: string;
-	/** 是否已调用 initMcpBridge */
+	/** Whether initMcpBridge has been called */
 	initialized: boolean;
-	/** 是否用户主动断开（阻止自动重连） */
+	/** Whether the user manually disconnected. This prevents auto-reconnect */
 	manualClose: boolean;
-	/** 是否正在建立连接 */
+	/** Whether a connection attempt is in progress */
 	connecting: boolean;
-	/** 是否已连接 */
+	/** Whether the bridge is currently connected */
 	connected: boolean;
-	/** 连接纪元（每次发起新连接递增，旧回调凭此丢弃） */
+	/** Connection epoch. Incremented for every new connection attempt so stale callbacks can be ignored */
 	connectEpoch: number;
-	/** 当前重连次数（连接成功后重置） */
+	/** Current reconnect attempt count. Reset after a successful connection */
 	reconnectAttempt: number;
-	/** 重连定时器是否活跃 */
+	/** Whether the reconnect timer is active */
 	reconnectTimerActive: boolean;
-	/** 最后一次收到 server 消息的时间戳 */
+	/** Timestamp of the last message received from the server */
 	lastMessageAt: number;
-	/** 快照版本计数器（单调递增） */
+	/** Snapshot version counter with monotonic increments */
 	snapshotVersion: number;
-	/** 最新一份快照的序列化缓存（内存中仅保留 1 份） */
+	/** Serialized cache of the latest snapshot. Only one snapshot is retained in memory */
 	pendingSnapshot: CachedSnapshot | null;
 }
 
@@ -95,10 +95,10 @@ declare global {
 	var __aiSchReview_mcpBridgeState: McpBridgeState | undefined;
 }
 
-// ============ 状态管理 ============
+// ============ State Management ============
 
 /**
- * 获取或初始化全局 Bridge 状态
+ * Get or initialize the global bridge state
  */
 function getBridgeState(): McpBridgeState {
 	if (!globalThis.__aiSchReview_mcpBridgeState) {
@@ -119,38 +119,38 @@ function getBridgeState(): McpBridgeState {
 	return globalThis.__aiSchReview_mcpBridgeState;
 }
 
-// ============ 工具函数 ============
+// ============ Utilities ============
 
 /**
- * 调试日志：同时输出到 console 和 IFrame 调试面板
+ * Debug logger that writes to both the console and the iframe debug panel
  */
 function bridgeLog(level: 'info' | 'warn' | 'error' | 'success', message: string, data?: unknown): void {
 	const prefixed = `[mcp-bridge] ${message}`;
 
-	// console 输出（仅 warn/error）
+	// Console output for warnings and errors only
 	if (level === 'warn')
 		console.warn(prefixed, data ?? '');
 	else if (level === 'error')
 		console.error(prefixed, data ?? '');
 
-	// 转发到 IFrame 调试面板
+	// Forward logs to the iframe debug panel
 	try {
 		eda.sys_MessageBus.publishPublic(DEBUG_TOPIC, { level, message: prefixed, data });
 	}
 	catch {
-		// IFrame 未打开时忽略
+		// Ignore when the iframe is not open
 	}
 }
 
 /**
- * 提取 Error.message（兼容非 Error 类型）
+ * Extract Error.message while remaining compatible with non-Error values
  */
 function toMsg(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
 /**
- * 规范化 WS 地址：校验协议、移除尾部斜杠
+ * Normalize the WebSocket URL by validating the protocol and trimming a trailing slash
  */
 function normalizeBridgeUrl(raw?: string): string {
 	const trimmed = typeof raw === 'string' ? raw.trim() : '';
@@ -163,7 +163,7 @@ function normalizeBridgeUrl(raw?: string): string {
 			bridgeLog('warn', 'Invalid MCP Bridge protocol. Falling back to the default URL', { input: trimmed });
 			return DEFAULT_BRIDGE_URL;
 		}
-		// 移除纯根路径的尾部 /
+		// Remove the trailing slash for a bare root path
 		let normalized = parsed.toString();
 		if (normalized.endsWith('/') && parsed.pathname === '/' && !parsed.search && !parsed.hash) {
 			normalized = normalized.slice(0, -1);
@@ -176,22 +176,22 @@ function normalizeBridgeUrl(raw?: string): string {
 	}
 }
 
-// ============ 定时器封装 ============
+// ============ Timer Helpers ============
 
 /**
- * 安全清除定时器（不存在时不报错）
+ * Clear a timer safely without failing when it does not exist
  */
 function clearTimer(timerId: string): void {
 	try {
 		eda.sys_Timer.clearIntervalTimer(timerId);
 	}
 	catch {
-		// 定时器不存在时忽略
+		// Ignore missing timers
 	}
 }
 
 /**
- * 设置一次性定时器（利用 setIntervalTimer + 首次触发后自清除）
+ * Set a one-shot timer using setIntervalTimer and clear it after the first trigger
  */
 function setOneShotTimer(timerId: string, delayMs: number, callback: () => void): void {
 	clearTimer(timerId);
@@ -201,24 +201,24 @@ function setOneShotTimer(timerId: string, delayMs: number, callback: () => void)
 	});
 }
 
-// ============ WS 发送 ============
+// ============ WebSocket Send ============
 
 /**
- * 安全关闭 WS 连接（不存在时不报错）
+ * Close the WebSocket safely without failing when the connection does not exist
  */
 function safeClose(code: number, reason: string): void {
 	try {
 		(eda as any).sys_WebSocket.close(WS_ID, code, reason);
 	}
 	catch {
-		// 连接不存在时忽略
+		// Ignore when the connection does not exist
 	}
 }
 
 /**
- * 发送原始 JSON 字符串
+ * Send a raw JSON string
  *
- * @returns 是否成功发送
+ * @returns Whether the message was sent successfully
  */
 function sendRaw(json: string): boolean {
 	const state = getBridgeState();
@@ -237,7 +237,7 @@ function sendRaw(json: string): boolean {
 }
 
 /**
- * 发送结构化消息（自动序列化）
+ * Send a structured message and serialize it automatically
  */
 function sendMessage(message: Record<string, unknown>): boolean {
 	try {
@@ -249,15 +249,15 @@ function sendMessage(message: Record<string, unknown>): boolean {
 	}
 }
 
-// ============ 协议消息构造 ============
+// ============ Protocol Message Builders ============
 
 /**
- * 发送 hello 握手消息
+ * Send the hello handshake message
  */
 function sendHello(): void {
 	const state = getBridgeState();
 
-	// 尝试获取工程信息（非关键，失败不阻塞）
+	// Try to read project metadata. This is non-critical, so failures should not block the handshake
 	let projectUuid = '';
 	let projectName = '';
 	try {
@@ -268,7 +268,7 @@ function sendHello(): void {
 		}
 	}
 	catch {
-		// 忽略
+		// Ignore
 	}
 
 	sendMessage({
@@ -281,7 +281,7 @@ function sendHello(): void {
 }
 
 /**
- * 发送当前缓存的快照
+ * Send the currently cached snapshot
  */
 function sendCachedSnapshot(source: 'connect' | 'request_data' | 'push'): void {
 	const state = getBridgeState();
@@ -299,10 +299,10 @@ function sendCachedSnapshot(source: 'connect' | 'request_data' | 'push'): void {
 	}
 }
 
-// ============ 连接生命周期 ============
+// ============ Connection Lifecycle ============
 
 /**
- * 退役当前连接（递增 epoch、关闭 WS、清理定时器）
+ * Retire the current connection by incrementing the epoch, closing the socket, and clearing timers
  */
 function retireConnection(code: number, reason: string): void {
 	const state = getBridgeState();
@@ -315,10 +315,10 @@ function retireConnection(code: number, reason: string): void {
 }
 
 /**
- * 启动健康检查定时器
+ * Start the health check timer
  *
- * 每隔 HEALTH_CHECK_INTERVAL_MS 检查最后一次收到消息的时间，
- * 若超过 HEARTBEAT_TIMEOUT_MS 则判定连接断开并触发重连。
+ * Every HEALTH_CHECK_INTERVAL_MS, check how long it has been since the last message.
+ * If the idle time exceeds HEARTBEAT_TIMEOUT_MS, treat the connection as lost and reconnect.
  */
 function startHealthCheck(): void {
 	clearTimer(TIMER_HEALTH_CHECK);
@@ -336,23 +336,23 @@ function startHealthCheck(): void {
 }
 
 /**
- * 安排自动重连
+ * Schedule an automatic reconnect
  *
- * 指数退避：3s, 6s, 12s, 24s, 30s(max)
+ * Exponential backoff: 3s, 6s, 12s, 24s, 30s max
  */
 function scheduleReconnect(reason: string): void {
 	const state = getBridgeState();
 
-	// 清理连接相关定时器
+	// Clear connection-related timers
 	clearTimer(TIMER_CONNECT_TIMEOUT);
 	clearTimer(TIMER_HEALTH_CHECK);
 	state.connected = false;
 	state.connecting = false;
 
-	// 防御：未初始化或手动关闭时不重连
+	// Guard: do not reconnect if not initialized or if closed manually
 	if (!state.initialized || state.manualClose)
 		return;
-	// 防重入：已有重连定时器则跳过
+	// Guard against re-entry: skip if a reconnect timer is already active
 	if (state.reconnectTimerActive)
 		return;
 
@@ -376,11 +376,11 @@ function scheduleReconnect(reason: string): void {
 }
 
 /**
- * 处理 WS 连接建立回调
+ * Handle the WebSocket connected callback
  */
 function handleConnected(epoch: number): void {
 	const state = getBridgeState();
-	// epoch 校验：丢弃过期连接的回调
+	// Epoch check: ignore callbacks from stale connections
 	if (epoch !== state.connectEpoch)
 		return;
 
@@ -389,35 +389,35 @@ function handleConnected(epoch: number): void {
 	state.reconnectAttempt = 0;
 	state.lastMessageAt = Date.now();
 
-	// 清理重连和连接超时定时器
+	// Clear reconnect and connection-timeout timers
 	state.reconnectTimerActive = false;
 	clearTimer(TIMER_RECONNECT);
 	clearTimer(TIMER_CONNECT_TIMEOUT);
 
-	// 启动健康检查
+	// Start health checks
 	startHealthCheck();
 
 	bridgeLog('success', 'MCP Bridge connected', { url: state.url, epoch });
 
-	// 发送 hello 握手
+	// Send the hello handshake
 	sendHello();
 
-	// 如果有缓存快照，立即推送
+	// Push the cached snapshot immediately if one exists
 	sendCachedSnapshot('connect');
 }
 
 /**
- * 处理 server 下发的消息
+ * Handle incoming messages from the server
  */
 function handleMessage(epoch: number, event: any): void {
 	const state = getBridgeState();
-	// epoch 校验
+	// Epoch check
 	if (epoch !== state.connectEpoch)
 		return;
 
 	state.lastMessageAt = Date.now();
 
-	// 解析消息体：event 可能是 MessageEvent 或直接是 data
+	// Parse the message body. event can be a MessageEvent or direct data
 	const rawData = event?.data !== undefined ? event.data : event;
 
 	let msg: Record<string, unknown>;
@@ -445,7 +445,7 @@ function handleMessage(epoch: number, event: any): void {
 
 	switch (msg.type) {
 		case 'ping': {
-			// 回复 pong（携带 nonce 以便 server 匹配）
+			// Reply with pong and include the nonce so the server can match it
 			const pong: Record<string, unknown> = { type: 'pong', timestamp: Date.now() };
 			if (typeof msg.nonce === 'string')
 				pong.nonce = msg.nonce;
@@ -470,7 +470,7 @@ function handleMessage(epoch: number, event: any): void {
 }
 
 /**
- * 立即发起 WS 连接
+ * Start a WebSocket connection immediately
  */
 function connectNow(reason: string): void {
 	const state = getBridgeState();
@@ -479,7 +479,7 @@ function connectNow(reason: string): void {
 	if (state.connected || state.connecting)
 		return;
 
-	// 清理旧的重连/超时定时器
+	// Clear previous reconnect and timeout timers
 	state.reconnectTimerActive = false;
 	clearTimer(TIMER_RECONNECT);
 	clearTimer(TIMER_CONNECT_TIMEOUT);
@@ -491,10 +491,10 @@ function connectNow(reason: string): void {
 	bridgeLog('info', 'Starting MCP Bridge connection', { reason, url: state.url, epoch });
 
 	try {
-		// 先关闭可能残存的旧连接
+		// Close any potentially stale existing connection first
 		safeClose(4000, 're-register');
 
-		// 注册 WS 连接
+		// Register the WebSocket connection
 		(eda as any).sys_WebSocket.register(
 			WS_ID,
 			state.url,
@@ -506,8 +506,9 @@ function connectNow(reason: string): void {
 		state.connecting = false;
 		const errorMsg = toMsg(error);
 
-		// 检测权限类错误（如未授权"外部交互"权限），此类错误无法通过重连恢复
-		const isPermissionError = /权限|permission|外部交互|not\s*allowed|forbidden|unauthorized/i.test(errorMsg);
+		// Detect permission-related errors, such as missing external-interaction permission.
+		// These failures are not recoverable through reconnect attempts.
+		const isPermissionError = /\u6743\u9650|permission|\u5916\u90E8\u4EA4\u4E92|not\s*allowed|forbidden|unauthorized/i.test(errorMsg);
 		if (isPermissionError) {
 			bridgeLog('error', 'MCP Bridge connection was denied, possibly due to missing external-interaction permission. Reconnect has been stopped', { url: state.url, error: errorMsg });
 			state.initialized = false;
@@ -520,7 +521,7 @@ function connectNow(reason: string): void {
 		return;
 	}
 
-	// 连接超时：8s 内未连接则触发重连
+	// Connection timeout: if still not connected within 8 seconds, trigger reconnect
 	setOneShotTimer(TIMER_CONNECT_TIMEOUT, CONNECT_TIMEOUT_MS, () => {
 		const current = getBridgeState();
 		if (epoch !== current.connectEpoch || current.connected || !current.connecting)
@@ -533,7 +534,7 @@ function connectNow(reason: string): void {
 }
 
 /**
- * 强制断开并重连（用于发送失败、心跳超时等场景）
+ * Force a disconnect and reconnect. Used for send failures, heartbeat timeouts, and similar scenarios
  */
 function forceReconnect(reason: string): void {
 	const state = getBridgeState();
@@ -546,16 +547,16 @@ function forceReconnect(reason: string): void {
 	scheduleReconnect(reason);
 }
 
-// ============ 公共 API ============
+// ============ Public API ============
 
 /**
- * 初始化 MCP Bridge 连接
+ * Initialize the MCP Bridge connection
  *
- * 幂等操作：多次调用仅在地址变化时重连。
- * 多实例场景下，所有实例共享同一个 globalThis 状态，第一个调用的实例建立连接，
- * 后续实例复用已有连接。
+ * This operation is idempotent. Repeated calls only reconnect when the target URL changes.
+ * In multi-instance scenarios, all instances share the same globalThis state. The first caller
+ * establishes the connection, and later instances reuse it.
  *
- * @param url WS 地址，默认 ws://127.0.0.1:3100
+ * @param url WebSocket URL. Defaults to ws://127.0.0.1:3100
  */
 export function initMcpBridge(url?: string): void {
 	const state = getBridgeState();
@@ -567,19 +568,19 @@ export function initMcpBridge(url?: string): void {
 	state.manualClose = false;
 	state.reconnectAttempt = 0;
 
-	// 地址变化时断开旧连接
+	// Disconnect the old connection if the URL changed
 	if (urlChanged && (state.connected || state.connecting)) {
 		bridgeLog('info', 'MCP Bridge URL changed. Reconnecting', { newUrl: nextUrl });
 		retireConnection(4001, 'url-changed');
 	}
 
-	// 取消待执行的重连
+	// Cancel any pending reconnect
 	if (state.reconnectTimerActive) {
 		state.reconnectTimerActive = false;
 		clearTimer(TIMER_RECONNECT);
 	}
 
-	// 已连接/正在连接 且地址未变，无需操作
+	// If already connected or connecting and the URL did not change, there is nothing to do
 	if (state.connected || state.connecting)
 		return;
 
@@ -587,23 +588,23 @@ export function initMcpBridge(url?: string): void {
 }
 
 /**
- * 推送原理图快照到 MCP Bridge
+ * Push a schematic snapshot to the MCP Bridge
  *
- * 立即缓存快照（序列化后保存），如果当前已连接则同步发送。
- * 如果未连接，快照会在下次连接建立后或收到 request_data 时自动发送。
+ * The snapshot is cached immediately after serialization. If already connected, it is sent right away.
+ * If not connected, it will be sent automatically after the next successful connection or after request_data arrives.
  *
- * @param data 采集到的完整原理图数据
+ * @param data The complete collected schematic data
  */
 export function pushSnapshot(data: CollectedData): void {
 	const state = getBridgeState();
 
-	// 未初始化或已手动断开时跳过序列化，避免无谓开销
+	// Skip serialization when uninitialized or manually disconnected to avoid unnecessary work
 	if (!state.initialized || state.manualClose)
 		return;
 
 	const version = ++state.snapshotVersion;
 
-	// 构建快照消息
+	// Build the snapshot message
 	const message = {
 		type: 'snapshot' as const,
 		version,
@@ -612,7 +613,7 @@ export function pushSnapshot(data: CollectedData): void {
 		payload: data,
 	};
 
-	// 预序列化并缓存
+	// Pre-serialize and cache it
 	try {
 		state.pendingSnapshot = { version, json: JSON.stringify(message) };
 	}
@@ -621,7 +622,7 @@ export function pushSnapshot(data: CollectedData): void {
 		return;
 	}
 
-	// 已连接则立即推送
+	// If already connected, push immediately
 	if (state.connected) {
 		if (sendRaw(state.pendingSnapshot.json)) {
 			bridgeLog('success', 'Schematic snapshot pushed', {
@@ -638,9 +639,9 @@ export function pushSnapshot(data: CollectedData): void {
 }
 
 /**
- * 断开 MCP Bridge 连接
+ * Disconnect the MCP Bridge
  *
- * 主动断开后不会自动重连，需要再次调用 initMcpBridge 重新连接。
+ * After a manual disconnect, auto-reconnect is disabled until initMcpBridge is called again.
  */
 export function disconnectMcpBridge(): void {
 	const state = getBridgeState();
@@ -656,7 +657,7 @@ export function disconnectMcpBridge(): void {
 }
 
 /**
- * 查询 MCP Bridge 连接状态
+ * Check whether the MCP Bridge is connected
  */
 export function isMcpBridgeConnected(): boolean {
 	return getBridgeState().connected;

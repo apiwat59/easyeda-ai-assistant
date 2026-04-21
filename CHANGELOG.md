@@ -1,387 +1,387 @@
-# 更新日志
+# Changelog
 
-本文档记录了 EasyEDA AI Assistant 的所有重要变更。
+This document records all important changes to EasyEDA AI Assistant.
 
-格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
-版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [1.4.0] - 2026-03-07
 
-### 新增功能 ✨
+### Added
 
-- ✨ **MCP 数据暴露（eda-mcp-server）** - 全新独立 Node.js MCP Server，让外部 AI 工具（Cursor、Claude Code、Codex 等）通过 MCP 协议只读访问原理图数据
-  - **架构**：EDA 扩展 (WebSocket) → eda-mcp-server (Node.js) → stdio → AI 工具
-  - **9 个 Resources**：`eda://schematic/status`、`summary`、`components`、`pins`、`nets`、`drc`、`project-info`、`netlist`、`compact`
-  - **14 个 Tools**：
-    - `schematic_status` — 连接状态与数据版本总览
-    - `query_component` — 查询单个器件及其关联引脚和网络
-    - `query_net` — 查询单个网络及其连接的引脚和器件（支持大小写不敏感回退）
-    - `search_schematic` — 关键词搜索（跨器件名、网络名、引脚名）
-    - `configure_bridge` — 运行时动态修改 WS 监听地址（无需重启/重编译）
-    - `get_bom` — 生成 BOM 清单（复合键去重、自然排序位号）
-    - `find_unconnected_pins` — 查找原理图中悬空/未连接引脚（可选指定器件）
-    - `analyze_power_nets` — 自动识别并分析电源网络拓扑
-    - `check_drc` — 获取 DRC 检查结果摘要
-    - `refresh_data` — 请求扩展重新推送最新快照
-    - `trace_connectivity` — 查找两个器件之间的电气连接路径（直接/间接连接）
-    - `list_components_by_type` — 按器件类型（电阻/电容/IC 等）分组统计
-    - `get_netlist_raw` — 获取原始网表文本
-    - `get_pin_map` — 获取器件引脚映射表（自然排序）
-  - **WebSocket Bridge**：接收 EDA 扩展推送的原理图快照，支持心跳保活、单调递增版本管理、条件化版本基线重置
+- Added **MCP data exposure (eda-mcp-server)** - a brand-new standalone Node.js MCP Server that lets external AI tools (Cursor, Claude Code, Codex, etc.) access schematic data in read-only mode through the MCP protocol
+  - **Architecture**: EDA extension (WebSocket) -> eda-mcp-server (Node.js) -> stdio -> AI tools
+  - **9 Resources**: `eda://schematic/status`, `summary`, `components`, `pins`, `nets`, `drc`, `project-info`, `netlist`, `compact`
+  - **14 Tools**:
+    - `schematic_status` - connection status and data version overview
+    - `query_component` - query a single component and its related pins and nets
+    - `query_net` - query a single net and its connected pins and components (case-insensitive fallback supported)
+    - `search_schematic` - keyword search (across component names, net names, and pin names)
+    - `configure_bridge` - dynamically change the WS listening address at runtime (no restart/rebuild required)
+    - `get_bom` - generate a BOM list (deduplicated keys, natural sorting of reference designators)
+    - `find_unconnected_pins` - find floating/unconnected pins in the schematic (component filter optional)
+    - `analyze_power_nets` - automatically identify and analyze power net topology
+    - `check_drc` - get a summary of DRC results
+    - `refresh_data` - request the extension to push the latest snapshot again
+    - `trace_connectivity` - find the electrical connection path between two components (direct/indirect connections)
+    - `list_components_by_type` - group and count by component type (resistor/capacitor/IC, etc.)
+    - `get_netlist_raw` - retrieve the raw netlist text
+    - `get_pin_map` - retrieve the component pin mapping table (natural sorting)
+  - **WebSocket Bridge**: receives schematic snapshots pushed by the EDA extension, with heartbeat keepalive, single-process incremental version management, and conditional version baseline reset
 
-- ✨ **MCP Bridge（扩展端 WS 客户端）** - 新增 `mcp-bridge.ts` 模块
-  - 通过 `eda.sys_WebSocket` 连接到本地 eda-mcp-server
-  - 数据采集完成后自动推送全量快照（`CollectedData`）
-  - 自动重连、心跳保活、多实例防重（`globalThis` 模式）
-  - 权限错误自动检测并停止重连，避免无限循环
+- Added **MCP Bridge (extension-side WS client)** - new `mcp-bridge.ts` module
+  - Connects to the local eda-mcp-server through `eda.sys_WebSocket`
+  - Automatically pushes a full snapshot after data collection completes (`CollectedData`)
+  - Automatic reconnection, heartbeat keepalive, and multi-instance anti-duplication (`globalThis` pattern)
+  - Permission errors are detected automatically and reconnecting is stopped to avoid infinite loops
 
-- ✨ **远程连接支持** - server 端支持 `--host` 参数绑定任意网卡
-  - 默认 `127.0.0.1`（仅本地），可设为 `0.0.0.0`（允许远程连接）
-  - 适用场景：EDA 运行在无 IP 的机器上，server 运行在有 IP 的机器上
+- Added **remote connection support** - server-side `--host` parameter can bind to any network interface
+  - Default `127.0.0.1` (local only), configurable as `0.0.0.0` (allow remote connections)
+  - Use case: EDA runs on a machine without an IP, server runs on a machine with an IP
 
-- ✨ **AI 动态配置** - `configure_bridge` 工具允许 AI 在运行时修改 WS 监听地址
-  - 用户只需告诉 AI "我的 EDA 在 xxx 上启动了"，AI 即可自动调整配置
-  - 启动失败时自动回滚到旧配置并恢复监听
+- Added **dynamic AI configuration** - the `configure_bridge` tool lets AI change the WS listening address at runtime
+  - Users only need to tell the AI "my EDA has started on xxx", and the AI can adjust the configuration automatically
+  - If startup fails, it automatically rolls back to the old configuration and resumes listening
 
-- ✨ **MCP Bridge URL 配置** - 配置面板新增 WS 桥接地址输入框（默认 `ws://127.0.0.1:3100`）
+- Added **MCP Bridge URL configuration** - the configuration panel now includes a WS bridge address input field (default `ws://127.0.0.1:3100`)
 
-### 技术改进 🔧
+### Technical Improvements
 
-- 🔧 新建 `packages/eda-mcp-server/` 独立项目（TypeScript + tsup 打包、支持 `npx eda-mcp-server` 直接启动）
-- 🔧 `restart()` 失败时尝试恢复旧监听地址，避免 Bridge 挂死
-- 🔧 CLI `--port` 参数严格校验（纯数字、1-65535 范围）
-- 🔧 `SnapshotStore.update()` projectUuid 空值 fallback 到 payload
-- 🔧 BOM 位号自然排序（`R2` < `R10`）
-- 🔧 trace_connectivity 预构建索引避免 O(P^2) 复杂度
-- 🔧 analyze_power_nets 扩展电源网络正则覆盖（VCC/VDD/VBUS/VBAT/V3V3 等 30+ 模式）
+- New standalone project `packages/eda-mcp-server/` (TypeScript + tsup bundling, supports direct startup with `npx eda-mcp-server`)
+- `restart()` now tries to recover the old listening address on failure, preventing the bridge from getting stuck
+- CLI `--port` parameter validation is strict (numeric only, range 1-65535)
+- `SnapshotStore.update()` falls back to payload when `projectUuid` is empty
+- BOM reference designators are sorted naturally (`R2` < `R10`)
+- `trace_connectivity` prebuilds indexes to avoid O(P^2) complexity
+- `analyze_power_nets` expands power net regex coverage (VCC/VDD/VBUS/VBAT/V3V3 and 30+ patterns)
 
 ---
 
 ## [1.3.2] - 2026-03-07
 
-### 修复的问题 🐛
+### Fixed Issues
 
-- 🐛 **修复 Thinking Block 收起/展开按钮在特定操作序列后失效** - 用户终止 AI 回答 → 刷新原理图 → 继续提问 → AI 回答完成后，点击思考过程的收起按钮无反应
-  - 根本原因：展开状态仅存在于 DOM className（纯临时态），`renderMessages()` 全量重建 (`innerHTML = ''`) 后丢失；同时 `StreamManager` 的 RAF 回调可能在 DOM 重建后通过 `getElementById` 找到新 DOM 并覆写 className
-  - 解决方案：将展开状态提升到数据层 `block.uiExpanded`，`createThinkingBlockElement` 根据数据决定初始 class，click handler 同步写回数据层
-  - `StreamManager` 新增 `reset()` 方法（清空 `pendingUpdates` + `cancelAnimationFrame`），`renderMessages()` 开头调用，切断旧 RAF 回调对新 DOM 的覆写
-  - 所有 thinking/text block 的 className 操作从字符串 `replace/indexOf/+=` 改为 `classList` API（`add/remove/contains`），消除边界条件风险
-  - `createThinkingBlockElement` 非流式状态下使用 `parseMarkdown` 渲染内容（与 `StreamManager.applyUpdates` 保持一致）
-  - `createTextBlockElement` paused 状态直接添加 `[已停止生成]` 标记
+- Fixed the Thinking Block collapse/expand button becoming ineffective after a specific sequence of operations - user stops AI reply -> refresh schematic -> continue asking -> after the AI reply completes, clicking the thinking-process collapse button has no effect
+  - Root cause: the expanded state existed only in the DOM className (purely transient state), and it was lost after `renderMessages()` fully rebuilt the DOM (`innerHTML = ''`); meanwhile, the `StreamManager` RAF callback could find the new DOM via `getElementById` after the rebuild and overwrite className
+  - Solution: move the expanded state into the data layer as `block.uiExpanded`, have `createThinkingBlockElement` decide the initial class from data, and sync the click handler back to the data layer
+  - Added `StreamManager.reset()` to clear `pendingUpdates` and call `cancelAnimationFrame`, and call it at the start of `renderMessages()` to prevent old RAF callbacks from overwriting the new DOM
+  - All thinking/text block className operations were changed from string `replace/indexOf/+=` to the `classList` API (`add/remove/contains`), eliminating boundary-condition risks
+  - `createThinkingBlockElement` renders content with `parseMarkdown` in non-streaming mode (consistent with `StreamManager.applyUpdates`)
+  - `createTextBlockElement` adds a `[generation stopped]` marker directly in paused state
 
-### 移除 ❌
+### Removed
 
-- ❌ **移除最大化按钮** - 移除窗口标题栏的最大化按钮（有 bug），保留最小化按钮
+- Removed the maximize button - removed the title-bar maximize button (buggy), kept the minimize button
 
 ---
 
 ## [1.3.1] - 2026-03-06
 
-### 修复的问题 🐛
+### Fixed Issues
 
-- 🐛 **修复 orchestrator 模块多实例导致的三重处理问题（关键修复）** - EDA 平台加载 orchestrator.ts 模块 3 次（3 个独立实例），每个实例注册各自的 MessageBus 订阅，导致用户每发一条消息触发 3 次 `handleUserMessage`、产生 3 个并行 AI 请求和 3 个独立响应
-  - 根本原因：模块级变量（`requestGuard`、`listenerEpoch`、`chatSessions` 等 11 个状态）在多实例间不共享，每个实例独立持有自己的防重集合和版本号，各实例的 epoch 校验形同虚设
-  - 解决方案：采用与 `collectionLock` (63615c8) 相同的 `globalThis` 模式，新增 `OrchestratorState` 接口和 `getOrchestratorState()` 初始化函数，将所有关键状态统一收敛到 `globalThis.__aiSchReview_orchestratorState`
-  - 效果：3 个实例共享同一个 `listenerEpoch`，只有最后注册的订阅能通过 epoch 校验；`RequestGuard` 全局共享后，重复 `requestId` 被正确拦截
+- Fixed the triple-processing problem caused by multiple orchestrator module instances (critical fix) - the EDA platform loaded `orchestrator.ts` three times (three independent instances), each instance registered its own MessageBus subscription, causing every user message to trigger `handleUserMessage` three times and produce three parallel AI requests and three independent responses
+  - Root cause: module-level variables (`requestGuard`, `listenerEpoch`, `chatSessions`, and 8 others) were not shared across instances, so each instance independently owned its own deduplication set and version number, making each instance's epoch validation effectively hypothetical
+  - Solution: use the same `globalThis` pattern as `collectionLock` (63615c8), add the `OrchestratorState` interface and `getOrchestratorState()` lazy initializer, and consolidate all key state into `globalThis.__aiSchReview_orchestratorState`
+  - Result: the three instances share the same `listenerEpoch`, so only the last registered subscription passes epoch validation; `requestGuard` is shared globally, and duplicate `requestId`s are correctly blocked
 
-### 技术改进 🔧
+### Technical Improvements
 
-- 🔧 新增 `OrchestratorState` 接口，定义 11 个跨实例共享的状态字段
-- 🔧 新增 `getOrchestratorState()` 惰性初始化函数（与 `getGlobalCollectionLock()` 同模式）
-- 🔧 扩展 `declare global` 块，新增 `__aiSchReview_orchestratorState` 全局变量声明
-- 🔧 模块顶层通过 `const state = getOrchestratorState()` 获取共享引用，约 60+ 处引用更新
+- Added the `OrchestratorState` interface, defining 11 shared state fields across instances
+- Added `getOrchestratorState()` lazy initialization function (same pattern as `getGlobalCollectionLock()`)
+- Extended the `declare global` block with the `__aiSchReview_orchestratorState` global variable declaration
+- Updated module top-level code to use `const state = getOrchestratorState()` for shared references, touching 60+ references
 
 ---
 
 ## [1.3.0] - 2026-03-05
 
-### 新增功能 ✨
+### Added
 
-- ✨ **DRC 检查结果采集** - 调用 `eda.sch_Drc.check` 自动运行 DRC 检查，将违规信息提供给 AI 分析
-- ✨ **工程元信息采集** - 通过 `eda.dmt_Project.getCurrentProjectInfo` 采集项目名称、描述等元信息
-- ✨ **图形图元采集** - 支持圆弧（Arc）、圆（Circle）、多边形（Polygon）、矩形（Rect）等图形元素采集
-- ✨ **独立引脚图元采集** - 通过 `eda.sch_PrimitivePin.getAll` 采集原理图中的独立引脚信息
-- ✨ **SCH-REVIEW-COMPACT v2 序列化格式** - 新的数据序列化格式，向后兼容 v1
-- ✨ **配置面板增强** - 新增"图形图元"和"增强数据"两个 checkbox 分组
+- Added **DRC result collection** - automatically runs DRC checks via `eda.sch_Drc.check` and passes violation information to AI for analysis
+- Added **project metadata collection** - collects project name, description, and other metadata via `eda.dmt_Project.getCurrentProjectInfo`
+- Added **shape primitive collection** - supports collecting arc, circle, polygon, rect, and other shape primitives
+- Added **independent pin primitive collection** - collects standalone pin information from the schematic via `eda.sch_PrimitivePin.getAll`
+- Added **SCH-REVIEW-COMPACT v2 serialization format** - a new data serialization format, backward compatible with v1
+- Added **configuration panel enhancement** - two new checkbox groups for "Shape Primitives" and "Enhanced Data"
 
-### 设计要点 📐
+### Design Notes
 
-- 📐 所有新字段默认关闭，不增加默认 Token 消耗
-- 📐 7 个采集函数均有完整 try-catch 降级，不阻塞主流程
-- 📐 DRC/ProjectInfo 与网表并行采集（全局数据，不依赖页面切换）
-- 📐 图形图元在逐页循环中与现有采集并行执行
+- All new fields are disabled by default and do not increase default token usage
+- All 7 collection functions have complete try-catch degradation and do not block the main flow
+- DRC/ProjectInfo is collected in parallel with the netlist (global data, not dependent on page switching)
+- Shape primitives are executed in parallel with existing collection during page iteration
 
 ---
 
 ## [1.2.6] - 2026-02-28
 
-### 改进 ✨
+### Improved
 
-- ✨ **配置面板折叠分组** - 配置项按功能分为「基础配置」「MCP 工具网关」「原理图字段」「高级设置」四个可折叠分组，默认仅展开基础配置，减少视觉干扰
-- ✨ **配置面板可滚动** - 模态框内容超出窗口高度时自动出现滚动条，不再溢出窗口
-- ✨ **自定义系统提示词** - 支持在配置中添加自定义系统提示词，个性化 AI 回答风格（最多 5000 字）
+- Added **collapsible configuration groups** - configuration items are divided into four collapsible groups: "Basic Settings", "MCP Gateway", "Schematic Fields", and "Advanced Settings". Only Basic Settings are expanded by default to reduce visual noise
+- Added **scrollable configuration panel** - when modal content exceeds the window height, a scrollbar appears automatically instead of overflowing the window
+- Added **custom system prompt** - supports adding a custom system prompt in the configuration to personalize AI reply style (up to 5000 characters)
 
-### 技术改进 🔧
+### Technical Improvements
 
-- 🔧 模态框采用 flex 布局 + `max-height: 80vh` 约束，适配不同窗口尺寸
-- 🔧 折叠分组使用语义化 `<button>` 元素，支持 `aria-expanded` 无障碍属性
-- 🔧 新增 `.modal-body`、`.config-section` 等 CSS 组件，结构清晰可维护
+- The modal uses a flex layout plus `max-height: 80vh` constraints to adapt to different window sizes
+- Collapsible groups use semantic `<button>` elements and support `aria-expanded` accessibility attributes
+- Added `.modal-body`, `.config-section`, and other CSS components for a clearer, maintainable structure
 
 ---
 
 ## [1.2.5] - 2026-02-23
 
-### 修复的问题 🐛
+### Fixed Issues
 
-- 🐛 **修复原理图刷新后 AI 无法感知数据变化（关键修复）** - 对话过程中修改原理图后点击刷新，AI 仍然依赖旧的分析结论回答问题
-  - 根本原因：history 中保留了之前轮次基于旧数据的分析结论，AI 倾向于相信自己之前说过的话
-  - 解决方案：刷新时向 history 注入包含数据摘要的 user+assistant 通知对，告知 AI 数据已变化，并在 system prompt 中增加"实时数据原则"指令
-- 🐛 **修复 AI 重复回答问题** - 插件重新打开后，AI 对同一条消息产生两次完整回复
-  - 根本原因：`emitCompleteBlocks` 在 `makeRequest`/`parseSSEResponse` 内部被调用，工具调用中间轮次也会触发
-  - 解决方案：将 `emitCompleteBlocks` 上移到 `sendMessage` 的 while 循环中，仅在最终文本响应时触发
-- 🐛 **修复 MCP 工具提示框重复显示** - 连续发送消息时，出现多个"工具调用中..."提示框
-  - 根本原因：`ToolOrchestrator` 按 sessionId 缓存复用，但 requestId 在创建时固定，新消息的工具事件携带旧 requestId
-  - 解决方案：添加 `updateRequestContext()` 方法，复用时更新 requestId
-- 🐛 **修复插件重开后 handleUserMessage 被重复调用** - 关闭再打开插件后，用户消息被处理两次
-  - 根本原因：EDA MessageBus 的 `cancel()` 可能无法取消已排队但未执行的旧回调
-  - 解决方案：引入 `listenerEpoch` 版本号机制，旧版本订阅的回调在执行时自动丢弃
-- 🐛 **修复重新生成功能被通知消息干扰** - 刷新后点击重新生成时，只移除了通知对而非真实的用户问答
-  - 根本原因：`clear()` 方法将注入的通知消息视为普通用户消息
-  - 解决方案：`clear()` 在查找回滚边界时跳过完整的数据更新通知对
+- Fixed AI being unable to perceive data changes after schematic refresh (critical fix) - during a conversation, after modifying the schematic and clicking refresh, the AI still replied based on the old analysis conclusions
+  - Root cause: the history retained previous analysis conclusions based on old data, so the AI tended to trust what it had said before
+  - Solution: when refreshing, inject user+assistant notification pairs containing a data summary into history to inform the AI that the data has changed, and add a "real-time data principle" instruction to the system prompt
+- Fixed duplicate AI responses - after reopening the plugin, the AI produced two complete replies to the same message
+  - Root cause: `emitCompleteBlocks` was being called inside `makeRequest`/`parseSSEResponse`, and intermediate tool-call rounds could also trigger it
+  - Solution: move `emitCompleteBlocks` into the `while` loop of `sendMessage`, so it only fires on the final text response
+- Fixed duplicate MCP tool prompt panels - sending messages in sequence caused multiple "tool call in progress..." prompt boxes
+  - Root cause: `ToolOrchestrator` was cached by sessionId, but requestId was fixed at creation time, so new message tool events reused the old requestId
+  - Solution: add `updateRequestContext()` to update the requestId on reuse
+- Fixed `handleUserMessage` being called twice after plugin reopen - after closing and reopening the plugin, a user message was processed twice
+  - Root cause: EDA MessageBus `cancel()` could not cancel already queued but not-yet-executed old callbacks
+  - Solution: introduce a `listenerEpoch` versioning mechanism so callbacks from old subscriptions are automatically discarded at execution time
+- Fixed generation being interrupted by notification messages - after refresh, clicking regenerate removed only notification messages, not the real user Q&A
+  - Root cause: `clear()` treated injected notification messages as ordinary user messages
+  - Solution: have `clear()` skip complete data-update notification pairs when searching for rollback boundaries
 
-### 技术改进 🔧
+### Technical Improvements
 
-- 🔧 **System Prompt 模块化** - `buildChatSystemPrompt` 从 `chat-adapter.ts` 提取到独立的 `prompt-builder.ts`
-- 🔧 **事件发送统一管控** - `emitCompleteBlocks` 调用由 `sendMessage` 统一控制，`callOpenAICompatibleChat`、`makeRequest`、`parseSSEResponse` 不再直接触发 UI 事件
-- 🔧 **epoch 守卫全覆盖** - 版本号校验覆盖所有关键 MessageBus 订阅：USER_MESSAGE、ABORT_REQUEST、REGENERATE_REQUEST、CLEAR_SESSION、LOCATE、restore-session
-- 🔧 **防重集合同步清理** - `clearAllChatSessions()` 同步清除 `processingRequests` 和 `completedRequests`，避免旧请求 ID 残留
-- 🔧 **调试日志全覆盖** - 所有修改点均添加结构化调试日志，输出到 UI 调试面板
+- **System Prompt modularization** - extracted `buildChatSystemPrompt` from `chat-adapter.ts` into a standalone `prompt-builder.ts`
+- **Unified event dispatch control** - `emitCompleteBlocks` is now controlled through `sendMessage`; `callOpenAICompatibleChat`, `makeRequest`, and `parseSSEResponse` no longer trigger UI events directly
+- **Epoch guard coverage** - version validation now covers all key MessageBus subscriptions: USER_MESSAGE, ABORT_REQUEST, REGENERATE_REQUEST, CLEAR_SESSION, LOCATE, restore-session
+- **Deduplication cleanup sync** - `clearAllChatSessions()` now clears `processingRequests` and `completedRequests` together to avoid stale request IDs
+- **Full debug log coverage** - all modified points now emit structured debug logs to the UI debug panel
 
 ---
 
 ## [1.1.2] - 2026-02-20
 
-### 修复的问题 🐛
+### Fixed Issues
 
-- 🐛 **修复 Markdown 库加载失败（关键修复）** - marked.js 和 highlight.js 的 CDN 路径错误导致库加载失败，所有 Markdown 语法（包括表格）都无法渲染
-  - 根本原因：marked@17.0.1 的 CDN 路径从 `/marked.min.js` 变为 `/lib/marked.umd.js`，highlight.js npm 包不含浏览器构建文件
-  - 解决方案：实现 CDN + 本地双重加载策略，先尝试 CDN（快速），失败时自动回退到本地 vendor/ 文件
-  - 添加详细的调试日志到 UI 调试面板，记录库加载状态和 Markdown 解析过程
-  - 本地备份文件（~224KB）：marked、marked-footnote、DOMPurify、highlight.js 及 7 种语言包
-  - 现在支持完整的 GFM 语法：表格、脚注、任务列表、代码高亮、嵌套格式等
+- Fixed Markdown library load failure (critical fix) - incorrect CDN paths for marked.js and highlight.js caused library loading to fail, so all Markdown syntax (including tables) could not render
+  - Root cause: the CDN path for marked@17.0.1 changed from `/marked.min.js` to `/lib/marked.umd.js`, and the highlight.js npm package does not include browser build files
+  - Solution: implement a dual CDN + local loading strategy, first trying the CDN (fast), and automatically falling back to local vendor/ files if it fails
+  - Added detailed debug logs to the UI debug panel to record library load status and the Markdown parsing process
+  - Local backup files (~224KB): marked, marked-footnote, DOMPurify, highlight.js, and 7 language packs
+  - Full GFM support is now available: tables, footnotes, task lists, code highlighting, nested formatting, etc.
 
 ---
 
 ## [1.1.1] - 2026-02-20
 
-### 新增功能 ✨
+### Added
 
-- ✨ **窗口大小可配置** - 在界面设置中调整窗口尺寸（宽度 400-3840px，高度 300-2160px），保存后下次打开生效
-- ✨ **最大化/最小化按钮** - 窗口标题栏新增最大化和最小化按钮
-- ✨ **UI 设置独立** - 右上角齿轮图标 ⚙️ 打开界面设置面板，与 AI 配置分离
-- ✨ **代码语法高亮** - 使用 highlight.js 11.10.0 为代码块添加语法高亮
-  - 支持 JavaScript、Python、TypeScript、JSON、Bash、C/C++ 等常用语言
-  - GitHub Dark 主题
-- ✨ **Markdown 渲染增强**
-  - 升级 marked.js: 11.0.0 → 17.0.1（最新版本）
-  - 升级 DOMPurify: 3.0.6 → 3.0.11（最新安全版本）
-  - 启用 GFM（GitHub Flavored Markdown）支持
-  - 优化 DOMPurify 配置，防止误删标题内粗体等内容
-  - 新增脚注支持（marked-footnote 1.4.0）- 支持 `[^1]` 和 `[^复杂脚注]` 语法
-  - 新增脚注区域样式（分隔线+缩小字号+辅助色）
-  - 新增任务列表样式（checkbox 勾选框）
-  - 新增删除线、水平线、嵌套块引用、图片自适应样式
-  - 使用 Marked 实例 API（`new marked.Marked().use()`）替代全局 `marked.setOptions()`
+- Added **configurable window size** - adjust the window dimensions in the interface settings (width 400-3840px, height 300-2160px); changes take effect the next time it is opened after saving
+- Added **maximize/minimize buttons** - the window title bar now has maximize and minimize buttons
+- Added **independent UI settings** - a gear icon in the top-right corner opens the interface settings panel, separated from AI configuration
+- Added **code syntax highlighting** - uses highlight.js 11.10.0 to add syntax highlighting to code blocks
+  - Supports common languages such as JavaScript, Python, TypeScript, JSON, Bash, and C/C++
+  - GitHub Dark theme
+- Added **enhanced Markdown rendering**
+  - Upgraded marked.js: 11.0.0 -> 17.0.1 (latest version)
+  - Upgraded DOMPurify: 3.0.6 -> 3.0.11 (latest security version)
+  - Enabled GFM (GitHub Flavored Markdown) support
+  - Optimized DOMPurify configuration to prevent accidental stripping of content such as bold text inside headings
+  - Added footnote support (marked-footnote 1.4.0) - supports `[^1]` and `[^complex-footnote]` syntax
+  - Added footnote area styling (divider line + smaller font + accent color)
+  - Added task list styling (checkboxes)
+  - Added strikethrough, horizontal rules, nested block quotes, and responsive image styling
+  - Uses the Marked instance API (`new marked.Marked().use()`) instead of the global `marked.setOptions()`
 
-### 修复的问题 🐛
+### Fixed Issues
 
-- 🐛 **修复图片上传失败（502 错误）** - 上传图片前自动压缩（最大 1024px，JPEG 质量 0.75），解决代理服务拒绝大图片的问题
-- 🐛 **修复 data URL 重复前缀** - 修复图片 URL 拼接时可能出现 `data:image/jpeg;base64,data:image/jpeg;base64,...` 的问题
-- 🐛 **修复重复回答问题** - 代理服务器对同一请求发送两次时，第二次响应会被正确忽略
-- 🐛 **修复按钮间距** - 齿轮和调试按钮现在紧挨着（gap: 6px）
-- 🐛 **修复 Markdown 渲染错误** - 优化 DOMPurify 白名单配置，确保 `### 1. **标题内粗体**` 等复杂语法正确显示
+- Fixed image upload failures (502 error) - images are automatically compressed before upload (max 1024px, JPEG quality 0.75) to solve proxy service rejections of large images
+- Fixed duplicate data URL prefixes - corrected the issue where image URLs could become `data:image/jpeg;base64,data:image/jpeg;base64,...`
+- Fixed duplicate response issues - when the proxy server sent the same request twice, the second response is now correctly ignored
+- Fixed button spacing - the gear and debug buttons are now closer together (gap: 6px)
+- Fixed Markdown rendering errors - optimized the DOMPurify whitelist to ensure complex syntax such as `### 1. **Bold Heading**` displays correctly
 
 ---
 
 ## [1.1.0] - 2026-02-19
 
-### 主要改进 ✨
+### Major Improvements
 
-#### Thinking Block 完美显示
-- ✅ **Thinking 内容正确显示在正文上方** - 修复了 thinking block 显示在正文下方的问题
-- ✅ **显示"AI已深度思考"** - 不再显示不准确的秒数，改为简洁的状态提示
-- ✅ **完整提取思考过程内容** - 支持 Grok 等模型的 reasoning 内容提取
+#### Perfect Thinking Block Display
+- `Thinking` content now appears correctly above the main text - fixed the issue where thinking blocks appeared below the main text
+- Displays "AI is thinking deeply" - no longer shows inaccurate seconds, replaced with a concise status hint
+- Full extraction of thinking process content - supports reasoning content extraction for models such as Grok
 
-#### 支持更多 AI 模型
-- ✅ **OpenAI o1/o3** - 完美支持 `reasoningEffort` 参数
-- ✅ **Grok** - 完美支持通过 `<think>` 标签提取 reasoning
-- ✅ **DeepSeek** - 支持通过 SSE `delta.reasoning_content` 提取
-- ✅ **Claude 3.7 Sonnet** - 支持 `thinking` 参数和 `delta.thinking` 字段
-- ✅ **Gemini 2.0/3.0** - 支持 `thinking_config` 参数和 `delta.thoughts` 字段
-- ✅ **Qwen (通义千问)** - 支持 `enable_thinking` 参数
-- ✅ **Doubao (豆包)** - 支持 `thinking.type` 参数
-- ✅ **Zhipu (智谱)** - 支持 `enable_thinking` 参数
-- ✅ **Kimi** - 支持 `enable_thinking` 参数
-- ✅ **Hunyuan (混元)** - 支持 `enable_thinking` 参数
-- ✅ **自动检测响应格式** - 智能适配 SSE/JSON 格式
-- ✅ **统一 reasoning 提取** - 支持所有模型的不同字段名（reasoning_content, reasoning, thinking, thoughts）
+#### Support for More AI Models
+- OpenAI o1/o3 - full support for the `reasoningEffort` parameter
+- Grok - full support for extracting reasoning through `<think>` tags
+- DeepSeek - support for extraction via SSE `delta.reasoning_content`
+- Claude 3.7 Sonnet - support for the `thinking` parameter and `delta.thinking` field
+- Gemini 2.0/3.0 - support for the `thinking_config` parameter and `delta.thoughts` field
+- Qwen - support for the `enable_thinking` parameter
+- Doubao - support for the `thinking.type` parameter
+- Zhipu - support for the `enable_thinking` parameter
+- Kimi - support for the `enable_thinking` parameter
+- Hunyuan - support for the `enable_thinking` parameter
+- Automatic response format detection - intelligently adapts to SSE/JSON formats
+- Unified reasoning extraction - supports different field names across models (`reasoning_content`, `reasoning`, `thinking`, `thoughts`)
 
-#### 历史会话功能增强
-- ✅ **支持从历史会话继续对话** - 保持完整上下文
-- ✅ **移除干扰提示** - 不再显示"提示：您正在查看历史会话..."
-- ✅ **后端自动重建对话历史** - 无缝恢复会话状态
+#### Enhanced History Conversation Features
+- Support continuing conversations from history - preserves full context
+- Removed distracting hint text - no longer shows "Hint: you are viewing conversation history..."
+- Backend automatically rebuilds chat history - seamless conversation state recovery
 
-#### 稳定性大幅提升
-- ✅ **修复 TypeError** - `Cannot read properties of undefined (reading 'length')`
-- ✅ **修复 requestId 重复处理** - 同一个 requestId 不会被重复处理
-- ✅ **修复并发场景下的历史回滚错误** - 添加全面的类型安全防护
-- ✅ **修复 block 排序逻辑** - thinking block 现在正确显示在正文上方
+#### Major Stability Improvements
+- Fixed TypeError - `Cannot read properties of undefined (reading 'length')`
+- Fixed duplicate `requestId` handling - the same requestId will not be processed twice
+- Fixed history rollback errors in concurrent scenarios - added comprehensive type-safe protection
+- Fixed block ordering logic - thinking blocks are now displayed correctly above the main text
 
-#### 调试体验优化
-- ✅ **所有关键日志输出到调试日志面板** - 方便开发者和用户排查问题
-- ✅ **详细记录 SSE 解析过程** - 包括 reasoning 提取的完整日志
-- ✅ **详细记录 block 排序过程** - 帮助诊断显示顺序问题
+#### Debugging Experience Improvements
+- All key logs are output to the debug panel - easier for developers and users to troubleshoot
+- Detailed SSE parsing process logging - including the full reasoning extraction log
+- Detailed block ordering process logging - helps diagnose display-order issues
 
-### 技术改进 🔧
+### Technical Improvements
 
-#### SSE 解析重构
-- **三阶段解析** - 累积 → 提取标签 → 发送事件
-- **支持多种 reasoning 格式** - `<think>`, `<thought>`, `<thinking>`, SSE `delta.reasoning_content`
-- **响应格式自动检测** - 智能判断 SSE 或 JSON 格式
+#### SSE Parsing Rework
+- Three-stage parsing - accumulate -> extract tags -> emit events
+- Support multiple reasoning formats - `<think>`, `<thought>`, `<thinking>`, SSE `delta.reasoning_content`
+- Automatic response format detection - intelligently determine SSE or JSON format
 
-#### 类型安全增强
-- **添加 `coerceToString()` 函数** - 防御性类型转换
-- **完善错误处理** - 避免 undefined/null 导致的崩溃
+#### Type Safety Enhancements
+- Added `coerceToString()` function - defensive type conversion
+- Improved error handling - avoids crashes caused by undefined/null values
 
-#### 前端渲染优化
-- **修复 blocks 排序逻辑** - 确保 thinking → text → error 的正确顺序
-- **优化时间显示** - 移除不准确的秒数显示
+#### Frontend Rendering Optimization
+- Fixed block ordering logic - ensures the correct order of thinking -> text -> error
+- Optimized time display - removed inaccurate second counters
 
-### 修复的问题 🐛
+### Fixed Issues
 
-- 🐛 **修复 thinking block 显示在正文下方** - 排序逻辑错误导致
-- 🐛 **修复 thinking 时间显示为 0 秒** - 改为显示"AI已深度思考"
-- 🐛 **修复 Grok 模型 reasoning 内容不完整** - 恢复 `stream: true` 模式
-- 🐛 **修复缓存导致的 TypeError** - 添加防御性类型检查
-- 🐛 **修复历史会话无法继续对话** - 实现 restore-session 监听器
+- Fixed thinking blocks appearing below the main text - caused by incorrect ordering logic
+- Fixed thinking time showing as 0 seconds - changed to display "AI is thinking deeply"
+- Fixed incomplete Grok reasoning content - restored `stream: true` mode
+- Fixed TypeError caused by caching - added defensive type checks
+- Fixed history conversations not being able to continue - implemented a restore-session listener
 
-### 已知问题
+### Known Issues
 
-- 部分 AI 模型可能不支持 reasoning 内容提取（会正常显示文本内容）
-- 历史会话恢复时不包含 thinking 内容（仅恢复文本对话）
+- Some AI models may not support reasoning content extraction (text content will still display normally)
+- History restoration does not include thinking content (only text conversation is restored)
 
 ## [1.0.0] - 2026-02-19
 
-### 首次发布 🎉
+### First Release
 
-这是 EasyEDA AI Assistant 的首个正式版本，提供完整的 AI 原理图审查和对话功能。
+This is the first official version of EasyEDA AI Assistant, providing complete AI schematic review and conversation features.
 
-### 新增功能
+### Added
 
-#### 核心功能
-- ✅ **多页原理图数据采集** - 完全逐页采集策略，支持跨页数据提取
-- ✅ **智能 Pin-Net 绑定** - 保守模式，只使用 L1 网表绑定（置信度 1.0）
-- ✅ **网表延迟回填** - 非阻塞设计，后台自动回填，解决网表超时问题
-- ✅ **PROTEL NETLIST 2.0 解析** - 支持嘉立创 EDA 网表格式
-- ✅ **网络标记识别** - 自动识别 GND、VCC 等网络标记
-- ✅ **插件自动启动** - 文档变化自动检测，后台智能采集
+#### Core Features
+- **Multi-page schematic data collection** - full page-by-page collection strategy with cross-page data extraction support
+- **Intelligent Pin-Net binding** - conservative mode, using only L1 netlist binding (confidence 1.0)
+- **Netlist delayed backfill** - non-blocking design, automatic backend backfill, solves netlist timeout issues
+- **PROTEL NETLIST 2.0 parsing** - supports JLCEDA netlist format
+- **Net label recognition** - automatically recognizes GND, VCC, and other net labels
+- **Automatic plugin startup** - document-change detection and backend auto-collection
 
-#### Pin-Net 绑定策略
-- **L1 网表**（置信度 1.0）- 最权威，来自 EDA 网表生成器
-- **保守模式** - 禁用 L2/L3/L4 策略，避免 NC 引脚假阳性
+#### Pin-Net Binding Strategy
+- **L1 netlist** (confidence 1.0) - most authoritative, from the EDA netlist generator
+- **Conservative mode** - disables L2/L3/L4 strategies to avoid false positives on NC pins
 
-#### 用户界面
-- ✅ **对话式交互** - 流式 AI 响应，支持 thinking 和 text 分离显示
-- ✅ **Markdown 渲染** - 完整 Markdown 语法支持，XSS 防护
-- ✅ **停止生成** - 随时中止 AI 响应
-- ✅ **重新生成** - 重新生成最后一条消息
-- ✅ **历史会话** - 自动保存对话历史
-- ✅ **调试面板** - 详细的采集和绑定日志
+#### User Interface
+- **Conversation-style interaction** - fluent AI responses with thinking and text displayed separately
+- **Markdown rendering** - full Markdown syntax support with XSS protection
+- **Stop generation** - stop AI responses at any time
+- **Regenerate** - regenerate the latest message
+- **History conversations** - automatically save conversation history
+- **Debug panel** - detailed collection and binding logs
 
-#### 配置管理
-- ✅ **多 AI 提供商支持** - OpenAI 兼容 API
-- ✅ **自定义 API 端点** - 支持自托管 AI 服务
-- ✅ **配置持久化** - localStorage 存储配置
+#### Configuration Management
+- **Support for multiple AI providers** - OpenAI-compatible APIs
+- **Custom API endpoints** - supports self-hosted AI services
+- **Persistent configuration** - stored in localStorage
 
-### 修复的问题
+### Fixed Issues
 
-#### 网表解析
-- 🐛 修复 PROTEL NETLIST 2.0 格式 pinNumber 提取错误
-  - 问题：网表行格式为 "U4-18 RTL8723模组-CHIP_EN Input"，解析器将整行作为 pinNumber
-  - 影响：所有引脚未绑定，nets 统计为 0
-  - 解决：只提取第一个空格之前的部分作为 pinNumber
+#### Netlist Parsing
+- Fixed pinNumber extraction error in PROTEL NETLIST 2.0 format
+  - Problem: the netlist line format was `U4-18 RTL8723 module-CHIP_EN Input`, and the parser treated the entire line as pinNumber
+  - Impact: all pins were unbound and net count was 0
+  - Fix: extract only the part before the first space as pinNumber
 
-- 🐛 修复 JLCEDA_PRO 格式导致网表 API 超时问题
-  - 问题：切换到 JLCEDA_PRO 格式后，网表 API 在 10 秒和 60 秒都超时
-  - 解决：切回 PROTEL2 格式（4ms 内返回数据）
+- Fixed netlist API timeout issues caused by the JLCEDA_PRO format
+  - Problem: after switching to JLCEDA_PRO format, the netlist API timed out at both 10 and 60 seconds
+  - Fix: switch back to PROTEL2 format (data returned within 4 ms)
 
-#### Pin-Net 绑定
-- 🐛 启用保守模式，禁用 L2/L3/L4 引脚绑定策略
-  - 问题：L2/L3/L4 策略会将 NC（悬空）引脚错误绑定到附近导线
-  - 影响：约 80-100 个 NC 引脚被错误标记为已连接（假阳性）
-  - 解决：只使用 L1 网表绑定，NC 引脚正确标记为未绑定
+#### Pin-Net Binding
+- Enabled conservative mode and disabled L2/L3/L4 pin-binding strategies
+  - Problem: the L2/L3/L4 strategies could incorrectly bind NC (floating) pins to nearby traces
+  - Impact: about 80-100 NC pins were incorrectly marked as connected (false positives)
+  - Fix: use only L1 netlist binding; NC pins are correctly marked as unbound
 
-### 技术亮点
+### Technical Highlights
 
-#### 非阻塞设计
-- 主流程不等待网表完成（10秒超时）
-- 用户可以立即开始对话
-- 后台自动回填，无感知
+#### Non-blocking Design
+- The main flow does not wait for the netlist to complete (10 second timeout)
+- Users can start chatting immediately
+- Automatic backfill in the background, no awareness needed
 
-#### Epoch 版本控制
-- 避免过期任务覆盖新任务
-- 支持多次重新采集
-- 确保数据一致性
+#### Epoch Version Control
+- Prevents expired tasks from overwriting new tasks
+- Supports repeated collection
+- Ensures data consistency
 
-#### 完整的错误处理
-- 网表获取失败不影响主流程
-- 超时自动放弃，不阻塞
-- 详细的日志记录
+#### Complete Error Handling
+- Netlist retrieval failures do not affect the main flow
+- Timeouts are automatically abandoned and do not block
+- Detailed logging
 
-### 已知限制
+### Known Limitations
 
-- 大型原理图（> 500 个器件）网表获取可能超时
-- NC（悬空）引脚会显示为未绑定（这是预期行为）
-- 仅支持 PROTEL2 网表格式
+- Large schematics (> 500 components) may time out during netlist retrieval
+- NC (floating) pins will appear as unbound (this is expected)
+- Only PROTEL2 netlist format is supported
 
-### 文档
+### Documents
 
-- 📖 [README](README.md) - 项目概述和快速开始
-- 📖 [贡献指南](CONTRIBUTING.md) - 如何参与贡献
-- 📖 [行为准则](CODE_OF_CONDUCT.md) - 社区行为准则
-- 📖 [功能实现总结](docs/implementation-summary.md) - 技术细节
-- 📖 [网表延迟回填指南](docs/netlist-backfill-guide.md) - 延迟回填机制
-- 📖 [测试验证指南](docs/testing-guide.md) - 测试场景和方法
-- 📖 [项目开发指南](CLAUDE.md) - 开发规范和约束
+- [README](README.md) - project overview and quick start
+- [CONTRIBUTING](CONTRIBUTING.md) - how to contribute
+- [CODE_OF_CONDUCT](CODE_OF_CONDUCT.md) - community code of conduct
+- [Implementation Summary](docs/implementation-summary.md) - technical details
+- [Netlist Backfill Guide](docs/netlist-backfill-guide.md) - delayed backfill mechanism
+- [Testing Guide](docs/testing-guide.md) - test scenarios and methods
+- [Project Development Guide](CLAUDE.md) - development standards and constraints
 
-### 致谢
+### Acknowledgments
 
-感谢以下项目和工具：
-- [嘉立创 EDA](https://pro.lceda.cn/) - 提供扩展 API
-- [marked.js](https://marked.js.org/) - Markdown 解析
-- [DOMPurify](https://github.com/cure53/DOMPurify) - XSS 防护
-- [Cherry Studio](https://github.com/kangfenmao/cherry-studio) - 流式响应参考
+Thanks to the following projects and tools:
+- [JLCEDA](https://pro.lceda.cn/) - provides extension APIs
+- [marked.js](https://marked.js.org/) - Markdown parsing
+- [DOMPurify](https://github.com/cure53/DOMPurify) - XSS protection
+- [Cherry Studio](https://github.com/kangfenmao/cherry-studio) - streaming response reference
 
 ---
 
-## 版本说明
+## Versioning Notes
 
-### 版本号格式
+### Version Number Format
 
-版本号格式：`主版本号.次版本号.修订号`
+Version format: `major.minor.patch`
 
-- **主版本号**：不兼容的 API 变更
-- **次版本号**：向下兼容的功能新增
-- **修订号**：向下兼容的问题修正
+- **Major version**: incompatible API changes
+- **Minor version**: backward-compatible feature additions
+- **Patch version**: backward-compatible bug fixes
 
-### 变更类型
+### Change Types
 
-- `Added` - 新增功能
-- `Changed` - 功能变更
-- `Deprecated` - 即将废弃的功能
-- `Removed` - 已移除的功能
-- `Fixed` - Bug 修复
-- `Security` - 安全相关
+- `Added` - new features
+- `Changed` - feature changes
+- `Deprecated` - soon-to-be removed features
+- `Removed` - removed features
+- `Fixed` - bug fixes
+- `Security` - security-related changes
 
 ---
 

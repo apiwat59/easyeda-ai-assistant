@@ -1,9 +1,9 @@
 import type { SendMessageOptions } from './chat-adapter';
 /**
- * AI原理图审查 - 对话模式编排器
+ * AI Schematic Review - conversation-mode orchestrator
  *
- * 管理IFrame面板与AI对话的完整生命周期
- * 按 sessionId 隔离对话会话，支持流式 thinking/text 推送
+ * Manages the full lifecycle of the IFrame panel and AI conversation
+ * Isolates chat sessions by sessionId and supports streaming thinking/text updates
  */
 import type { AbortRequest, AIBlockResponse, ChatToolCall, CollectedData, MessageBlock, RegenerateRequest, ToolEventMessage, UserMessage } from './types';
 import { ChatSession, setDebugLog } from './chat-adapter';
@@ -13,18 +13,18 @@ import { initMcpBridge, pushSnapshot } from './mcp-bridge';
 import { clearSessionCache, ToolOrchestrator } from './tool-orchestrator';
 import { CHAT_TOPICS, ChunkType, ErrorCode, ReviewError } from './types';
 
-// 初始化 collector 的日志发送函数
+// Initialize the collector log emitter
 setLogToIFrame((level: string, message: string, data?: any) => {
 	publishToIFrame('ai-chat/debug-log', { level, message, data });
 });
 
-// 初始化 chat-adapter 的日志发送函数
+// Initialize the chat-adapter log emitter
 setDebugLog((level: string, message: string, data?: any) => {
 	publishToIFrame('ai-chat/debug-log', { level, message, data });
 });
 
 /**
- * 进行中请求的状态（按 requestId 隔离）
+ * State for in-progress requests (isolated by requestId)
  */
 interface PendingRequestState {
 	sessionId: string;
@@ -34,7 +34,7 @@ interface PendingRequestState {
 }
 
 /**
- * 请求处理结果类型
+ * Request processing outcome type
  */
 type RequestOutcome = 'success' | 'aborted' | 'failed' | 'rejected';
 
@@ -44,15 +44,17 @@ interface CompletedEntry {
 }
 
 /**
- * 请求去重守卫（全局单例，不可外部重置）
+ * Request deduplication guard (global singleton, cannot be reset externally)
  *
- * 合并原 processingRequests (Set) + completedRequests (Map) 为单一不可篡改的防重机制。
- * 根治"clearAllChatSessions 意外清除 completedRequests 导致旧 MessageBus 回调绕过防重"的问题。
+ * Merges the old processingRequests (Set) + completedRequests (Map) into a single
+ * tamper-proof deduplication mechanism.
+ * This fully fixes the issue where "clearAllChatSessions accidentally cleared
+ * completedRequests, allowing old MessageBus callbacks to bypass deduplication".
  *
- * 设计原则：
- * - tryAcquire/release 是唯一操作入口，外部无法 clear/reset
- * - 已完成请求通过 TTL 自动淘汰，无需手动清理
- * - tryAcquire 前置过期清理，避免长时间空闲后旧条目误拦截
+ * Design principles:
+ * - tryAcquire/release is the only operation entry point; external code cannot clear/reset
+ * - completed requests are evicted automatically via TTL, with no manual cleanup needed
+ * - tryAcquire performs pre-eviction cleanup to avoid stale entries blocking after long idle periods
  */
 class RequestGuard {
 	private readonly processing = new Set<string>();
@@ -60,9 +62,9 @@ class RequestGuard {
 	private static readonly CACHE_TTL_MS = 60_000;
 
 	/**
-	 * 尝试获取 requestId 的处理权。
-	 * 返回 true 表示获取成功（调用方必须在处理结束后调用 release），
-	 * 返回 false 表示该 requestId 正在处理或已完成（应跳过）。
+	 * Try to acquire processing ownership for requestId.
+	 * Returns true if acquisition succeeds (the caller must call release after processing ends),
+	 * and false if the requestId is already in progress or completed (it should be skipped).
 	 */
 	tryAcquire(requestId: string): boolean {
 		this.evictExpired();
@@ -75,8 +77,8 @@ class RequestGuard {
 	}
 
 	/**
-	 * 释放 requestId 的处理权，并标记为已完成。
-	 * 必须在 handleUserMessage 的 finally 块中调用。
+	 * Release processing ownership for requestId and mark it as completed.
+	 * Must be called in the finally block of handleUserMessage.
 	 */
 	release(requestId: string, outcome: RequestOutcome): void {
 		this.processing.delete(requestId);
@@ -84,22 +86,22 @@ class RequestGuard {
 		this.evictExpired();
 	}
 
-	/** 当前处理中的请求数量（仅用于日志） */
+	/** Number of requests currently being processed (logging only) */
 	get processingCount(): number {
 		return this.processing.size;
 	}
 
-	/** 检查某个 requestId 是否正在处理中（仅用于日志） */
+	/** Check whether a requestId is currently being processed (logging only) */
 	isProcessing(requestId: string): boolean {
 		return this.processing.has(requestId);
 	}
 
-	/** 获取已完成请求的状态（仅用于日志） */
+	/** Get the completed state for a requestId (logging only) */
 	getCompleted(requestId: string): CompletedEntry | undefined {
 		return this.completed.get(requestId);
 	}
 
-	/** 清理过期的已完成记录 */
+	/** Remove expired completed records */
 	private evictExpired(): void {
 		const now = Date.now();
 		for (const [id, entry] of this.completed) {
@@ -111,10 +113,12 @@ class RequestGuard {
 }
 
 /**
- * 编排器全局共享状态（跨 EDA 多实例）
+ * Orchestrator global shared state (across multiple EDA instances)
  *
- * EDA 平台会加载本模块多次（多个独立实例），模块级变量在各实例间不共享。
- * 将关键状态统一收敛到 globalThis 下的单一对象，确保所有实例操作同一份状态。
+ * The EDA platform can load this module multiple times (multiple isolated instances),
+ * and module-level variables are not shared across instances.
+ * Consolidate key state into a single object on globalThis so every instance operates
+ * on the same shared state.
  */
 interface OrchestratorState {
 	chatSessions: Map<string, ChatSession>;
@@ -130,10 +134,10 @@ interface OrchestratorState {
 	startAIChatInFlight: boolean;
 }
 
-const TOOL_CACHE_TTL_MS = 10_000; // 10 秒缓存有效期
+const TOOL_CACHE_TTL_MS = 10_000; // 10-second cache TTL
 
 /**
- * 后台采集 single-flight 调度状态（跨实例全局锁）
+ * Background collection single-flight scheduling state (cross-instance global lock)
  */
 declare global {
 	// eslint-disable-next-line vars-on-top
@@ -149,9 +153,10 @@ declare global {
 }
 
 /**
- * 获取跨实例共享的编排器状态（与 getGlobalCollectionLock 同模式）
+ * Get the orchestrator state shared across instances (same pattern as getGlobalCollectionLock)
  *
- * 首次调用时在 globalThis 上创建唯一实例，后续所有模块实例共享同一份状态。
+ * Creates the singleton on globalThis on first call, and all later module instances
+ * share the same state object.
  */
 function getOrchestratorState(): OrchestratorState {
 	if (!globalThis.__aiSchReview_orchestratorState) {
@@ -172,7 +177,7 @@ function getOrchestratorState(): OrchestratorState {
 	return globalThis.__aiSchReview_orchestratorState;
 }
 
-/** 模块顶层取得全局状态引用（所有实例共享同一个对象） */
+/** Top-level module reference to the global state object shared by all instances */
 const state = getOrchestratorState();
 
 function getGlobalCollectionLock() {
@@ -189,7 +194,7 @@ function getGlobalCollectionLock() {
 }
 
 /**
- * 检查是否正在采集中（用于外部抑制逻辑）
+ * Check whether collection is currently running (used by external suppression logic)
  */
 export function isCollectionInProgress(): boolean {
 	const lock = getGlobalCollectionLock();
@@ -197,10 +202,10 @@ export function isCollectionInProgress(): boolean {
 }
 
 /**
- * 启动AI对话面板
+ * Start the AI chat panel
  */
 export async function startAIChat(): Promise<void> {
-	// 防重入：openIFrame 是异步调用，双击菜单会导致两次调用并发执行
+	// Reentrancy guard: openIFrame is async, so double-clicking the menu can trigger concurrent calls
 	if (state.startAIChatInFlight) {
 		publishDebugLog('warn', '[startAIChat] Ignoring duplicate call because the previous one has not finished yet');
 		return;
@@ -208,12 +213,12 @@ export async function startAIChat(): Promise<void> {
 	state.startAIChatInFlight = true;
 
 	try {
-		// 从配置读取窗口尺寸
+		// Read window size from config
 		const config = loadConfig();
 		const width = config.windowWidth || 960;
 		const height = config.windowHeight || 700;
 
-		// 打开IFrame面板（不阻塞，不立即采集数据）
+		// Open the IFrame panel (non-blocking, without collecting data immediately)
 		try {
 			await eda.sys_IFrame.openIFrame('/iframe/chat.html', width, height, 'ai-sch-chat', {
 				minimizeButton: true,
@@ -223,18 +228,18 @@ export async function startAIChat(): Promise<void> {
 			throw new ReviewError(ErrorCode.UI_IFRAME_FAILED, 'Failed to open the chat panel');
 		}
 
-		// 打开新面板时重置会话容器，避免旧面板状态串入
+		// Reset session containers when opening a new panel to avoid leaking state from the previous panel
 		clearAllChatSessions();
 
-		// 设置MessageBus监听
+		// Set up MessageBus listeners
 		setupChatListeners();
 
-		// 初始化本地 MCP Bridge（幂等；多实例共享同一个全局连接状态）
+		// Initialize the local MCP bridge (idempotent; all instances share one global connection state)
 		if (config.mcpBridgeUrl) {
 			initMcpBridge(config.mcpBridgeUrl);
 		}
 
-		// 异步触发后台采集（不阻塞UI）
+		// Trigger background collection asynchronously (without blocking the UI)
 		void triggerBackgroundCollection('start-ai-chat', true);
 	}
 	finally {
@@ -243,9 +248,9 @@ export async function startAIChat(): Promise<void> {
 }
 
 /**
- * 对外暴露：触发后台采集
- * - reason: 触发原因（便于日志追踪）
- * - notifyIFrame: 是否向 IFrame 发布采集中/完成状态
+ * Public API: trigger background collection
+ * - reason: trigger reason (for easier log tracing)
+ * - notifyIFrame: whether to publish collecting/completed state to the IFrame
  */
 export function triggerBackgroundCollection(
 	reason = 'external-trigger',
@@ -290,9 +295,9 @@ export function triggerBackgroundCollection(
 }
 
 /**
- * 后台采集执行体
- * - single-flight 由 triggerBackgroundCollection 保证
- * - epoch/version 保证仅最新结果生效
+ * Background collection executor
+ * - single-flight is guaranteed by triggerBackgroundCollection
+ * - epoch/version ensures that only the newest result takes effect
  */
 async function executeBackgroundCollection(
 	epoch: number,
@@ -304,7 +309,7 @@ async function executeBackgroundCollection(
 		if (notifyIFrame) {
 			publishToIFrame(CHAT_TOPICS.SCHEMATIC_DATA, {
 				summary: {
-					components: -1, // -1 表示正在采集
+					components: -1, // -1 means collection is in progress
 					pins: -1,
 					nets: -1,
 				},
@@ -312,40 +317,40 @@ async function executeBackgroundCollection(
 			});
 		}
 
-		// 发送采集开始事件到 IFrame 调试日志
+		// Send the collection-start event to the IFrame debug log
 		publishToIFrame('ai-chat/debug-log', {
 			level: 'info',
-			message: `后台采集开始 (原因: ${reason}, epoch: ${epoch})`,
+			message: `Background collection started (reason: ${reason}, epoch: ${epoch})`,
 		});
 
 		const collected = await collectSchematicData();
 
 		const lock = getGlobalCollectionLock();
-		// epoch/version：只接纳最新采集结果，过期结果直接丢弃
+		// epoch/version: only accept the latest collection result and discard expired ones
 		if (epoch !== lock.epoch) {
 			publishToIFrame('ai-chat/debug-log', {
 				level: 'warn',
-				message: `采集结果被丢弃 (epoch ${epoch} 已过期, 当前 ${lock.epoch})`,
+				message: `Collection result discarded (epoch ${epoch} expired, current epoch ${lock.epoch})`,
 			});
 			return;
 		}
 
 		state.cachedSchematicData = collected;
 
-		// 将原理图数据注入所有已存在的会话
+		// Inject schematic data into all existing sessions
 		for (const session of state.chatSessions.values()) {
 			session.setSchematicContext(collected);
 		}
 
-		// 推送最新快照到本地 eda-mcp-server（未连接时仅缓存，待连接后自动发送）
+		// Push the latest snapshot to the local eda-mcp-server (cache only while disconnected; send automatically after reconnect)
 		pushSnapshot(collected);
 
 		const elapsed = Date.now() - startTime;
 
-		// 发送详细采集结果到 IFrame 调试日志
+		// Send detailed collection results to the IFrame debug log
 		publishToIFrame('ai-chat/debug-log', {
 			level: 'success',
-			message: `采集完成 (耗时 ${elapsed}ms)`,
+			message: `Collection completed (elapsed ${elapsed}ms)`,
 			data: {
 				components: collected.components.length,
 				pins: collected.pins.length,
@@ -370,12 +375,12 @@ async function executeBackgroundCollection(
 			});
 		}
 
-		// 如果网表超时但后台仍在获取，启动延迟回填
+		// If the netlist timed out but is still being fetched in the background, start delayed backfill
 		void scheduleNetlistBackfill(epoch, collected);
 	}
 	catch (error) {
 		const lock = getGlobalCollectionLock();
-		// 过期任务失败不需要覆盖新任务状态
+		// Failures from expired tasks must not overwrite the state of newer tasks
 		if (epoch !== lock.epoch) {
 			return;
 		}
@@ -383,14 +388,14 @@ async function executeBackgroundCollection(
 		const elapsed = Date.now() - startTime;
 		const errorMsg = error instanceof Error ? error.message : String(error);
 
-		// 发送错误日志到 IFrame
+		// Send the error log to the IFrame
 		publishDebugLog('error', `Collection failed (elapsed ${elapsed}ms): ${errorMsg}`, {
 			reason,
 			epoch,
 		});
 
 		if (notifyIFrame) {
-			// 采集失败不阻塞 UI，对话仍可继续
+			// Collection failures must not block the UI; conversation can continue
 			publishToIFrame(CHAT_TOPICS.SCHEMATIC_DATA, {
 				summary: {
 					components: -1,
@@ -404,14 +409,14 @@ async function executeBackgroundCollection(
 }
 
 /**
- * 延迟回填网表数据（如果后台网表获取成功）
+ * Delay-backfill netlist data (if the background netlist fetch succeeds)
  *
- * 策略：
- * 1. 检查 backgroundNetlistState 是否存在且未完成
- * 2. 使用定时器轮询检查完成状态（每 2 秒检查一次，最多 60 秒）
- * 3. 当完成时，重新解析网表并更新引脚的 netName
- * 4. 更新 cachedSchematicData 并通知 IFrame
- * 5. 使用 epoch 版本控制，避免过期任务覆盖新任务
+ * Strategy:
+ * 1. Check whether backgroundNetlistState exists and is still unfinished
+ * 2. Poll for completion with a timer (every 2 seconds, up to 60 seconds)
+ * 3. When completed, parse the netlist again and update pin netName values
+ * 4. Update cachedSchematicData and notify the IFrame
+ * 5. Use epoch version control to avoid expired tasks overwriting newer tasks
  */
 async function scheduleNetlistBackfill(
 	epoch: number,
@@ -419,7 +424,7 @@ async function scheduleNetlistBackfill(
 ): Promise<void> {
 	const netlistState = getBackgroundNetlistState();
 
-	// 如果没有后台网表任务，或者已经完成，直接返回
+	// Return immediately if there is no background netlist task or it is already complete
 	if (!netlistState || netlistState.completed) {
 		publishToIFrame('ai-chat/debug-log', {
 			level: 'info',
@@ -434,14 +439,14 @@ async function scheduleNetlistBackfill(
 	});
 
 	let pollCount = 0;
-	const MAX_POLL_COUNT = 30; // 最多轮询 30 次（60 秒）
-	const POLL_INTERVAL_MS = 2000; // 每 2 秒检查一次
+	const MAX_POLL_COUNT = 30; // Poll at most 30 times (60 seconds)
+	const POLL_INTERVAL_MS = 2000; // Check every 2 seconds
 	const TIMER_ID = `netlist-backfill-epoch-${epoch}`;
 
 	eda.sys_Timer.setIntervalTimer(TIMER_ID, POLL_INTERVAL_MS, async () => {
 		pollCount++;
 
-		// 检查是否超过最大轮询次数
+		// Check whether the maximum poll count has been exceeded
 		if (pollCount > MAX_POLL_COUNT) {
 			eda.sys_Timer.clearIntervalTimer(TIMER_ID);
 			publishToIFrame('ai-chat/debug-log', {
@@ -452,7 +457,7 @@ async function scheduleNetlistBackfill(
 			return;
 		}
 
-		// 检查 epoch 是否过期
+		// Check whether the epoch has expired
 		const lock = getGlobalCollectionLock();
 		if (epoch !== lock.epoch) {
 			eda.sys_Timer.clearIntervalTimer(TIMER_ID);
@@ -463,16 +468,16 @@ async function scheduleNetlistBackfill(
 			return;
 		}
 
-		// 检查网表是否完成
+		// Check whether the netlist is complete
 		const currentState = getBackgroundNetlistState();
 		if (!currentState || !currentState.completed) {
-			return; // 继续等待
+			return; // Keep waiting
 		}
 
-		// 网表已完成，停止轮询
+		// The netlist is complete, so stop polling
 		eda.sys_Timer.clearIntervalTimer(TIMER_ID);
 
-		// 如果网表获取失败，直接返回
+		// Return immediately if netlist fetch failed
 		if (!currentState.result) {
 			publishToIFrame('ai-chat/debug-log', {
 				level: 'warn',
@@ -482,14 +487,14 @@ async function scheduleNetlistBackfill(
 			return;
 		}
 
-		// 网表获取成功，开始回填
+		// Netlist fetch succeeded, so start backfilling
 		publishToIFrame('ai-chat/debug-log', {
 			level: 'info',
 			message: `Background netlist fetch succeeded (elapsed ${currentState.duration}ms). Starting pin-binding backfill...`,
 		});
 
 		try {
-			// 解析网表
+			// Parse the netlist
 			const netlistMap = parseNetlist(currentState.result);
 
 			if (netlistMap.size === 0) {
@@ -501,33 +506,33 @@ async function scheduleNetlistBackfill(
 				return;
 			}
 
-			// 统计回填效果
+			// Track backfill results
 			let reboundCount = 0;
 			let improvedCount = 0;
 
-			// 更新引脚的 netName（使用 L1 策略）
+			// Update pin netName values (using the L1 strategy)
 			for (const pin of collected.pins) {
 				const pinKey = `${pin.componentDesignator}_${pin.pinNumber}`;
 				const netNameFromNetlist = netlistMap.get(pinKey);
 
 				if (netNameFromNetlist) {
-					// 如果原来没有绑定，现在绑定了
+					// Count pins that were previously unbound and are now bound
 					if (!pin.netName) {
 						reboundCount++;
 					}
-					// 如果原来有绑定，但置信度较低（L2/L3/L4），现在用 L1 覆盖
+					// Count pins that were previously bound with lower confidence (L2/L3/L4) and are now replaced by L1
 					else if (pin.netBindingConfidence && pin.netBindingConfidence < 1.0) {
 						improvedCount++;
 					}
 
-					// 更新引脚的网络绑定
+					// Update the pin's net binding
 					pin.netName = netNameFromNetlist;
 					pin.netBindingConfidence = 1.0;
 					pin.netBindingReason = 'netlist-backfill';
 				}
 			}
 
-			// 重新构建网络统计
+			// Rebuild net statistics
 			const netMap = new Map<string, Set<string>>();
 			for (const pin of collected.pins) {
 				if (pin.netName) {
@@ -538,27 +543,27 @@ async function scheduleNetlistBackfill(
 				}
 			}
 
-			// 更新网络数据
+			// Update net data
 			collected.nets = Array.from(netMap.entries()).map(([netName, pinIds]) => ({
 				netName,
 				pinCount: pinIds.size,
 				pins: Array.from(pinIds),
 			}));
 
-			// 更新缓存数据（如果 epoch 仍然有效）
+			// Update cached data if the epoch is still valid
 			const lock = getGlobalCollectionLock();
 			if (epoch === lock.epoch) {
 				state.cachedSchematicData = collected;
 
-				// 将更新后的数据注入所有已存在的会话
+				// Inject the updated data into all existing sessions
 				for (const session of state.chatSessions.values()) {
 					session.setSchematicContext(collected);
 				}
 
-				// 网表回填后重新推送快照，保证 eda-mcp-server 拿到最新绑定结果
+				// Re-push the snapshot after netlist backfill so the eda-mcp-server receives the latest binding results
 				pushSnapshot(collected);
 
-				// 通知 IFrame 数据已更新
+				// Notify the IFrame that data has been updated
 				publishToIFrame(CHAT_TOPICS.SCHEMATIC_DATA, {
 					summary: {
 						components: collected.components.length,
@@ -572,7 +577,7 @@ async function scheduleNetlistBackfill(
 
 				publishToIFrame('ai-chat/debug-log', {
 					level: 'success',
-					message: `网表回填完成：新绑定 ${reboundCount} 个引脚，改进 ${improvedCount} 个引脚绑定`,
+					message: `Netlist backfill completed: newly bound ${reboundCount} pins, improved ${improvedCount} pin bindings`,
 					data: {
 						reboundCount,
 						improvedCount,
@@ -585,14 +590,14 @@ async function scheduleNetlistBackfill(
 			else {
 				publishToIFrame('ai-chat/debug-log', {
 					level: 'warn',
-					message: `网表回填被丢弃（epoch ${epoch} 已过期）`,
+					message: `Netlist backfill discarded (epoch ${epoch} expired)`,
 				});
 			}
 		}
 		catch (error) {
 			publishToIFrame('ai-chat/debug-log', {
 				level: 'error',
-				message: `网表回填失败: ${error instanceof Error ? error.message : String(error)}`,
+				message: `Netlist backfill failed: ${error instanceof Error ? error.message : String(error)}`,
 			});
 		}
 		finally {
@@ -602,15 +607,16 @@ async function scheduleNetlistBackfill(
 }
 
 /**
- * 设置MessageBus监听器
+ * Set up MessageBus listeners
  */
 function setupChatListeners(): void {
-	// 幂等保护：如果已有订阅存在，说明 startAIChat 被重复调用（如用户多次点击菜单）
-	// 仅清理并重新注册即可，但需注意 EDA MessageBus 的 cancel 可能不完全生效
+	// Idempotency guard: if subscriptions already exist, startAIChat was called again
+	// (for example, the user clicked the menu multiple times). Re-register after cleanup,
+	// but note that EDA MessageBus cancel may not fully take effect.
 	const prevCount = state.subscriptions.length;
 	cleanupSubscriptions();
 
-	// 递增版本号，使旧回调在执行时自动失效
+	// Increment the version so old callbacks become invalid automatically when they run
 	const currentEpoch = ++state.listenerEpoch;
 	publishDebugLog('info', '[setupChatListeners] Initializing subscriptions', {
 		previousSubscriptionCount: prevCount,
@@ -618,7 +624,7 @@ function setupChatListeners(): void {
 		note: prevCount > 0 ? 'stale subscriptions detected; attempted cleanup and incremented epoch' : 'first registration',
 	});
 
-	// 监听IFrame请求原理图数据
+	// Listen for IFrame requests for schematic data
 	subscribe(CHAT_TOPICS.REQUEST_DATA, () => {
 		if (state.cachedSchematicData) {
 			publishToIFrame(CHAT_TOPICS.SCHEMATIC_DATA, {
@@ -633,7 +639,7 @@ function setupChatListeners(): void {
 			});
 		}
 		else {
-			// 如果数据尚未采集或采集失败，返回采集中状态
+			// If data has not been collected yet or collection failed, return the collecting state
 			publishToIFrame(CHAT_TOPICS.SCHEMATIC_DATA, {
 				summary: {
 					components: -1,
@@ -645,13 +651,13 @@ function setupChatListeners(): void {
 		}
 	});
 
-	// 监听IFrame请求刷新原理图数据
+	// Listen for IFrame requests to refresh schematic data
 	subscribe(CHAT_TOPICS.REFRESH_DATA, () => {
 		publishDebugLog('info', '[manual refresh] User triggered a schematic-data refresh');
 		void triggerBackgroundCollection('manual-refresh', true);
 	});
 
-	// 监听IFrame请求配置数据
+	// Listen for IFrame requests for config data
 	subscribe(CHAT_TOPICS.REQUEST_CONFIG, () => {
 		const config = loadConfig();
 		const customPrompt = typeof config.customSystemPrompt === 'string' ? config.customSystemPrompt.trim() : '';
@@ -676,28 +682,28 @@ function setupChatListeners(): void {
 		});
 	});
 
-	// 监听IFrame请求历史记录
+	// Listen for IFrame requests for history
 	subscribe(CHAT_TOPICS.REQUEST_HISTORY, () => {
 		const history = loadChatHistory();
 		publishToIFrame(CHAT_TOPICS.HISTORY_DATA, { messages: history });
 	});
 
-	// 监听IFrame请求工具列表
+	// Listen for IFrame requests for the tool list
 	subscribe(CHAT_TOPICS.REQUEST_TOOLS, async (data: any) => {
 		const config = loadConfig();
 		const incomingRequestId = typeof data?.requestId === 'string' ? data.requestId : '(none)';
 
-		// 快速判断是否启用 MCP
+		// Quick check for whether MCP is enabled
 		if (!config.mcpEnabled || !config.mcpGatewayUrl) {
 			publishToIFrame(CHAT_TOPICS.TOOLS_DATA, { enabled: false, tools: [] });
 			return;
 		}
 
-		// 1. 命中缓存则直接返回
+		// 1. Return immediately on cache hit
 		if (state.toolListCache && (Date.now() - state.toolListCache.timestamp < TOOL_CACHE_TTL_MS)) {
 			publishToIFrame('ai-chat/debug-log', {
 				level: 'info',
-				message: `[REQUEST_TOOLS] 缓存命中，直接返回 ${state.toolListCache.tools.length} 个工具 (requestId=${incomingRequestId})`,
+				message: `[REQUEST_TOOLS] Cache hit, returning ${state.toolListCache.tools.length} tools directly (requestId=${incomingRequestId})`,
 			});
 			publishToIFrame(CHAT_TOPICS.TOOLS_DATA, {
 				enabled: true,
@@ -706,11 +712,11 @@ function setupChatListeners(): void {
 			return;
 		}
 
-		// 2. 合并并发请求：如果已有 in-flight 请求，复用它
+		// 2. Coalesce concurrent requests: reuse the existing in-flight request if present
 		if (state.toolListInflight) {
 			publishToIFrame('ai-chat/debug-log', {
 				level: 'info',
-				message: `[REQUEST_TOOLS] 合并到已有 inflight 请求 (requestId=${incomingRequestId})`,
+				message: `[REQUEST_TOOLS] Joined existing inflight request (requestId=${incomingRequestId})`,
 			});
 			try {
 				const tools = await state.toolListInflight;
@@ -726,10 +732,10 @@ function setupChatListeners(): void {
 			return;
 		}
 
-		// 3. 发起新请求
+		// 3. Start a new request
 		publishToIFrame('ai-chat/debug-log', {
 			level: 'info',
-			message: `[REQUEST_TOOLS] 发起新的工具列表请求 (requestId=${incomingRequestId})`,
+			message: `[REQUEST_TOOLS] Starting a new tool-list request (requestId=${incomingRequestId})`,
 		});
 		const requestId = typeof data?.requestId === 'string'
 			? data.requestId
@@ -738,7 +744,7 @@ function setupChatListeners(): void {
 			? data.sessionId
 			: 'tool-preview';
 		const debugEmitter = (event: ToolEventMessage): void => {
-			// 预览模式不发送工具 UI 事件，但将 session 日志转发到调试面板
+			// Preview mode does not emit tool UI events, but forwards session logs to the debug panel
 			if (event.stage === 'mcp-session') {
 				publishToIFrame('ai-chat/debug-log', {
 					level: event.status === 'error' ? 'error' : 'info',
@@ -758,11 +764,11 @@ function setupChatListeners(): void {
 					name: tool.function.name,
 					description: tool.function.description || '',
 				}));
-				// 更新缓存
+				// Update the cache
 				state.toolListCache = { tools: mapped, timestamp: Date.now() };
 				publishToIFrame('ai-chat/debug-log', {
 					level: 'success',
-					message: `[REQUEST_TOOLS] 工具列表拉取成功，已缓存 ${mapped.length} 个工具`,
+					message: `[REQUEST_TOOLS] Tool list fetched successfully and cached with ${mapped.length} tools`,
 				});
 				return mapped;
 			})
@@ -775,7 +781,7 @@ function setupChatListeners(): void {
 		catch (error) {
 			publishToIFrame('ai-chat/debug-log', {
 				level: 'error',
-				message: `[REQUEST_TOOLS] 工具列表拉取失败: ${error instanceof Error ? error.message : String(error)}`,
+				message: `[REQUEST_TOOLS] Tool list fetch failed: ${error instanceof Error ? error.message : String(error)}`,
 			});
 			publishToIFrame(CHAT_TOPICS.TOOLS_DATA, {
 				enabled: true,
@@ -785,11 +791,12 @@ function setupChatListeners(): void {
 		}
 	});
 
-	// 监听用户消息
+	// Listen for user messages
 	subscribe(CHAT_TOPICS.USER_MESSAGE, async (data: any) => {
 		if (!data || typeof data !== 'object')
 			return;
-		// epoch 校验：丢弃旧版本订阅产生的回调（EDA MessageBus cancel 可能不彻底）
+		// Epoch validation: drop callbacks from older subscriptions
+		// (EDA MessageBus cancel may not fully take effect)
 		if (currentEpoch !== state.listenerEpoch) {
 			publishDebugLog('warn', '[USER_MESSAGE] Dropping stale subscription callback', {
 				callbackEpoch: currentEpoch,
@@ -801,7 +808,7 @@ function setupChatListeners(): void {
 		await handleUserMessage(data as UserMessage);
 	});
 
-	// 监听停止生成请求
+	// Listen for stop-generation requests
 	subscribe(CHAT_TOPICS.ABORT_REQUEST, (data: any) => {
 		if (!data || typeof data !== 'object')
 			return;
@@ -815,7 +822,7 @@ function setupChatListeners(): void {
 		handleAbortRequest(data as AbortRequest);
 	});
 
-	// 监听重新生成请求
+	// Listen for regenerate requests
 	subscribe(CHAT_TOPICS.REGENERATE_REQUEST, async (data: any) => {
 		if (!data || typeof data !== 'object')
 			return;
@@ -829,7 +836,7 @@ function setupChatListeners(): void {
 		await handleRegenerateRequest(data as RegenerateRequest);
 	});
 
-	// 监听定位请求
+	// Listen for locate requests
 	subscribe(CHAT_TOPICS.LOCATE, async (data: any) => {
 		if (currentEpoch !== state.listenerEpoch) {
 			publishDebugLog('warn', '[LOCATE] Dropping stale subscription callback', {
@@ -843,12 +850,12 @@ function setupChatListeners(): void {
 		await handleLocateRequest(data.reference);
 	});
 
-	// 监听配置更新
+	// Listen for config updates
 	subscribe(CHAT_TOPICS.CONFIG_UPDATE, async (data: any) => {
 		if (!data || typeof data !== 'object')
 			return;
 
-		// 验证字段类型和长度
+		// Validate field types and lengths
 		if (data.apiUrl && (typeof data.apiUrl !== 'string' || data.apiUrl.length > 500)) {
 			publishDebugLog('warn', 'Config validation failed: invalid apiUrl');
 			return;
@@ -902,7 +909,7 @@ function setupChatListeners(): void {
 			}
 		}
 
-		// 验证 schematicFields（若存在，必须是纯 boolean 键值对对象）
+		// Validate schematicFields (if present, it must be a plain object of boolean key/value pairs)
 		if (data.schematicFields !== undefined) {
 			if (typeof data.schematicFields !== 'object' || data.schematicFields === null || Array.isArray(data.schematicFields)) {
 				publishDebugLog('warn', 'Config validation failed: schematicFields has the wrong type');
@@ -912,12 +919,12 @@ function setupChatListeners(): void {
 				});
 				return;
 			}
-			// 校验所有值必须是 boolean（允许空对象）
+			// Validate that all values are booleans (empty object allowed)
 			for (const [k, v] of Object.entries(data.schematicFields)) {
 				if (typeof v !== 'boolean') {
 					publishDebugLog('warn', `Config validation failed: schematicFields.${k} is not a boolean`);
 					publishToIFrame(CHAT_TOPICS.ERROR, {
-						message: `配置保存失败: schematicFields.${k} 值无效`,
+						message: `Failed to save config: schematicFields.${k} has an invalid value`,
 						code: 'CONFIG_VALIDATION_FAILED',
 					});
 					return;
@@ -925,7 +932,7 @@ function setupChatListeners(): void {
 			}
 		}
 
-		// 验证 URL 格式
+		// Validate URL formats
 		if (data.apiUrl) {
 			try {
 				const url = new URL(data.apiUrl);
@@ -966,11 +973,11 @@ function setupChatListeners(): void {
 			}
 		}
 
-		// 配置变更时清空工具缓存，确保下次请求重新拉取
+		// Clear the tool cache when config changes so the next request refetches it
 		state.toolListCache = null;
-		clearSessionCache(); // 清空 MCP Session 缓存
+		clearSessionCache(); // Clear the MCP session cache
 
-		// 记录自定义系统提示词变更
+		// Log changes to the custom system prompt
 		if (data.customSystemPrompt !== undefined) {
 			const trimmed = typeof data.customSystemPrompt === 'string' ? data.customSystemPrompt.trim() : '';
 			publishDebugLog('info', `[CONFIG_UPDATE] Custom system prompt ${trimmed ? 'set' : 'cleared'}`, {
@@ -988,7 +995,7 @@ function setupChatListeners(): void {
 			return;
 		}
 
-		// 保存成功后回传配置
+		// Return the config after saving successfully
 		publishToIFrame(CHAT_TOPICS.CONFIG_DATA, {
 			apiUrl: result.config.apiUrl,
 			apiKey: result.config.apiKey || '',
@@ -1004,12 +1011,12 @@ function setupChatListeners(): void {
 			schematicFields: result.config.schematicFields || {},
 		});
 
-		// MCP Bridge 地址变更后立即生效（幂等，地址未变时无副作用）
+		// Apply MCP bridge address changes immediately (idempotent; no side effects if unchanged)
 		if (data.mcpBridgeUrl !== undefined) {
 			initMcpBridge(result.config.mcpBridgeUrl);
 		}
 
-		// 若字段配置有变更，刷新所有现有会话
+		// Refresh all existing sessions if field settings changed
 		if (data.schematicFields !== undefined) {
 			const newFields = result.config.schematicFields;
 			publishDebugLog('info', '[CONFIG_UPDATE] schematicFields changed. Refreshing field settings for all sessions', {
@@ -1017,11 +1024,11 @@ function setupChatListeners(): void {
 				hasData: !!state.cachedSchematicData,
 			});
 			for (const session of state.chatSessions.values()) {
-				// 无论是否有缓存数据，都先更新字段配置
+				// Always update field settings first, regardless of whether cached data exists
 				if (newFields) {
 					session.updateSchematicFields(newFields);
 				}
-				// 只有有缓存数据时才重新序列化上下文
+				// Re-serialize context only when cached data exists
 				if (state.cachedSchematicData) {
 					session.updateSchematicContext(state.cachedSchematicData);
 				}
@@ -1029,18 +1036,18 @@ function setupChatListeners(): void {
 		}
 	});
 
-	// 监听历史记录更新
+	// Listen for history updates
 	subscribe(CHAT_TOPICS.HISTORY_UPDATE, async (data: any) => {
 		if (!data || !Array.isArray(data.messages))
 			return;
 
-		// 验证数组大小
+		// Validate array size
 		if (data.messages.length > 100) {
 			publishDebugLog('warn', 'History validation failed: too many sessions');
 			return;
 		}
 
-		// 验证每个会话的结构
+		// Validate the structure of each session
 		for (const session of data.messages) {
 			if (!session || typeof session !== 'object') {
 				publishDebugLog('warn', 'History validation failed: invalid session structure');
@@ -1054,7 +1061,7 @@ function setupChatListeners(): void {
 				publishDebugLog('warn', 'History validation failed: invalid session message list');
 				return;
 			}
-			// 验证消息结构
+			// Validate message structure
 			for (const msg of session.messages) {
 				if (!msg || typeof msg !== 'object') {
 					publishDebugLog('warn', 'History validation failed: invalid message structure');
@@ -1081,7 +1088,7 @@ function setupChatListeners(): void {
 		}
 	});
 
-	// 监听清空会话请求（支持按 sessionId 清空或全部清空）
+	// Listen for clear-session requests (supports clearing by sessionId or clearing all)
 	subscribe(CHAT_TOPICS.CLEAR_SESSION, (data: any) => {
 		if (currentEpoch !== state.listenerEpoch) {
 			publishDebugLog('warn', '[CLEAR_SESSION] Dropping stale subscription callback', {
@@ -1104,16 +1111,16 @@ function setupChatListeners(): void {
 				state.chatSessions.delete(sessionId);
 			}
 
-			// 清理该会话的 ToolOrchestrator
+			// Clean up the ToolOrchestrator for this session
 			state.toolOrchestratorsBySession.delete(sessionId);
 			return;
 		}
 
-		// 无 sessionId 时清空所有会话
+		// Clear all sessions when no sessionId is provided
 		clearAllChatSessions();
 	});
 
-	// 监听恢复会话请求（从历史记录恢复上下文）
+	// Listen for restore-session requests (restore context from history)
 	subscribe('ai-chat/restore-session', (data: any) => {
 		if (currentEpoch !== state.listenerEpoch) {
 			publishDebugLog('warn', '[RESTORE_SESSION] Dropping stale subscription callback', {
@@ -1133,11 +1140,11 @@ function setupChatListeners(): void {
 			return;
 		}
 
-		// 获取或创建会话
+		// Get or create the session
 		const session = getOrCreateChatSession(sessionId);
 
-		// 重建历史记录
-		session.reset(); // 先清空
+		// Rebuild history
+		session.reset(); // Clear first
 		for (const msg of messages) {
 			if (!msg || typeof msg !== 'object') {
 				continue;
@@ -1146,13 +1153,13 @@ function setupChatListeners(): void {
 			const role = msg.role === 'user' ? 'user' : 'assistant';
 			const content = typeof msg.content === 'string' ? msg.content : '';
 
-			// 如果是 assistant 消息且有 thinkingSummary，合并到 content
+			// If this is an assistant message with thinkingSummary, merge it into content
 			let finalContent = content;
 			if (role === 'assistant' && msg.thinkingSummary) {
 				finalContent = `${msg.thinkingSummary}\n\n${content}`;
 			}
 
-			// 直接操作 history（绕过 sendMessage 的验证）
+			// Modify history directly (bypassing sendMessage validation)
 			(session as any).history.push({
 				role,
 				content: finalContent,
@@ -1167,15 +1174,15 @@ function setupChatListeners(): void {
 }
 
 /**
- * 处理用户消息
+ * Handle a user message
  */
 async function handleUserMessage(msg: UserMessage): Promise<void> {
-	// 验证消息结构
+	// Validate message structure
 	if (!msg || typeof msg !== 'object') {
 		return;
 	}
 
-	// 验证必需字段
+	// Validate required fields
 	if (!msg.requestId || !msg.sessionId) {
 		publishToIFrame(CHAT_TOPICS.ERROR, {
 			message: 'Invalid message format: requestId or sessionId is missing',
@@ -1191,7 +1198,8 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		guardProcessingCount: state.requestGuard.processingCount,
 	});
 
-	// 统一防重：tryAcquire 合并了 processing + completed 的检查，且不可被外部 clear
+	// Unified deduplication: tryAcquire combines the processing + completed checks
+	// and cannot be cleared externally
 	if (!state.requestGuard.tryAcquire(msg.requestId)) {
 		const completed = state.requestGuard.getCompleted(msg.requestId);
 		if (completed) {
@@ -1214,7 +1222,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 	let requestOutcome: RequestOutcome = 'failed';
 
 	try {
-		// 验证文本长度
+		// Validate text length
 		if (msg.text && msg.text.length > 50000) {
 			requestOutcome = 'rejected';
 			publishToIFrame(CHAT_TOPICS.ERROR, {
@@ -1225,7 +1233,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 			return;
 		}
 
-		// 验证图片数量和大小
+		// Validate image count and size
 		if (msg.images) {
 			if (msg.images.length > 10) {
 				requestOutcome = 'rejected';
@@ -1256,7 +1264,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		if (configError) {
 			requestOutcome = 'rejected';
 			publishToIFrame(CHAT_TOPICS.ERROR, {
-				message: `请先配置AI: ${configError}`,
+				message: `Please configure AI first: ${configError}`,
 				code: ErrorCode.AI_NO_CONFIG,
 				requestId: msg.requestId,
 				sessionId: msg.sessionId,
@@ -1264,7 +1272,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 			return;
 		}
 
-		// 创建新的 AbortController
+		// Create a new AbortController
 		const abortController = new AbortController();
 		state.pendingRequests.set(msg.requestId, {
 			sessionId: msg.sessionId,
@@ -1273,10 +1281,10 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 			textAccumulated: '',
 		});
 
-		// 按 sessionId 获取或创建会话（核心隔离机制）
+		// Get or create the session by sessionId (core isolation mechanism)
 		const session = getOrCreateChatSession(msg.sessionId);
 
-		// 获取或创建工具编排器（会话级复用，避免重复 initialize）
+		// Get or create the tool orchestrator (reused per session to avoid repeated initialization)
 		let toolOrchestrator = state.toolOrchestratorsBySession.get(msg.sessionId);
 		if (!toolOrchestrator) {
 			toolOrchestrator = new ToolOrchestrator(
@@ -1291,8 +1299,9 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 			});
 		}
 		else {
-			// 复用时必须更新 requestId，否则工具事件会携带旧请求 ID，
-			// 导致前端匹配不到当前消息，创建多余的工具调用提示框
+			// requestId must be updated when reusing it, otherwise tool events will carry
+			// the old request ID, causing the frontend to miss the current message and
+			// create extra tool-call prompt boxes
 			publishDebugLog('info', '[handleUserMessage] Reusing the existing ToolOrchestrator and updating requestId', {
 				requestId: msg.requestId,
 				sessionId: msg.sessionId,
@@ -1300,7 +1309,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 			toolOrchestrator.updateRequestContext(msg.requestId);
 		}
 
-		// 如果启用 MCP，拉取工具列表
+		// Fetch the tool list if MCP is enabled
 		let availableTools: import('./types').ChatToolDefinition[] = [];
 		if (toolOrchestrator.isEnabled()) {
 			try {
@@ -1320,7 +1329,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 			}
 		}
 
-		// 构建 sendMessage 选项
+		// Build sendMessage options
 		const sendOptions: SendMessageOptions | undefined = toolOrchestrator.isEnabled()
 			? {
 					tools: availableTools,
@@ -1338,7 +1347,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 				if (abortController.signal.aborted)
 					return;
 
-				// 记录累积内容
+				// Record accumulated content
 				const pending = state.pendingRequests.get(msg.requestId);
 				if (pending) {
 					if (isThinkingBlock(block.type))
@@ -1363,7 +1372,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		}
 
 		requestOutcome = 'success';
-		// 保存最后一条用户消息（用于重新生成）
+		// Save the last user message (used for regeneration)
 		state.lastUserMessageBySession.set(msg.sessionId, cloneUserMessage(msg));
 
 		publishToIFrame(CHAT_TOPICS.AI_RESPONSE, {
@@ -1387,7 +1396,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 			error: error instanceof Error ? error.message : String(error),
 		});
 
-		// 如果是中止错误，静默处理
+		// Silence abort errors
 		if (isAbortError(error)) {
 			requestOutcome = 'aborted';
 			publishDebugLog('info', '[handleUserMessage] Abort error handled silently', {
@@ -1405,19 +1414,19 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		});
 	}
 	finally {
-		// 清理进行中请求状态
+		// Clean up in-progress request state
 		state.pendingRequests.delete(msg.requestId);
-		// 释放 RequestGuard 处理权并标记为已完成（过期自动清理）
+		// Release RequestGuard ownership and mark as completed (expired entries are cleaned up automatically)
 		state.requestGuard.release(msg.requestId, requestOutcome);
 	}
 }
 
 /**
- * 处理定位请求
+ * Handle a locate request
  */
 async function handleLocateRequest(reference: string): Promise<void> {
 	try {
-		// 判断是器件位号还是网络名
+		// Determine whether this is a component designator or a net name
 		const isComponent = /^[URCLDQJK]\d+$/i.test(reference);
 		const type = isComponent ? 'component' : 'net';
 
@@ -1468,10 +1477,10 @@ async function handleLocateRequest(reference: string): Promise<void> {
 	}
 }
 
-// ============ 会话管理（按 sessionId 隔离） ============
+// ============ Session management (isolated by sessionId) ============
 
 /**
- * 获取或创建指定 sessionId 的对话会话
+ * Get or create the chat session for the specified sessionId
  */
 function getOrCreateChatSession(sessionId: string): ChatSession {
 	const existing = state.chatSessions.get(sessionId);
@@ -1489,30 +1498,31 @@ function getOrCreateChatSession(sessionId: string): ChatSession {
 }
 
 /**
- * 清空所有对话会话
+ * Clear all chat sessions
  */
 function clearAllChatSessions(): void {
 	abortAllPendingRequests();
 
-	// RequestGuard 为全局不可重置的防重守卫，此处不清空其状态。
-	// 即使 MessageBus 在清理后重新投递旧消息，requestGuard 仍能拦截。
+	// RequestGuard is a global deduplication guard that cannot be reset, so its
+	// state is intentionally preserved here. Even if MessageBus redelivers an old
+	// message after cleanup, requestGuard can still block it.
 
 	for (const session of state.chatSessions.values()) {
 		session.reset();
 	}
 	state.chatSessions.clear();
 	state.lastUserMessageBySession.clear();
-	state.toolListCache = null; // 清空工具缓存
-	clearSessionCache(); // 清空 MCP Session 缓存
-	state.toolOrchestratorsBySession.clear(); // 清空 ToolOrchestrator 缓存
+	state.toolListCache = null; // Clear the tool cache
+	clearSessionCache(); // Clear the MCP session cache
+	state.toolOrchestratorsBySession.clear(); // Clear the ToolOrchestrator cache
 
 	publishDebugLog('info', '[clearAllChatSessions] Cleared all session state (RequestGuard preserved)');
 }
 
-// ============ 中止管理 ============
+// ============ Abort management ============
 
 /**
- * 处理停止生成请求
+ * Handle a stop-generation request
  */
 function handleAbortRequest(data: AbortRequest): void {
 	const requestId = typeof data?.requestId === 'string' ? data.requestId : '';
@@ -1544,7 +1554,7 @@ function handleAbortRequest(data: AbortRequest): void {
 }
 
 /**
- * 处理重新生成请求
+ * Handle a regenerate request
  */
 async function handleRegenerateRequest(data: RegenerateRequest): Promise<void> {
 	const requestId = typeof data?.requestId === 'string' ? data.requestId : '';
@@ -1558,7 +1568,7 @@ async function handleRegenerateRequest(data: RegenerateRequest): Promise<void> {
 		return;
 	}
 
-	// 如果当前会话还有进行中的请求，先中止
+	// Abort first if the current session still has an in-progress request
 	abortPendingRequestsBySession(sessionId);
 
 	const session = state.chatSessions.get(sessionId);
@@ -1583,7 +1593,7 @@ async function handleRegenerateRequest(data: RegenerateRequest): Promise<void> {
 		return;
 	}
 
-	// 回滚最后一轮对话，再重新发送
+	// Roll back the latest conversation turn, then send again
 	session.clear();
 
 	const regenerateMessage: UserMessage = {
@@ -1595,7 +1605,7 @@ async function handleRegenerateRequest(data: RegenerateRequest): Promise<void> {
 }
 
 /**
- * 中止全部进行中请求
+ * Abort all in-progress requests
  */
 function abortAllPendingRequests(): void {
 	for (const pending of state.pendingRequests.values()) {
@@ -1605,7 +1615,7 @@ function abortAllPendingRequests(): void {
 }
 
 /**
- * 中止指定会话的所有进行中请求
+ * Abort all in-progress requests for the specified session
  */
 function abortPendingRequestsBySession(sessionId: string): void {
 	for (const [requestId, pending] of state.pendingRequests.entries()) {
@@ -1618,7 +1628,7 @@ function abortPendingRequestsBySession(sessionId: string): void {
 }
 
 /**
- * 发送 paused 状态的 COMPLETE 事件（中止时使用）
+ * Send COMPLETE events with paused status (used on abort)
  */
 function publishPausedCompleteBlocks(
 	requestId: string,
@@ -1644,14 +1654,14 @@ function publishPausedCompleteBlocks(
 }
 
 /**
- * 判断是否为中止错误
+ * Check whether this is an abort error
  */
 function isAbortError(error: unknown): boolean {
 	return error instanceof ReviewError && error.code === ErrorCode.AI_ABORTED;
 }
 
 /**
- * 构建错误消息的 payload
+ * Build the payload for an error message
  */
 function buildErrorPayload(error: unknown): { message: string; code?: string; details?: unknown } {
 	if (error instanceof ReviewError) {
@@ -1664,18 +1674,18 @@ function buildErrorPayload(error: unknown): { message: string; code?: string; de
 
 	if (error instanceof Error) {
 		return {
-			message: `AI请求失败: ${error.message}`,
+			message: `AI request failed: ${error.message}`,
 			details: { name: error.name, message: error.message },
 		};
 	}
 
 	return {
-		message: `AI请求失败: ${String(error)}`,
+		message: `AI request failed: ${String(error)}`,
 	};
 }
 
 /**
- * 深拷贝用户消息（用于重新生成）
+ * Deep-copy a user message (used for regeneration)
  */
 function cloneUserMessage(msg: UserMessage): UserMessage {
 	return {
@@ -1692,11 +1702,11 @@ function cloneUserMessage(msg: UserMessage): UserMessage {
 	};
 }
 
-// ============ 流式 Block 推送 ============
+// ============ Streaming block publishing ============
 
 /**
- * 将 MessageBlock 推送到 IFrame
- * thinking 类型使用 AI_THINKING topic，text 类型使用 AI_TEXT topic
+ * Publish a MessageBlock to the IFrame
+ * thinking blocks use the AI_THINKING topic, text blocks use the AI_TEXT topic
  */
 function publishMessageBlock(
 	requestId: string,
@@ -1717,14 +1727,14 @@ function publishMessageBlock(
 }
 
 /**
- * 推送工具运行事件到 IFrame
+ * Publish tool execution events to the IFrame
  */
 function publishToolEvent(event: ToolEventMessage): void {
 	publishToIFrame(CHAT_TOPICS.TOOL_EVENT, event);
 }
 
 /**
- * 判断是否为 thinking 类型的 block
+ * Check whether a block is a thinking block
  */
 function isThinkingBlock(type: ChunkType): boolean {
 	return type === ChunkType.THINKING_START
@@ -1732,17 +1742,17 @@ function isThinkingBlock(type: ChunkType): boolean {
 		|| type === ChunkType.THINKING_COMPLETE;
 }
 
-// ============ MessageBus 通信 ============
+// ============ MessageBus communication ============
 
 /**
- * 统一调试日志发送（发送到 IFrame 调试面板）
+ * Unified debug-log publisher (sends logs to the IFrame debug panel)
  */
 function publishDebugLog(level: string, message: string, data?: unknown): void {
 	publishToIFrame('ai-chat/debug-log', { level, message, data });
 }
 
 /**
- * 发布消息到IFrame
+ * Publish a message to the IFrame
  */
 function publishToIFrame(topic: string, data: unknown): void {
 	try {
@@ -1754,7 +1764,7 @@ function publishToIFrame(topic: string, data: unknown): void {
 }
 
 /**
- * 订阅MessageBus
+ * Subscribe to the MessageBus
  */
 function subscribe(topic: string, handler: (data: any) => void | Promise<void>): void {
 	const task = eda.sys_MessageBus.subscribePublic(topic, handler);
@@ -1762,7 +1772,7 @@ function subscribe(topic: string, handler: (data: any) => void | Promise<void>):
 }
 
 /**
- * 清理所有订阅
+ * Clean up all subscriptions
  */
 function cleanupSubscriptions(): void {
 	for (const sub of state.subscriptions) {

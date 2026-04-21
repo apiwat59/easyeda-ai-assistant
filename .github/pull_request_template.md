@@ -1,45 +1,45 @@
 name: Pull Request
-about: 提交代码变更
+about: Submit code changes
 title: ''
 labels: ''
 assignees: ''
 
 ---
 
-## 变更摘要
-<!-- 简要描述这个 PR 做了什么 -->
+## Summary of Changes
+<!-- Briefly describe what this PR does -->
 
-## 动机和背景
-<!-- 为什么需要这个变更？解决了什么问题？ -->
-<!-- 如果修复了某个 issue，请使用 "Closes #123" 关联 -->
+## Motivation and Background
+<!-- Why is this change needed? What problem does it solve? -->
+<!-- If it fixes an issue, please link it using "Closes #123" -->
 
-## 变更类型
-<!-- 请勾选适用的选项 -->
-- [ ] Bug 修复（不破坏现有功能的修复）
-- [ ] 新功能（不破坏现有功能的新增功能）
-- [ ] 破坏性变更（会导致现有功能无法正常工作的修复或功能）
-- [ ] 文档更新
-- [ ] 代码重构
-- [ ] 性能优化
-- [ ] 测试相关
+## Type of Change
+<!-- Please check the applicable options -->
+- [ ] Bug fix (a fix that does not break existing functionality)
+- [ ] New feature (a new feature that does not break existing functionality)
+- [ ] Breaking change (a fix or feature that would cause existing functionality to stop working properly)
+- [ ] Documentation update
+- [ ] Code refactor
+- [ ] Performance optimization
+- [ ] Testing-related
 
-## 测试计划
-<!-- 如何验证这个变更？ -->
-- [ ] 已在 EasyEDA Pro 中测试
-- [ ] 已测试以下场景：
-  - 场景 1:
-  - 场景 2:
+## Test Plan
+<!-- How did you verify this change? -->
+- [ ] Tested in EasyEDA Pro
+- [ ] Tested the following scenarios:
+  - Scenario 1:
+  - Scenario 2:
 
-## 截图/录屏
-<!-- 如果是 UI 变更，请提供截图或录屏 -->
+## Screenshots / Recordings
+<!-- If this is a UI change, please provide screenshots or recordings -->
 
-## 检查清单
-- [ ] 代码遵循项目规范
-- [ ] 已添加必要的注释
-- [ ] 已更新相关文档
-- [ ] 提交信息符合规范
-- [ ] 已解决所有 ESLint 警告
-- [ ] 已添加 Co-Authored-By 标签
+## Checklist
+- [ ] Code follows project conventions
+- [ ] Added necessary comments
+- [ ] Updated relevant documentation
+- [ ] Commit messages follow the conventions
+- [ ] Resolved all ESLint warnings
+- [ ] Added Co-Authored-By tags
 
-## 相关 Issue
-<!-- 使用 "Closes #123" 或 "Fixes #123" 关联 issue -->
+## Related Issue
+<!-- Link the issue using "Closes #123" or "Fixes #123" -->

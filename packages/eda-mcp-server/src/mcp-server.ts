@@ -1,10 +1,10 @@
 /**
  * eda-mcp-server - MCP Server
  *
- * 通过 @modelcontextprotocol/sdk 注册 Resources 和 Tools，
- * 向外部 AI 工具（Cursor、Claude Code、Codex）暴露原理图数据。
+ * Register Resources and Tools via @modelcontextprotocol/sdk,
+ * exposing schematic data to external AI tools (Cursor, Claude Code, Codex).
  */
-import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { SnapshotStore } from './snapshot-store.js';
 import type { WsBridge } from './ws-bridge.js';
@@ -16,7 +16,7 @@ export interface McpServerOptions {
 }
 
 /**
- * 创建并配置 MCP Server 实例
+ * Create and configure an MCP Server instance
  */
 export function createMcpServer(options: McpServerOptions): McpServer {
 	const { store, bridge } = options;
@@ -29,7 +29,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 
 	// ============ Resources ============
 
-	// eda://schematic/status — 连接状态和版本信息
+	// eda://schematic/status - connection status and version info
 	server.resource('schematic-status', 'eda://schematic/status', async () => {
 		const snapshot = store.get();
 		const clientInfo = bridge.getClientInfo();
@@ -54,7 +54,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 		};
 	});
 
-	// eda://schematic/summary — 高层摘要
+	// eda://schematic/summary - high-level summary
 	server.resource('schematic-summary', 'eda://schematic/summary', async () => {
 		const snapshot = store.get();
 		if (!snapshot) {
@@ -84,7 +84,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 		};
 	});
 
-	// eda://schematic/components — 全部器件列表
+	// eda://schematic/components - full component list
 	server.resource('schematic-components', 'eda://schematic/components', async () => {
 		const snapshot = store.get();
 		if (!snapshot) {
@@ -100,7 +100,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 		};
 	});
 
-	// eda://schematic/pins — 全部引脚列表
+	// eda://schematic/pins - full pin list
 	server.resource('schematic-pins', 'eda://schematic/pins', async () => {
 		const snapshot = store.get();
 		if (!snapshot) {
@@ -116,7 +116,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 		};
 	});
 
-	// eda://schematic/nets — 全部网络列表
+	// eda://schematic/nets - full net list
 	server.resource('schematic-nets', 'eda://schematic/nets', async () => {
 		const snapshot = store.get();
 		if (!snapshot) {
@@ -132,7 +132,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 		};
 	});
 
-	// eda://schematic/drc — DRC 检查结果
+	// eda://schematic/drc - DRC check results
 	server.resource('schematic-drc', 'eda://schematic/drc', async () => {
 		const snapshot = store.get();
 		const drc = snapshot?.data.drcResult ?? null;
@@ -146,7 +146,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 		};
 	});
 
-	// eda://schematic/project-info — 工程元信息
+	// eda://schematic/project-info - project metadata
 	server.resource('schematic-project-info', 'eda://schematic/project-info', async () => {
 		const snapshot = store.get();
 		const info = snapshot?.data.projectInfo ?? null;
@@ -160,7 +160,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 		};
 	});
 
-	// eda://schematic/netlist — 原始网表
+	// eda://schematic/netlist - raw netlist
 	server.resource('schematic-netlist', 'eda://schematic/netlist', async () => {
 		const snapshot = store.get();
 		const netlist = snapshot?.data.netlistRaw ?? '';
@@ -174,14 +174,14 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 		};
 	});
 
-	// eda://schematic/compact — 完整紧凑序列化格式（全量 JSON）
+	// eda://schematic/compact - complete compact serialization format (full JSON)
 	server.resource('schematic-compact', 'eda://schematic/compact', async () => {
 		const snapshot = store.get();
 		if (!snapshot) {
 			return { contents: [{ uri: 'eda://schematic/compact', mimeType: 'application/json', text: '{"error":"No data available"}' }] };
 		}
 
-		// 直接将完整的 CollectedData 作为紧凑格式输出
+		// Output the full CollectedData directly as the compact format
 		return {
 			contents: [{
 				uri: 'eda://schematic/compact',
@@ -193,8 +193,8 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 
 	// ============ Tools ============
 
-	// schematic_status — 返回连接状态和可用 Resource 列表
-	server.tool('schematic_status', '获取 EDA 扩展连接状态、数据版本和可用 Resource 列表', {}, async () => {
+	// schematic_status - return connection status and available Resource list
+	server.tool('schematic_status', 'Get the EDA extension connection status, data version, and available Resource list', {}, async () => {
 		const snapshot = store.get();
 		const clientInfo = bridge.getClientInfo();
 
@@ -227,11 +227,11 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 		};
 	});
 
-	// query_component — 查询单个器件及其关联引脚和网络
+	// query_component - query a single component and its associated pins and nets
 	server.tool(
 		'query_component',
-		'根据位号查询单个器件的详细信息，包括其全部引脚和所连接的网络',
-		{ designator: z.string().describe('器件位号，如 U1, R3, C5') },
+		'Query detailed information for a single component by designator, including all of its pins and connected nets',
+		{ designator: z.string().describe('Component designator, such as U1, R3, or C5') },
 		async ({ designator }) => {
 			const snapshot = store.get();
 			if (!snapshot) {
@@ -252,15 +252,15 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 				};
 			}
 
-			// 查找该器件的所有引脚
+			// Find all pins for this component
 			const pins = snapshot.data.pins.filter(
 				(p) => p.componentDesignator.toUpperCase() === upper,
 			);
 
-			// 收集关联的网络名
+			// Collect the connected net names
 			const connectedNets = [...new Set(pins.map(p => p.netName).filter(Boolean))];
 
-			// 查找这些网络的完整信息
+			// Look up the full information for these nets
 			const nets = snapshot.data.nets.filter(
 				(n) => connectedNets.includes(n.netName),
 			);
@@ -274,11 +274,11 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 		},
 	);
 
-	// query_net — 查询单个网络及其连接的引脚和器件
+	// query_net - query a single net and its connected pins and components
 	server.tool(
 		'query_net',
-		'根据网络名查询该网络连接的所有引脚和器件',
-		{ netName: z.string().describe('网络名称，如 GND, VCC_3V3, NET_SPI_CLK') },
+		'Query all pins and components connected to a net by name',
+		{ netName: z.string().describe('Net name, such as GND, VCC_3V3, or NET_SPI_CLK') },
 		async ({ netName: rawNetName }) => {
 			const snapshot = store.get();
 			if (!snapshot) {
@@ -290,7 +290,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 				return { content: [{ type: 'text' as const, text: '{"error":"Net name cannot be empty"}' }] };
 			}
 
-			// 精确匹配优先，失败则回退到大小写不敏感匹配
+			// Prefer exact matching; fall back to case-insensitive matching
 			let net = snapshot.data.nets.find(
 				(n) => n.netName === netName,
 			);
@@ -302,7 +302,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 				if (ciMatches.length === 1) {
 					net = ciMatches[0];
 				} else if (ciMatches.length > 1) {
-					// 大小写歧义：存在多个仅大小写不同的网络名，返回候选列表
+					// Case ambiguity: multiple net names differ only by case, so return a candidate list
 					return {
 						content: [{
 							type: 'text' as const,
@@ -316,7 +316,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 			}
 
 			if (!net) {
-				// 模糊搜索候选项
+				// Fuzzy search candidates
 				const netLower = netName.toLowerCase();
 				const candidates = snapshot.data.nets
 					.filter(n => n.netName.toLowerCase().includes(netLower))
@@ -333,16 +333,16 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 				};
 			}
 
-			// 查找连接到该网络的所有引脚（使用实际的 netName 进行精确匹配）
+			// Find all pins connected to this net (use the actual netName for exact matching)
 			const actualNetName = net.netName;
 			const pins = snapshot.data.pins.filter(
 				(p) => p.netName === actualNetName,
 			);
 
-			// 收集涉及的器件位号
+			// Collect the involved component designators
 			const designators = [...new Set(pins.map(p => p.componentDesignator))];
 
-			// 查找这些器件的详细信息
+			// Look up the detailed information for these components
 			const components = snapshot.data.components.filter(
 				(c) => designators.includes(c.designator),
 			);
@@ -356,13 +356,13 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 		},
 	);
 
-	// search_schematic — 关键词搜索
+	// search_schematic - keyword search
 	server.tool(
 		'search_schematic',
-		'在原理图数据中按关键词搜索（跨器件名、网络名、引脚名），支持按类型过滤',
+		'Search schematic data by keyword (across component names, net names, and pin names), with optional type filtering',
 		{
-			keyword: z.string().describe('搜索关键词'),
-			type: z.enum(['component', 'net', 'pin', 'all']).optional().describe('搜索范围：component/net/pin/all，默认 all'),
+			keyword: z.string().describe('Search keyword'),
+			type: z.enum(['component', 'net', 'pin', 'all']).optional().describe('Search scope: component/net/pin/all, default is all'),
 		},
 		async ({ keyword, type }) => {
 			const snapshot = store.get();
@@ -374,7 +374,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 			const searchType = type ?? 'all';
 			const results: Record<string, unknown[]> = {};
 
-			// 搜索器件
+			// Search components
 			if (searchType === 'all' || searchType === 'component') {
 				results.components = snapshot.data.components.filter((c) =>
 					c.designator.toLowerCase().includes(kw)
@@ -386,14 +386,14 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 				).slice(0, 50);
 			}
 
-			// 搜索网络
+			// Search nets
 			if (searchType === 'all' || searchType === 'net') {
 				results.nets = snapshot.data.nets.filter((n) =>
 					n.netName.toLowerCase().includes(kw),
 				).slice(0, 50);
 			}
 
-			// 搜索引脚
+			// Search pins
 			if (searchType === 'all' || searchType === 'pin') {
 				results.pins = snapshot.data.pins.filter((p) =>
 					p.pinName.toLowerCase().includes(kw)
@@ -418,13 +418,13 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 		},
 	);
 
-	// configure_bridge — 动态修改 WS Bridge 监听地址
+	// configure_bridge - dynamically modify the WS Bridge listen address
 	server.tool(
 		'configure_bridge',
-		'修改 WebSocket Bridge 的监听地址和端口，用于接收 EDA 扩展的远程连接。修改后会自动重启 WS 服务。',
+		'Change the WebSocket Bridge listen address and port for receiving remote connections from the EDA extension. The WS service is automatically restarted after changes.',
 		{
-			host: z.string().optional().describe('监听地址，如 0.0.0.0（所有网卡）或 127.0.0.1（仅本地），默认不变'),
-			port: z.number().int().min(1).max(65535).optional().describe('监听端口（1-65535），如 3100，默认不变'),
+			host: z.string().optional().describe('Listen address, such as 0.0.0.0 (all interfaces) or 127.0.0.1 (local only); unchanged by default'),
+			port: z.number().int().min(1).max(65535).optional().describe('Listen port (1-65535), such as 3100; unchanged by default'),
 		},
 		async ({ host, port }) => {
 			const current = bridge.getListenInfo();
@@ -436,7 +436,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 					content: [{
 						type: 'text' as const,
 						text: JSON.stringify({
-							message: '配置未变更',
+							message: 'Configuration unchanged',
 							host: current.host,
 							port: current.port,
 							connected: bridge.isClientConnected(),
@@ -447,12 +447,12 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 
 			try {
 				await bridge.restart(nextHost, nextPort);
-				log('info', `WS Bridge 已重启: ${nextHost}:${nextPort}`);
+				log('info', `WS Bridge restarted: ${nextHost}:${nextPort}`);
 				return {
 					content: [{
 						type: 'text' as const,
 						text: JSON.stringify({
-							message: `WS Bridge 已重启，监听 ${nextHost}:${nextPort}`,
+							message: `WS Bridge restarted and listening on ${nextHost}:${nextPort}`,
 							host: nextHost,
 							port: nextPort,
 							previousHost: current.host,
@@ -466,7 +466,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 					content: [{
 						type: 'text' as const,
 						text: JSON.stringify({
-							error: `WS Bridge 重启失败: ${errMsg}`,
+							error: `WS Bridge restart failed: ${errMsg}`,
 							host: current.host,
 							port: current.port,
 						}, null, 2),
@@ -476,14 +476,14 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 		},
 	);
 
-	// ============ 新增 Tools ============
+	// ============ Additional Tools ============
 
-	// get_bom — 生成 BOM 物料清单
+	// get_bom - generate a BOM materials list
 	server.tool(
 		'get_bom',
-		'生成 BOM（物料清单），使用 value+料号+LCSC 编号复合分组，过滤不入 BOM 的器件',
+		'Generate a BOM (bill of materials), grouped by a composite of value + part number + LCSC number, and filter out components excluded from the BOM',
 		{
-			includeBomExcluded: z.boolean().optional().describe('是否包含标记为不入 BOM 的器件，默认 false'),
+			includeBomExcluded: z.boolean().optional().describe('Whether to include components marked as excluded from the BOM; default is false'),
 		},
 		async ({ includeBomExcluded }) => {
 			const snapshot = store.get();
@@ -491,12 +491,12 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 				return { content: [{ type: 'text' as const, text: '{"error":"No schematic data available."}' }] };
 			}
 
-			// 过滤不入 BOM 的器件
+			// Filter out components excluded from the BOM
 			const components = includeBomExcluded
 				? snapshot.data.components
 				: snapshot.data.components.filter(c => c.bomInclude !== 'false' && c.bomInclude !== '0');
 
-			// 复合 key 分组：value + manufacturerPartNumber + lcscPart
+			// Group by composite key: value + manufacturerPartNumber + lcscPart
 			const groups = new Map<string, { designators: string[]; name: string; value: string; manufacturer: string; mpn: string; lcscPart: string }>();
 
 			for (const c of components) {
@@ -544,12 +544,12 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 		},
 	);
 
-	// find_unconnected_pins — 查找未连接的引脚
+	// find_unconnected_pins - find unconnected pins
 	server.tool(
 		'find_unconnected_pins',
-		'查找原理图中未连接到任何网络的悬空引脚，用于排查接线遗漏。区分"未连接"和"未解析"两种状态',
+		'Find floating pins in the schematic that are not connected to any net, for troubleshooting wiring omissions. Distinguishes between "unconnected" and "unresolved" states',
 		{
-			designator: z.string().optional().describe('可选：只检查指定器件的引脚，如 U1'),
+			designator: z.string().optional().describe('Optional: only inspect the pins of a specified component, such as U1'),
 		},
 		async ({ designator }) => {
 			const snapshot = store.get();
@@ -569,7 +569,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 
 			const unconnected = pins.filter(p => !p.netName);
 
-			// 按器件分组，区分 unresolved 和真正 unconnected
+			// Group by component, distinguishing unresolved from truly unconnected pins
 			const byComponent = new Map<string, { pinNumber: string; pinName: string; pinType: string; reason: string }[]>();
 			for (const p of unconnected) {
 				const list = byComponent.get(p.componentDesignator) ?? [];
@@ -603,10 +603,10 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 		},
 	);
 
-	// analyze_power_nets — 分析电源网络
+	// analyze_power_nets - analyze power nets
 	server.tool(
 		'analyze_power_nets',
-		'自动识别电源和地网络（VCC、GND、VDD 等），列出每个电源网连接的器件和引脚',
+		'Automatically identify power and ground nets (VCC, GND, VDD, etc.) and list the components and pins connected to each power net',
 		{},
 		async () => {
 			const snapshot = store.get();
@@ -644,10 +644,10 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 		},
 	);
 
-	// check_drc — 查看 DRC 结果
+	// check_drc - view DRC results
 	server.tool(
 		'check_drc',
-		'查看原理图的 DRC（设计规则检查）结果，包括是否通过、检查模式和时间戳',
+		'View the schematic DRC (design rule check) results, including pass/fail status, check mode, and timestamp',
 		{},
 		async () => {
 			const snapshot = store.get();
@@ -660,7 +660,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 				return {
 					content: [{
 						type: 'text' as const,
-						text: JSON.stringify({ status: 'no_drc_data', message: '当前快照中没有 DRC 检查结果，可能尚未执行 DRC 检查' }, null, 2),
+						text: JSON.stringify({ status: 'no_drc_data', message: 'There is no DRC result in the current snapshot; the DRC check may not have been run yet' }, null, 2),
 					}],
 				};
 			}
@@ -674,25 +674,25 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 						timestamp: drc.timestamp,
 						timestampFormatted: new Date(drc.timestamp).toISOString(),
 						summary: drc.passed
-							? (drc.strict ? 'DRC 严格模式通过' : 'DRC 基本模式通过')
-							: (drc.strict ? 'DRC 严格模式未通过' : 'DRC 基本模式未通过'),
+							? (drc.strict ? 'DRC strict mode passed' : 'DRC basic mode passed')
+							: (drc.strict ? 'DRC strict mode failed' : 'DRC basic mode failed'),
 					}, null, 2),
 				}],
 			};
 		},
 	);
 
-	// refresh_data — 请求 EDA 扩展重新推送数据
+	// refresh_data - request the EDA extension to resend data
 	server.tool(
 		'refresh_data',
-		'请求 EDA 扩展重新推送最新的原理图数据，用于数据可能过期时主动刷新',
+		'Request the EDA extension to resend the latest schematic data, useful for manually refreshing potentially stale data',
 		{},
 		async () => {
 			if (!bridge.isClientConnected()) {
 				return {
 					content: [{
 						type: 'text' as const,
-						text: JSON.stringify({ error: 'EDA 扩展未连接，无法请求数据刷新' }, null, 2),
+						text: JSON.stringify({ error: 'The EDA extension is not connected, so data refresh cannot be requested' }, null, 2),
 					}],
 				};
 			}
@@ -704,7 +704,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 				content: [{
 					type: 'text' as const,
 					text: JSON.stringify({
-						message: '已向 EDA 扩展发送数据刷新请求，稍后数据将自动更新',
+						message: 'A data refresh request has been sent to the EDA extension; the data will update automatically shortly',
 						currentVersion,
 					}, null, 2),
 				}],
@@ -712,13 +712,13 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 		},
 	);
 
-	// trace_connectivity — 两器件间的连通路径
+	// trace_connectivity - connectivity path between two components
 	server.tool(
 		'trace_connectivity',
-		'查找两个器件之间的电气连接路径（直接共享网络 + 一跳间接路径），用于分析信号走向',
+		'Find the electrical connection path between two components (direct shared nets + one-hop indirect paths) for signal-flow analysis',
 		{
-			from: z.string().describe('起始器件位号，如 U1'),
-			to: z.string().describe('目标器件位号，如 U2'),
+			from: z.string().describe('Starting component designator, such as U1'),
+			to: z.string().describe('Target component designator, such as U2'),
 		},
 		async ({ from, to }) => {
 			const snapshot = store.get();
@@ -729,7 +729,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 			const fromUpper = from.toUpperCase();
 			const toUpper = to.toUpperCase();
 
-			// 预建索引：net → pins[], designator → nets[]
+			// Prebuild indexes: net -> pins[], designator -> nets[]
 			const netToPins = new Map<string, typeof snapshot.data.pins>();
 			const desToNets = new Map<string, Set<string>>();
 
@@ -756,7 +756,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 				return { content: [{ type: 'text' as const, text: JSON.stringify({ error: `Component "${to}" not found or has no connected nets` }, null, 2) }] };
 			}
 
-			// 直接连接：共享同一网络
+			// Direct connection: share the same net
 			const directNets = [...fromNets].filter(n => toNets.has(n));
 			const directPaths = directNets.map(netName => {
 				const allPins = netToPins.get(netName) ?? [];
@@ -769,13 +769,13 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 				};
 			});
 
-			// 间接连接（一跳）：始终计算，通过中间器件
+			// Indirect connection (one hop): always calculate through an intermediate component
 			const indirectSet = new Set<string>();
 			const indirectPaths: { netFrom: string; middleComponent: string; netTo: string }[] = [];
 
 			for (const fNet of fromNets) {
 				const pinsOnNet = netToPins.get(fNet) ?? [];
-				// 找到该网络上的中间器件
+				// Find intermediate components on this net
 				const middleDesignators = new Set<string>();
 				for (const p of pinsOnNet) {
 					const des = p.componentDesignator.toUpperCase();
@@ -783,7 +783,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 						middleDesignators.add(des);
 					}
 				}
-				// 检查中间器件是否也连接到 to 的网络
+				// Check whether the intermediate component is also connected to a net of the target component
 				for (const midDes of middleDesignators) {
 					const midNets = desToNets.get(midDes);
 					if (!midNets) continue;
@@ -792,7 +792,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 							const dedupeKey = `${fNet}|${midDes}|${midNet}`;
 							if (!indirectSet.has(dedupeKey)) {
 								indirectSet.add(dedupeKey);
-								// 获取原始大小写的位号
+								// Retrieve the original-cased designator
 								const origDes = (netToPins.get(fNet) ?? []).find(p => p.componentDesignator.toUpperCase() === midDes)?.componentDesignator ?? midDes;
 								indirectPaths.push({ netFrom: fNet, middleComponent: origDes, netTo: midNet });
 							}
@@ -817,10 +817,10 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 		},
 	);
 
-	// list_components_by_type — 按类型分组列出器件
+	// list_components_by_type - list components grouped by type
 	server.tool(
 		'list_components_by_type',
-		'按器件前缀（R 电阻、C 电容、U IC、L 电感等）分组统计，列出各类型数量和位号',
+		'Group and count components by prefix (R resistor, C capacitor, U IC, L inductor, etc.), and list the quantity and designators for each type',
 		{},
 		async () => {
 			const snapshot = store.get();
@@ -837,15 +837,15 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 			}
 
 			const prefixNames: Record<string, string> = {
-				R: '电阻', C: '电容', L: '电感', U: 'IC/芯片', Q: '三极管/MOS管',
-				D: '二极管', J: '连接器', P: '插头', SW: '开关', F: '保险丝',
-				LED: 'LED', T: '变压器', Y: '晶振', FB: '磁珠', RN: '排阻',
+				R: 'resistor', C: 'capacitor', L: 'inductor', U: 'IC/chip', Q: 'transistor/MOSFET',
+				D: 'diode', J: 'connector', P: 'plug', SW: 'switch', F: 'fuse',
+				LED: 'LED', T: 'transformer', Y: 'crystal', FB: 'ferrite bead', RN: 'resistor network',
 			};
 
 			const result = [...groups.entries()]
 				.map(([prefix, designators]) => ({
 					prefix,
-					typeName: prefixNames[prefix] ?? '其他',
+					typeName: prefixNames[prefix] ?? 'other',
 					count: designators.length,
 					designators: designators.sort((a, b) => {
 						const numA = parseInt(a.replace(/\D/g, '')) || 0;
@@ -868,10 +868,10 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 		},
 	);
 
-	// get_netlist_raw — 获取原始网表文本
+	// get_netlist_raw - get the raw netlist text
 	server.tool(
 		'get_netlist_raw',
-		'获取原始网表文本（若可用），可用于导出或进一步分析',
+		'Get the raw netlist text, if available, for export or further analysis',
 		{},
 		async () => {
 			const snapshot = store.get();
@@ -884,7 +884,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 				return {
 					content: [{
 						type: 'text' as const,
-						text: JSON.stringify({ status: 'no_netlist', message: '当前快照中没有原始网表数据' }, null, 2),
+						text: JSON.stringify({ status: 'no_netlist', message: 'There is no raw netlist data in the current snapshot' }, null, 2),
 					}],
 				};
 			}
@@ -898,12 +898,12 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 		},
 	);
 
-	// get_pin_map — 器件引脚映射表
+	// get_pin_map - component pin map
 	server.tool(
 		'get_pin_map',
-		'获取指定器件的完整引脚映射表（引脚号 → 引脚名 → 所连网络），便于分析器件接线',
+		'Get the complete pin map for a specified component (pin number -> pin name -> connected net), useful for analyzing component wiring',
 		{
-			designator: z.string().describe('器件位号，如 U1, U3'),
+			designator: z.string().describe('Component designator, such as U1 or U3'),
 		},
 		async ({ designator }) => {
 			const snapshot = store.get();
@@ -935,7 +935,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 					connected: p.netName !== null,
 				}))
 				.sort((a, b) => {
-					// 自然排序：纯数字按数值，字母+数字（A1, B2, EP, PAD）按字典序
+					// Natural sort: pure numbers by numeric value, letter+number values (A1, B2, EP, PAD) by lexicographic order
 					const numA = parseInt(a.pinNumber);
 					const numB = parseInt(b.pinNumber);
 					const aIsNum = !isNaN(numA) && String(numA) === a.pinNumber;

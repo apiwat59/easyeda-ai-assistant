@@ -9,18 +9,18 @@
 debug.log
 .ace-tool/
 
-# 环境变量和配置
+# Environment variables and configuration
 .env
 .env.*
 !.env.template
 !.env.example
 
-# API Keys 和凭证（避免误伤正常源码/文档）
+# API keys and credentials (avoid accidentally ignoring normal source/docs)
 /secrets/
 *.secrets.json
 *.credentials.json
 /config.local.json
 
-# 日志文件
+# Log files
 *.log
 gateway.log

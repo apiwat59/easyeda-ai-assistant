@@ -1,128 +1,128 @@
-# 贡献指南
+# Contribution Guide
 
-感谢你考虑为 EasyEDA AI Assistant 做出贡献！
+Thank you for contributing to EasyEDA AI Assistant!
 
-## 行为准则
+## Code of Conduct
 
-本项目采用 [Contributor Covenant](CODE_OF_CONDUCT.md) 行为准则。参与本项目即表示你同意遵守其条款。
+This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). By participating in this project, you agree to abide by its terms.
 
-## 如何贡献
+## How to Contribute
 
-### 报告 Bug
+### Reporting Bugs
 
-在提交 Bug 报告之前，请：
+Before submitting a bug report, please:
 
-1. **检查现有 Issues** - 确保该问题尚未被报告
-2. **使用最新版本** - 确认问题在最新版本中仍然存在
-3. **提供详细信息** - 使用 Bug 报告模板，包含：
-   - 清晰的标题和描述
-   - 重现步骤
-   - 预期行为 vs 实际行为
-   - 环境信息（EasyEDA Pro 版本、操作系统等）
-   - 调试日志（如果适用）
-   - 截图或录屏（如果适用）
+1. **Check existing issues** - Make sure the problem has not already been reported
+2. **Use the latest version** - Confirm the issue still exists in the latest release
+3. **Provide detailed information** - Use the bug report template and include:
+   - A clear title and description
+   - Steps to reproduce
+   - Expected behavior vs actual behavior
+   - Environment details (EasyEDA Pro version, operating system, etc.)
+   - Debug logs, if applicable
+   - Screenshots or screen recordings, if applicable
 
-### 提出功能建议
+### Suggesting Features
 
-功能建议应该：
+Feature requests should:
 
-1. **明确具体** - 清楚描述你想要什么功能
-2. **解释动机** - 说明为什么需要这个功能
-3. **提供示例** - 如果可能，提供使用场景或示例
-4. **考虑替代方案** - 是否有其他方式实现相同目标
+1. **Be specific** - Clearly describe the feature you want
+2. **Explain the motivation** - Say why this feature is needed
+3. **Provide examples** - If possible, include use cases or examples
+4. **Consider alternatives** - Whether there are other ways to achieve the same goal
 
-### 提交代码
+### Submitting Code
 
-#### 开发流程
+#### Development Workflow
 
-1. **Fork 仓库**
+1. **Fork the repository**
    ```bash
-   # 在 GitHub 上 Fork 仓库
+   # Fork the repository on GitHub
    git clone https://github.com/YOUR_USERNAME/easyeda-ai-assistant.git
    cd easyeda-ai-assistant
    ```
 
-2. **创建分支**
+2. **Create a branch**
    ```bash
    git checkout -b feature/your-feature-name
-   # 或
+   # or
    git checkout -b fix/your-bug-fix
    ```
 
-3. **安装依赖**
+3. **Install dependencies**
    ```bash
    npm install
    ```
 
-4. **进行修改**
-   - 遵循代码规范（见下文）
-   - 添加必要的测试
-   - 更新相关文档
+4. **Make your changes**
+   - Follow the code standards (see below)
+   - Add necessary tests
+   - Update related documentation
 
-5. **测试修改**
+5. **Test your changes**
    ```bash
    npm run build
-   # 在 EasyEDA Pro 中测试扩展
+   # Test in EasyEDA Pro
    ```
 
-6. **提交更改**
+6. **Commit your changes**
    ```bash
    git add .
    git commit -m "feat: add amazing feature"
    ```
 
-7. **推送到 GitHub**
+7. **Push to GitHub**
    ```bash
    git push origin feature/your-feature-name
    ```
 
-8. **创建 Pull Request**
-   - 在 GitHub 上创建 PR
-   - 填写 PR 模板
-   - 等待代码审查
+8. **Create a Pull Request**
+   - Open a PR on GitHub
+   - Fill out the PR template
+   - Wait for code review
 
-#### 代码规范
+#### Code Standards
 
-**TypeScript 规范**
+**TypeScript Standards**
 
-- 使用 TypeScript 严格模式
-- 所有函数必须有类型注解
-- 避免使用 `any`，优先使用具体类型
-- 使用接口（interface）定义数据结构
+- Use TypeScript in strict mode
+- All functions must have type annotations
+- Avoid `any`; prefer specific types
+- Use interfaces to define data structures
 
-**命名规范**
+**Naming Standards**
 
-- 变量/函数：`camelCase`
-- 类/接口：`PascalCase`
-- 常量：`UPPER_SNAKE_CASE`
-- 私有成员：前缀 `_`（如 `_privateMethod`）
+- Variables/functions: `camelCase`
+- Classes/interfaces: `PascalCase`
+- Constants: `UPPER_SNAKE_CASE`
+- Private members: prefix with `_` (for example, `_privateMethod`)
 
-**代码风格**
+**Code Style**
 
-- 使用 Tab 缩进
-- 使用 ESLint 自动格式化：`npm run fix`
-- 函数长度不超过 50 行（复杂逻辑除外）
-- 单个文件不超过 500 行
+- Use tab indentation
+- Use ESLint auto-formatting: `npm run fix`
+- Keep functions under 50 lines where possible, except for complex logic
+- Keep each file under 500 lines
 
-**注释规范**
+**Comment Standards**
 
 ```typescript
 /**
- * 函数功能描述
+ * Describes what the function does
  *
- * @param param1 - 参数1说明
- * @param param2 - 参数2说明
- * @returns 返回值说明
+ * @param param1 - Description of parameter 1
+ * @param param2 - Description of parameter 2
+ * @returns Description of the return value
  */
 function exampleFunction(param1: string, param2: number): boolean {
-    // 实现逻辑
+    // Implementation logic
     return true;
 }
 ```
 
-#### 提交信息规范
+#### Commit Message Standards
 
-使用语义化提交信息（Conventional Commits）：
+Use Conventional Commits:
 
 ```
 <type>(<scope>): <subject>
@@ -132,161 +132,161 @@ function exampleFunction(param1: string, param2: number): boolean {
 <footer>
 ```
 
-**Type 类型**
+**Type Values**
 
-- `feat`: 新功能
-- `fix`: Bug 修复
-- `docs`: 文档更新
-- `style`: 代码格式（不影响功能）
-- `refactor`: 重构
-- `perf`: 性能优化
-- `test`: 测试相关
-- `chore`: 构建/工具链更新
+- `feat`: New feature
+- `fix`: Bug fix
+- `docs`: Documentation update
+- `style`: Code formatting changes (no functional impact)
+- `refactor`: Refactoring
+- `perf`: Performance improvement
+- `test`: Test-related changes
+- `chore`: Build or toolchain updates
 
-**示例**
+**Example**
 
 ```
-feat(collector): 添加保守模式Pin-Net绑定策略
+feat(collector): add conservative Pin-Net binding strategy
 
-禁用L2/L3/L4策略以避免假阳性，只使用L1网表绑定。
-这解决了NC引脚被错误绑定到附近导线的问题。
+Disable L2/L3/L4 strategies to avoid false positives, and only use L1 netlist binding.
+This resolves the issue where NC pins were incorrectly bound to nearby traces.
 
 Closes #123
 ```
 
-**必须包含**
+**Required Footer**
 
-每次提交必须包含：
+Every commit must include:
 ```
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 ```
 
-#### Pull Request 规范
+#### Pull Request Standards
 
-**PR 标题**
+**PR Title**
 
-- 使用语义化提交格式
-- 简洁明了（< 70 字符）
+- Use Conventional Commit format
+- Keep it concise (`< 70 characters`)
 
-**PR 描述**
+**PR Description**
 
-必须包含：
+Must include:
 
-1. **变更摘要** - 简要说明做了什么
-2. **动机和背景** - 为什么需要这个变更
-3. **测试计划** - 如何验证这个变更
-4. **截图/录屏** - 如果是 UI 变更
-5. **相关 Issue** - 使用 `Closes #123` 关联
+1. **Summary of changes** - Briefly describe what was changed
+2. **Motivation and background** - Why this change is needed
+3. **Testing plan** - How this change was verified
+4. **Screenshots/recordings** - If this is a UI change
+5. **Related issue** - Use `Closes #123` if applicable
 
-**PR 检查清单**
+**PR Checklist**
 
-- [ ] 代码遵循项目规范
-- [ ] 已添加必要的注释
-- [ ] 已更新相关文档
-- [ ] 已在 EasyEDA Pro 中测试
-- [ ] 提交信息符合规范
-- [ ] 已解决所有 ESLint 警告
+- [ ] Code follows project standards
+- [ ] Necessary comments have been added
+- [ ] Related documentation has been updated
+- [ ] Tested in EasyEDA Pro
+- [ ] Commit messages follow the standard
+- [ ] All ESLint warnings have been resolved
 
-### 文档贡献
+### Documentation Contributions
 
-文档同样重要！你可以：
+Documentation matters too. You can:
 
-- 修正拼写/语法错误
-- 改进现有文档的清晰度
-- 添加缺失的文档
-- 翻译文档到其他语言
+- Fix spelling or grammar mistakes
+- Improve the clarity of existing documentation
+- Add missing documentation
+- Translate documentation into other languages
 
-## 开发环境设置
+## Development Environment Setup
 
-### 必需工具
+### Required Tools
 
 - **Node.js** >= 20.17.0
 - **npm** >= 9.0.0
 - **EasyEDA Pro** >= 3.0.0
 - **Git**
 
-### 推荐工具
+### Recommended Tools
 
-- **VS Code** - 推荐的代码编辑器
-- **ESLint 扩展** - 实时代码检查
-- **TypeScript 扩展** - 类型检查支持
+- **VS Code** - Recommended code editor
+- **ESLint extension** - Real-time code checking
+- **TypeScript extension** - Type checking support
 
-### 项目结构
+### Project Structure
 
 ```
 .
-├── src/                    # 源代码
-│   ├── index.ts           # 扩展入口
-│   └── review/            # AI 审查模块
-│       ├── types.ts       # 类型定义
-│       ├── config.ts      # 配置管理
-│       ├── collector.ts   # 数据采集
-│       ├── chat-adapter.ts # AI 通信
-│       └── orchestrator.ts # 流程编排
-├── iframe/                # 对话 UI
-│   └── chat.html
-├── docs/                  # 文档
-├── .github/               # GitHub 配置
-├── extension.json         # 扩展配置
-├── package.json           # 项目配置
-└── README.md             # 项目说明
+|-- src/                   # Source code
+|   |-- index.ts           # Extension entry point
+|   `-- review/            # AI review module
+|       |-- types.ts       # Type definitions
+|       |-- config.ts      # Configuration management
+|       |-- collector.ts   # Data collection
+|       |-- chat-adapter.ts # AI communication
+|       `-- orchestrator.ts # Workflow orchestration
+|-- iframe/                # Conversation UI
+|   `-- chat.html
+|-- docs/                  # Documentation
+|-- .github/               # GitHub configuration
+|-- extension.json         # Extension config
+|-- package.json           # Project config
+`-- README.md              # Project overview
 ```
 
-### 调试技巧
+### Debugging Tips
 
-**启用调试日志**
+**Enable debug logs**
 
-在 EasyEDA Pro 中：
-1. 打开 AI 助手面板
-2. 点击右上角 🐛 按钮
-3. 查看详细的采集和绑定日志
+In EasyEDA Pro:
+1. Open the AI assistant panel
+2. Click the top-right bug button
+3. View detailed collection and binding logs
 
-**常见问题**
+**Common Issues**
 
-1. **扩展未加载** - 检查 `extension.json` 格式
-2. **构建失败** - 运行 `npm install` 重新安装依赖
-3. **类型错误** - 确保使用最新的 `@jlceda/pro-api-types`
+1. **Extension not loading** - Check the `extension.json` format
+2. **Build failure** - Run `npm install` to reinstall dependencies
+3. **Type errors** - Make sure you are using the latest `@jlceda/pro-api-types`
 
-## 代码审查流程
+## Code Review Process
 
-所有 PR 都需要经过代码审查：
+All PRs require code review:
 
-1. **自动检查** - ESLint、TypeScript 编译
-2. **人工审查** - 至少一位维护者审查
-3. **测试验证** - 在实际环境中测试
-4. **文档检查** - 确保文档已更新
+1. **Automated checks** - ESLint, TypeScript compilation
+2. **Manual review** - At least one maintainer review
+3. **Testing verification** - Test in the real environment
+4. **Documentation check** - Make sure documentation is updated
 
-**审查标准**
+**Review Criteria**
 
-- 代码质量和可读性
-- 是否遵循项目规范
-- 是否有充分的测试
-- 是否有必要的文档
-- 是否有潜在的性能问题
-- 是否有安全隐患
+- Code quality and readability
+- Whether project standards are followed
+- Whether there are sufficient tests
+- Whether required documentation exists
+- Whether there are potential performance issues
+- Whether there are security concerns
 
-## 发布流程
+## Release Process
 
-（仅限维护者）
+(Maintainers only)
 
-1. 更新 `CHANGELOG.md`
-2. 更新版本号（`package.json` 和 `extension.json`）
-3. 创建 Git tag：`git tag v1.0.0`
-4. 推送 tag：`git push origin v1.0.0`
-5. GitHub Actions 自动构建和发布
+1. Update `CHANGELOG.md`
+2. Update version numbers (`package.json` and `extension.json`)
+3. Create a Git tag: `git tag v1.0.0`
+4. Push the tag: `git push origin v1.0.0`
+5. GitHub Actions will build and publish automatically
 
-## 获取帮助
+## Getting Help
 
-如果你有任何问题：
+If you have any questions:
 
-- 📖 查看 [文档](docs/)
-- 💬 在 [Discussions](https://github.com/jifengshandian/easyeda-ai-assistant/discussions) 提问
-- 🐛 在 [Issues](https://github.com/jifengshandian/easyeda-ai-assistant/issues) 报告问题
+- Read the [documentation](docs/)
+- Ask in [Discussions](https://github.com/jifengshandian/easyeda-ai-assistant/discussions)
+- Report issues in [Issues](https://github.com/jifengshandian/easyeda-ai-assistant/issues)
 
-## 许可证
+## License
 
-通过贡献代码，你同意你的贡献将在 [Apache 2.0 许可证](LICENSE) 下发布。
+By contributing code, you agree that your contributions will be released under the [Apache 2.0 License](LICENSE).
 
 ---
 
-再次感谢你的贡献！🎉
+Thank you again for your contribution!

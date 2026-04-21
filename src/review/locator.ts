@@ -1,16 +1,16 @@
 /**
- * AI原理图审查 - 定位模块
+ * AI Schematic Review - locator module
  *
- * 实现交叉探针定位和视觉标记功能
+ * Implements cross-probing and visual marker functionality
  */
 import type { LocateRequest } from './types';
 
 /**
- * 定位到指定的器件/引脚/网络
+ * Locate the specified components, pins, or nets
  */
 export async function locateItems(request: LocateRequest): Promise<boolean> {
 	try {
-		// 使用交叉探针选择
+		// Use cross-probe selection
 		const success = await eda.sch_SelectControl.doCrossProbeSelect(
 			request.components || [],
 			request.pins || [],
@@ -24,7 +24,7 @@ export async function locateItems(request: LocateRequest): Promise<boolean> {
 			return false;
 		}
 
-		// 添加视觉标记（可选）
+		// Add visual markers if needed
 		await addVisualMarkers(request);
 
 		return true;
@@ -36,25 +36,25 @@ export async function locateItems(request: LocateRequest): Promise<boolean> {
 }
 
 /**
- * 添加视觉标记
+ * Add visual markers
  */
 async function addVisualMarkers(_request: LocateRequest): Promise<void> {
 	try {
-		// 构建标记数据
-		// P1: 使用正确的IDMT_IndicatorMarkerShape格式
+		// Build marker data
+		// P1: Use the correct IDMT_IndicatorMarkerShape format
 		const markers: IDMT_IndicatorMarkerShape[] = [];
 
-		// 注意：这里需要获取器件/引脚的坐标
-		// 由于我们在定位时已经选中了对象，这里可以简化处理
-		// 实际实现中可能需要从CollectedData中获取坐标
+		// Note: coordinates for components and pins are needed here.
+		// Because the object has already been selected during location, this can be simplified for now.
+		// A production implementation may need to read coordinates from CollectedData.
 
 		if (markers.length > 0) {
-			// P1: color参数使用 { r, g, b, alpha } 对象，非十六进制字符串
+			// P1: The color parameter uses an { r, g, b, alpha } object instead of a hex string
 			await eda.dmt_EditorControl.generateIndicatorMarkers(
 				markers,
 				{ r: 255, g: 0, b: 0, alpha: 1 },
-				2, // 线宽
-				true, // zoom: 定位并缩放
+				2, // Line width
+				true, // zoom: locate and zoom
 			);
 		}
 	}
@@ -64,12 +64,12 @@ async function addVisualMarkers(_request: LocateRequest): Promise<void> {
 }
 
 /**
- * 清除所有标记
+ * Clear all markers
  */
 export async function clearMarkers(): Promise<void> {
 	try {
-		// 清除标记的API可能需要查阅文档
-		// 这里暂时留空，因为autoRemove=true会自动清除
+		// The API for clearing markers may require checking the documentation.
+		// This is intentionally left blank for now because autoRemove=true clears them automatically.
 	}
 	catch (error) {
 		console.warn('Clear markers failed:', error);

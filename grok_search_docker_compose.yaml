@@ -15,7 +15,7 @@ services:
       - >
         echo "Installing system dependencies..."
 
-        # 关键修改：安装 build-base 和 linux-headers 以支持 Python 库的编译
+        # Key change: install build-base and linux-headers to support compiling Python libraries
 
         apk add --no-cache git build-base python3-dev linux-headers libffi-dev
 

@@ -1,10 +1,10 @@
 /**
- * eda-mcp-server - 共享类型定义
+ * eda-mcp-server - shared type definitions
  *
- * 从 EDA 扩展的 types.ts 精简导出，仅包含 MCP server 需要的数据类型。
+ * Re-exported and simplified from the EDA extension types.ts, containing only the data types needed by the MCP server.
  */
 
-// ============ 原始数据结构（与扩展端 1:1 对应） ============
+// ============ Raw data structures (1:1 with the extension side) ============
 
 export interface RawComponent {
 	primitiveId: string;
@@ -134,7 +134,7 @@ export interface CollectionMeta {
 }
 
 /**
- * 完整的采集数据快照（与扩展端 CollectedData 一致）
+ * Complete collection snapshot (consistent with the extension-side CollectedData)
  */
 export interface CollectedData {
 	components: RawComponent[];
@@ -155,9 +155,9 @@ export interface CollectedData {
 	meta?: CollectionMeta;
 }
 
-// ============ WS 桥接协议类型 ============
+// ============ WS bridge protocol types ============
 
-/** 扩展 → Server: hello 握手 */
+/** Extension -> Server: hello handshake */
 export interface BridgeHelloMessage {
 	type: 'hello';
 	app: { name: string; version: string };
@@ -166,7 +166,7 @@ export interface BridgeHelloMessage {
 	timestamp: number;
 }
 
-/** 扩展 → Server: 数据快照 */
+/** Extension -> Server: data snapshot */
 export interface BridgeSnapshotMessage {
 	type: 'snapshot';
 	version: number;
@@ -175,7 +175,7 @@ export interface BridgeSnapshotMessage {
 	payload: CollectedData;
 }
 
-/** 扩展 → Server: pong 心跳回复 */
+/** Extension -> Server: pong heartbeat reply */
 export interface BridgePongMessage {
 	type: 'pong';
 	timestamp: number;
@@ -183,26 +183,26 @@ export interface BridgePongMessage {
 	pingTimestamp?: number;
 }
 
-/** 所有来自扩展的消息联合类型 */
+/** Union of all messages sent by the extension */
 export type BridgeInboundMessage = BridgeHelloMessage | BridgeSnapshotMessage | BridgePongMessage;
 
-/** Server → 扩展: 请求数据 */
+/** Server -> Extension: request data */
 export interface ServerRequestDataMessage {
 	type: 'request_data';
 }
 
-/** Server → 扩展: 心跳 */
+/** Server -> Extension: heartbeat ping */
 export interface ServerPingMessage {
 	type: 'ping';
 	nonce?: string;
 	timestamp?: number;
 }
 
-/** Server → 扩展: 快照确认 */
+/** Server -> Extension: snapshot acknowledgement */
 export interface ServerAckMessage {
 	type: 'ack';
 	version: number;
 }
 
-/** 所有 server 发出的消息联合类型 */
+/** Union of all messages sent by the server */
 export type ServerOutboundMessage = ServerRequestDataMessage | ServerPingMessage | ServerAckMessage;
