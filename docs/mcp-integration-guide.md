@@ -1,20 +1,19 @@
-# MCP (Model Context Protocol) 集成指南
+# MCP Integration Guide
 
-## 概述
+## Overview
 
-EasyEDA AI 助手现已支持 MCP 工具调用，可通过 Gateway 调用外部工具（如搜索引擎、datasheet 查询等），大幅增强 AI 的原理图审查能力。
+EasyEDA AI Assistant now supports MCP tool calls through a configurable gateway. This enables external calls (web search, datasheet lookup, file access, etc.) inside schematic review conversations.
 
-## 支持的 Gateway 类型
+## Supported Gateway Types
 
-### 1. REST Gateway（自定义 REST API）
+### 1) REST Gateway
 
-适用于自建的 HTTP REST Gateway。
+Use this for custom HTTP gateways.
 
-**端点格式：**
-- `POST /tools/list` - 获取工具列表
-- `POST /tools/call` - 执行工具调用
+- `POST /tools/list` — returns available tools.
+- `POST /tools/call` — executes a tool call.
 
-**请求示例：**
+Request:
 ```json
 POST /tools/list
 {
@@ -23,27 +22,26 @@ POST /tools/list
 }
 ```
 
-**响应示例：**
+Response:
 ```json
 {
   "tools": [
     {
       "name": "search_datasheet",
-      "description": "搜索芯片 datasheet",
-      "inputSchema": { "type": "object", ... }
+      "description": "search chip datasheet",
+      "inputSchema": { "type": "object", "properties": {} }
     }
   ]
 }
 ```
 
-### 2. MCP Streamable HTTP（JSON-RPC 2.0）
+### 2) MCP Streamable HTTP (JSON-RPC 2.0)
 
-适用于标准 MCP 传输层，如 SuperGateway。
+Use this for standard MCP transports (e.g. SuperGateway).
 
-**端点格式：**
-- 单一端点（如 `/mcp`）接收所有 JSON-RPC 请求
+- Single endpoint (for example `/mcp`) receives all JSON-RPC requests.
 
-**请求示例：**
+Request:
 ```json
 POST /mcp
 {
@@ -53,321 +51,246 @@ POST /mcp
 }
 ```
 
-**响应示例（SSE 格式）：**
+Response example (`SSE`):
 ```
 event: message
 data: {"jsonrpc":"2.0","id":1,"result":{"tools":[...]}}
 ```
 
-**会话管理：**
-1. 首次请求发送 `initialize` 握手
-2. 服务端返回 `Mcp-Session-Id` 响应头
-3. 后续请求携带该 session ID
+Session flow:
+1. Send `initialize`.
+2. Server returns `Mcp-Session-Id` header.
+3. Send subsequent calls with this session ID.
 
-## 自动检测机制
+## Protocol auto-detection
 
-代码会根据 Gateway URL 自动选择协议：
+The extension auto-detects protocol from gateway URL:
 
-```typescript
-// URL 以这些路径结尾 → JSON-RPC 模式
-/mcp, /sse, /http, /streamable, /jsonrpc
+- JSON-RPC mode when URL ends in: `/mcp`, `/sse`, `/http`, `/streamable`, `/jsonrpc`.
+- REST mode for other paths.
 
-// 其他 URL → REST 模式
-```
+Examples:
+- `http://gateway.local/mcp` → JSON-RPC.
+- `http://gateway.local/api` → REST.
 
-**示例：**
-- `http://gateway.com/mcp` → JSON-RPC
-- `http://gateway.com/api` → REST
+## Configuration
 
-## 配置方法
+### Quick validation with SuperGateway + Tavily
 
-### 使用 SuperGateway + Tavily（快速验证）
-
-**1. 启动 SuperGateway**
-
+1. Start gateway:
 ```bash
-# 设置 Tavily API Key（必需）
-export TAVILY_API_KEY="tvly-your-key-here"
+# set Tavily key
+export TAVILY_API_KEY="tvly-your-key"
 
-# Stateful 模式（推荐，支持 session 管理）
+# stateful (recommended, keeps session)
 npx -y supergateway \
   --stdio "npx -y tavily-mcp@latest" \
   --outputTransport streamableHttp \
   --port 8000 \
   --stateful
 
-# Stateless 模式（无 session，每次请求独立）
+# stateless mode
 npx -y supergateway \
   --stdio "npx -y tavily-mcp@latest" \
   --outputTransport streamableHttp \
   --port 8000
 ```
 
-**2. 在 EasyEDA 中配置**
-
-```
-✅ MCP Enabled: 启用
-📍 MCP Gateway URL: http://localhost:8000/mcp
-🔑 MCP Gateway API Key: (留空)
-⚡ MCP Auto Approve: 启用
-```
-
-### 使用远程 SuperGateway
-
-如果你已经部署了远程 SuperGateway：
-
-```
-✅ MCP Enabled: 启用
-📍 MCP Gateway URL: http://your-server.com:8000/mcp
-🔑 MCP Gateway API Key: (如果需要认证则填写)
-⚡ MCP Auto Approve: 启用
+2. Configure in EasyEDA:
+```text
+MCP Enabled: true
+MCP Gateway URL: http://localhost:8000/mcp
+MCP Gateway API Key: (optional)
+MCP Auto Approve: true
 ```
 
-### 使用自建 REST Gateway
+### Remote SuperGateway
 
-```
-✅ MCP Enabled: 启用
-📍 MCP Gateway URL: http://your-gateway.com/api
-🔑 MCP Gateway API Key: your-api-key
-⚡ MCP Auto Approve: 启用
-```
-
-## 工作流程
-
-### JSON-RPC 模式（SuperGateway）
-
-```
-1. 用户发起对话
-   ↓
-2. 扩展调用 listTools()
-   ↓
-3. 检测到 JSON-RPC 模式且未初始化
-   ↓
-4. 发送 initialize 请求（不带 session ID）
-   POST /mcp
-   {"jsonrpc":"2.0","method":"initialize","params":{...},"id":1}
-   ↓
-5. 服务端返回 Mcp-Session-Id 响应头
-   Mcp-Session-Id: xxx-xxx-xxx
-   ↓
-6. 保存 session ID
-   ↓
-7. 发送 tools/list 请求（带 session ID）
-   POST /mcp
-   Headers: Mcp-Session-Id: xxx-xxx-xxx
-   {"jsonrpc":"2.0","method":"tools/list","id":2}
-   ↓
-8. 返回工具列表
-   ↓
-9. AI 决定调用工具
-   ↓
-10. 发送 tools/call 请求（带 session ID）
-    POST /mcp
-    Headers: Mcp-Session-Id: xxx-xxx-xxx
-    {"jsonrpc":"2.0","method":"tools/call","params":{...},"id":3}
-    ↓
-11. 返回工具执行结果
-    ↓
-12. AI 基于结果生成回答
+```text
+MCP Enabled: true
+MCP Gateway URL: http://your-server.com:8000/mcp
+MCP Gateway API Key: set if auth is required
+MCP Auto Approve: true
 ```
 
-### REST 模式
+### Custom REST gateway
 
-```
-1. 用户发起对话
-   ↓
-2. 扩展调用 listTools()
-   POST /tools/list
-   {"sessionId":"xxx","requestId":"xxx"}
-   ↓
-3. 返回工具列表
-   ↓
-4. AI 决定调用工具
-   ↓
-5. 发送工具调用请求
-   POST /tools/call
-   {"name":"tool_name","arguments":{...}}
-   ↓
-6. 返回工具执行结果
-   ↓
-7. AI 基于结果生成回答
+```text
+MCP Enabled: true
+MCP Gateway URL: http://your-gateway.com/api
+MCP Gateway API Key: your-api-key
+MCP Auto Approve: true
 ```
 
-## UI 展示
+## Runtime flow
 
-### Tool Block（紫色主题）
-
-工具调用会在对话中显示为紫色的 Tool Block：
-
-**执行中：**
-```
-┌─────────────────────────────────────┐
-│ 🔧 调用工具 web_search              │
-│ ⏳ 执行中...                        │
-│ 参数: {"query":"NE555 datasheet"}   │
-└─────────────────────────────────────┘
-```
-
-**成功：**
-```
-┌─────────────────────────────────────┐
-│ ✅ 工具 web_search 执行成功         │
-│ 结果摘要: 找到 NE555 的完整...      │
-│ [展开查看完整结果]                  │
-└─────────────────────────────────────┘
+### JSON-RPC flow
+```text
+user query
+  -> extension listTools()
+  -> detect JSON-RPC mode + init needed
+  -> POST /mcp method initialize (no session)
+  -> store Mcp-Session-Id
+  -> POST /mcp method tools/list
+  -> model chooses tools
+  -> POST /mcp method tools/call
+  -> response returned
+  -> model streams final answer
 ```
 
-**失败：**
-```
-┌─────────────────────────────────────┐
-│ ❌ 工具 web_search 执行失败         │
-│ 错误: Gateway 请求超时              │
-└─────────────────────────────────────┘
-```
-
-### 调试日志
-
-在调试面板中可以看到详细的 MCP 日志（紫色高亮）：
-
-```
-[MCP-Discovery] 开始获取工具列表
-[MCP-Discovery] 已加载 8 个 MCP 工具
-[MCP-Call] 调用工具 web_search { args: {...} }
-[MCP-Exec] 工具执行完成 { status: 'success', duration: 1234 }
+### REST flow
+```text
+user query
+  -> extension listTools()
+  -> POST /tools/list
+  -> model chooses tools
+  -> POST /tools/call
+  -> response returned
+  -> model streams final answer
 ```
 
-## 测试方法
+## UI behavior
 
-### 1. 验证 Gateway 连接
+### Tool block (purple styling)
 
-**测试 JSON-RPC 模式：**
+Tool execution is rendered in-chat.
+
+Running:
+```text
+┌──────────────────────────────────────┐
+│ 🔧 Calling tool: web_search          │
+│ ⏳ In progress...                    │
+│ args: {"query":"NE555 datasheet"}    │
+└──────────────────────────────────────┘
+```
+
+Success:
+```text
+┌──────────────────────────────────────┐
+│ ✅ Tool web_search succeeded          │
+│ summary: found full datasheet...      │
+│ [expand for full output]             │
+└──────────────────────────────────────┘
+```
+
+Failure:
+```text
+┌──────────────────────────────────────┐
+│ ❌ Tool web_search failed            │
+│ error: gateway request timeout        │
+└──────────────────────────────────────┘
+```
+
+### Debug logs
+
+Look for MCP logs in the debug panel:
+```text
+[MCP-Discovery] loading tool list
+[MCP-Discovery] loaded 8 MCP tools
+[MCP-Call] calling web_search { args: {...} }
+[MCP-Exec] tool completed { status: 'success', duration: 1234 }
+```
+
+## Testing
+
+### Gateway health check
+
+#### Test JSON-RPC mode
 ```bash
-# 测试 initialize
 curl -X POST http://localhost:8000/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}},"id":1}'
 
-# 提取 Mcp-Session-Id 响应头
-# 然后测试 tools/list
+# then extract Mcp-Session-Id and call tools/list
 curl -X POST http://localhost:8000/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
-  -H "Mcp-Session-Id: <从上一步获取的 session ID>" \
+  -H "Mcp-Session-Id: <session-id>" \
   -d '{"jsonrpc":"2.0","method":"tools/list","id":2}'
 ```
 
-**测试 REST 模式：**
+#### Test REST mode
 ```bash
 curl -X POST http://your-gateway.com/api/tools/list \
   -H "Content-Type: application/json" \
   -d '{"sessionId":"test","requestId":"test"}'
 ```
 
-### 2. 在扩展中测试
-
-1. **配置并保存**
-2. **在对话中测试**：
+### In-extension test
+1. Save config and open chat.
+2. Ask:
+   ```text
+   What is the pinout for NE555?
    ```
-   帮我查一下 NE555 的引脚定义
-   ```
-3. **查看调试日志**（应该看到）：
-   ```
-   [MCP-Discovery] 开始获取工具列表
-   [MCP-Discovery] 已加载 X 个 MCP 工具
-   [MCP-Call] 调用工具 web_search
-   [MCP-Exec] 工具 web_search 执行成功
-   ```
-4. **在对话中看到紫色 Tool Block**
+3. Confirm debug logs show discovery/call/exec flow.
+4. Confirm tool block appears in conversation.
 
-## 常见问题
+## Troubleshooting
 
-### Q1: 报错 "No valid session ID provided"
+### Q1: `No valid session ID provided`
+- Gateway was started with `--stateful`.
+- Ensure URL ends with `/mcp` so JSON-RPC mode is selected.
+- Restart extension to reinitialize session.
 
-**原因：** SuperGateway 使用 `--stateful` 模式启动，需要 session 管理。
+### Q2: `Not Acceptable: Client must accept both application/json and text/event-stream`
+- Missing `Accept` header.
+- Current version auto-adds required header.
 
-**解决：** 代码已实现完整的 session 管理，确保：
-1. Gateway URL 以 `/mcp` 结尾（触发 JSON-RPC 模式）
-2. 重启扩展，让代码重新初始化
+### Q3: Tool list empty
+- Gateway endpoint not returning valid MCP schema.
+- Verify with curl and inspect raw response/errors in logs.
 
-### Q2: 报错 "Not Acceptable: Client must accept both application/json and text/event-stream"
+### Q4: CORS issues
+- For `streamableHttp`, configure CORS on reverse proxy (example below).
+- `--cors` in gateway is mainly for SSE/WS output modes.
 
-**原因：** 缺少正确的 Accept 头。
-
-**解决：** 代码已自动添加该头，确保使用最新版本。
-
-### Q3: 工具列表为空
-
-**原因：** Gateway 未返回工具或响应格式不兼容。
-
-**解决：**
-1. 用 curl 测试 Gateway 端点
-2. 检查响应格式是否符合 MCP 规范
-3. 查看调试日志中的错误信息
-
-### Q4: CORS 错误
-
-**原因：** Gateway 未配置 CORS。
-
-**解决：** `--cors` 主要适用于 `sse` / `ws` 输出传输模式。若使用 `streamableHttp`，请在反向代理（如 Nginx）层配置 CORS：
 ```nginx
-# Nginx 示例
 location /mcp {
-    # 处理 OPTIONS 预检请求
-    if ($request_method = OPTIONS) {
-        add_header Access-Control-Allow-Origin *;
-        add_header Access-Control-Allow-Methods "GET, POST, OPTIONS";
-        add_header Access-Control-Allow-Headers "Content-Type, Accept, Mcp-Session-Id";
-        add_header Access-Control-Max-Age 86400;
-        return 204;
-    }
-
-    proxy_pass http://localhost:8000;
+  if ($request_method = OPTIONS) {
     add_header Access-Control-Allow-Origin *;
     add_header Access-Control-Allow-Methods "GET, POST, OPTIONS";
     add_header Access-Control-Allow-Headers "Content-Type, Accept, Mcp-Session-Id";
+    add_header Access-Control-Max-Age 86400;
+    return 204;
+  }
+  proxy_pass http://localhost:8000;
+  add_header Access-Control-Allow-Origin *;
+  add_header Access-Control-Allow-Methods "GET, POST, OPTIONS";
+  add_header Access-Control-Allow-Headers "Content-Type, Accept, Mcp-Session-Id";
 }
 ```
 
-## 重要说明
+### No hard request timeout
+- MCP requests are not hard-capped because some tools can be long-running.
+- User can cancel with **Stop Generation**.
+- `AbortSignal` is used to stop gateway calls early when cancellation happens.
 
-### 无超时限制
+### Tool call round limit
+- No hard limit on normal rounds; system warns after 6 calls and hard-caps at 20.
+- Frequent high-round usage usually means tool quality or output quality needs review.
 
-**Gateway 请求不再有超时限制**。有些 MCP 工具（如深度搜索、大文件处理）本身就需要较长执行时间，强制超时会导致工具调用失败。
+## Available MCP servers
 
-- ✅ 用户可以随时通过"停止生成"按钮取消请求
-- ✅ 支持 AbortSignal 机制，取消请求会立即中断 Gateway 调用
-- ⚠️ 如果工具长时间无响应，建议检查 Gateway 日志排查问题
+### GrokSearch (recommended)
+GitHub: https://github.com/GuDaStudio/GrokSearch/tree/grok-with-tavily
 
-### 工具调用轮次
+Core idea:
+- Grok handles AI search.
+- Tavily handles web fetching and mapping.
+- Firecrawl used as fallback.
 
-**工具调用轮次不再有硬性限制**。AI 可以根据需要多次调用工具，直到获得足够信息完成回答。
+Environment:
+1. Grok API key (required): https://x.ai
+2. Tavily API key (optional/recommended): https://app.tavily.com/sign-in
+3. Firecrawl API key (optional): https://firecrawl.dev/
 
-- ✅ 超过 6 轮时会在调试日志中输出警告，但继续执行
-- ✅ 硬性上限为 20 轮，防止真正的死循环
-- ⚠️ 如果频繁超过 6 轮，可能是工具返回信息不足或 AI 陷入循环，建议检查工具实现
-
-## 可用的 MCP Server
-
-### GrokSearch（生产推荐 - Grok + Tavily 双引擎）
-
-**项目地址**：https://github.com/GuDaStudio/GrokSearch/tree/grok-with-tavily
-
-**架构**：Grok 负责 AI 搜索，Tavily 负责网页抓取与站点映射，Firecrawl 托底
-
-**获取 API Key**：
-1. **Grok API**（必需）：访问 https://x.ai/ 或使用 OpenAI 兼容的 Grok 镜像站
-2. **Tavily API**（可选，推荐）：https://app.tavily.com/sign-in（免费 1000 credits/月）
-3. **Firecrawl API**（可选）：https://firecrawl.dev/
-
-**启动方式**：
+Start:
 ```bash
-# 配置环境变量
-export GROK_API_URL="https://your-grok-api-endpoint.com/v1"
+export GROK_API_URL="https://your-grok-endpoint.com/v1"
 export GROK_API_KEY="your-grok-api-key"
-export TAVILY_API_KEY="tvly-your-tavily-key"  # 可选
+export TAVILY_API_KEY="tvly-your-key"
 
-# 启动 Gateway
 npx -y supergateway \
   --stdio "uvx --from git+https://github.com/GuDaStudio/GrokSearch@grok-with-tavily grok-search" \
   --outputTransport streamableHttp \
@@ -375,20 +298,11 @@ npx -y supergateway \
   --stateful
 ```
 
-**提供的工具（8 个）**：
-- `web_search` - AI 驱动的网络搜索（Grok）
-- `get_sources` - 获取搜索信源列表
-- `web_fetch` - 网页内容抓取（Tavily → Firecrawl 自动降级）
-- `web_map` - 网站结构映射（Tavily）
-- `get_config_info` / `switch_model` / `toggle_builtin_tools` / `search_planning`
+Tools available: `web_search`, `get_sources`, `web_fetch`, `web_map`, `get_config_info`, `switch_model`, `toggle_builtin_tools`, `search_planning`.
 
-### Tavily（备选 - 纯 Tavily）
-
-如果不需要 Grok AI 搜索，可以使用纯 Tavily MCP Server：
-
+### Tavily (alternative)
 ```bash
-export TAVILY_API_KEY="tvly-your-key-here"
-
+export TAVILY_API_KEY="tvly-your-key"
 npx -y supergateway \
   --stdio "npx -y tavily-mcp@latest" \
   --outputTransport streamableHttp \
@@ -396,10 +310,7 @@ npx -y supergateway \
   --stateful
 ```
 
-### Filesystem
-
-访问本地文件系统（如 datasheet 文件夹）：
-
+### Filesystem MCP
 ```bash
 npx -y supergateway \
   --stdio "npx -y @modelcontextprotocol/server-filesystem /path/to/datasheets" \
@@ -407,51 +318,48 @@ npx -y supergateway \
   --port 8000
 ```
 
-### 更多 MCP Server
+### Other servers
+Browse all options at [MCP Registry](https://modelcontextprotocol.io/registry).
 
-访问 [MCP Registry](https://modelcontextprotocol.io/registry) 查看所有可用的 MCP Server。
+## Architecture
 
-## 技术细节
-
-### 代码架构
-
-```
+```text
 orchestrator.ts
   └─ ToolOrchestrator (tool-orchestrator.ts)
-       ├─ detectGatewayType() - 自动检测 Gateway 类型
-       ├─ ensureInitialized() - 确保 MCP 会话已初始化
-       ├─ performInitialize() - 执行 initialize 握手
-       ├─ listTools() - 获取工具列表
-       ├─ executeToolCalls() - 执行工具调用
-       └─ postJson() - 统一的 HTTP 请求封装
+       ├─ detectGatewayType()
+       ├─ ensureInitialized()
+       ├─ performInitialize()
+       ├─ listTools()
+       ├─ executeToolCalls()
+       └─ postJson()
 ```
 
-### 关键文件
+### Key files
 
-| 文件 | 说明 |
-|------|------|
-| `src/review/tool-orchestrator.ts` | 工具编排器核心 |
-| `src/review/orchestrator.ts` | 集成工具事件和配置 |
-| `src/review/chat-adapter.ts` | 支持多轮工具调用 |
-| `src/review/types.ts` | MCP 类型定义 |
-| `src/review/config.ts` | MCP 配置管理 |
-| `iframe/chat.html` | Tool Block UI |
+| File | Responsibility |
+|------|----------------|
+| `src/review/tool-orchestrator.ts` | MCP orchestration |
+| `src/review/orchestrator.ts` | Tool events + config integration |
+| `src/review/chat-adapter.ts` | Multi-turn tool-calling loop |
+| `src/review/types.ts` | MCP protocol types |
+| `src/review/config.ts` | Gateway settings |
+| `iframe/chat.html` | Tool block and logs UI |
 
-### 提交历史
+### Commit history
 
-```bash
-a900684 fix: 实现 MCP Streamable HTTP 会话管理
-d063245 feat: 支持 MCP Streamable HTTP (JSON-RPC 2.0) 协议
-bd21d3b feat: 实现 MCP (Model Context Protocol) 工具调用集成
+```text
+a900684 fix: implement MCP Streamable HTTP session management
+d063245 feat: support MCP Streamable HTTP (JSON-RPC 2.0)
+bd21d3b feat: add MCP tool orchestration
 ```
 
-## 参考资料
+## References
 
-- [MCP 官方规范](https://modelcontextprotocol.io/specification/2025-03-26)
-- [SuperGateway GitHub](https://github.com/supercorp-ai/supergateway)
+- [MCP specification](https://modelcontextprotocol.io/specification/2025-03-26)
+- [SuperGateway](https://github.com/supercorp-ai/supergateway)
 - [MCP Registry](https://modelcontextprotocol.io/registry)
-- [GrokSearch MCP Server](https://github.com/GuDaStudio/GrokSearch/tree/grok-with-tavily)
+- [GrokSearch](https://github.com/GuDaStudio/GrokSearch/tree/grok-with-tavily)
 
-## 贡献
+## Contribution
 
-欢迎提交 Issue 和 PR 来改进 MCP 集成功能！
+Open issues or PRs to improve MCP integration.

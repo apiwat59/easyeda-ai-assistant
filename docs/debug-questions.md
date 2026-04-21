@@ -1,97 +1,97 @@
-# 调试问题清单
+# Debug Checklist
 
-## ✅ 已解决的问题
+## ✅ Resolved Items
 
-### 1. 网表超时问题 ✅
-**问题**：网表获取超时（10秒）导致大量引脚无法绑定
+### 1. Netlist timeout
+**Issue**: Netlist generation timing out at 10 seconds caused many pins to remain unbound.
 
-**解决方案**：实现网表延迟回填机制
-- 主流程超时后继续，使用 L2/L3/L4 策略
-- 网表在后台继续获取，完成后自动回填
-- 详见：`/home/ubuntu/netlist-backfill-guide.md`
+**Fix**: Implemented delayed netlist backfill.
+- Main flow continues after timeout and falls back to L2/L3/L4 strategies.
+- Netlist collection continues in background and is merged automatically when complete.
+- See `/home/ubuntu/netlist-backfill-guide.md`.
 
-**提交记录**：`9b2ea08 feat: 实现网表延迟回填机制`
+**Commit**: `9b2ea08 feat: implement delayed netlist backfill`
 
-### 2. 导线拓扑分析 ✅
-**问题**：导线的 net 属性为空，无法通过 L2 策略绑定
+### 2. Wire topology analysis
+**Issue**: Wire `net` field was empty, so L2 strategy could not bind pins.
 
-**解决方案**：实现 L4 导线拓扑分析策略
-- 构建导线拓扑图，推断连接关系
-- 通过导线起点和终点坐标匹配引脚
+**Fix**: Added L4 wire-topology strategy.
+- Build wire topology graph and infer connectivity.
+- Match pin coordinates to wire endpoints.
 
-**提交记录**：`8de0ab5 feat: 实现 L4 导线拓扑分析策略`
+**Commit**: `8de0ab5 feat: implement L4 wire topology analysis strategy`
 
-### 3. 网络标记采集 ✅
-**问题**：GND、VCC 等网络标记未采集，L3 策略无法工作
+### 3. Net labels not collected
+**Issue**: Labels like `GND` and `VCC` were not collected, so L3 strategy did not work.
 
-**解决方案**：添加网络标记采集功能
-- 采集 NetFlag 和 NetPort 类型的网络标记
-- 通过坐标邻近性匹配引脚
+**Fix**: Added net label collection.
+- Collect `NetFlag` and `NetPort` primitives.
+- Match labels to pins by coordinate proximity.
 
-**提交记录**：`1560802 feat: 添加网络标记采集功能以修复pin-net绑定问题`
+**Commit**: `1560802 feat: add net-label collection to fix pin-net binding`
 
-### 4. 调试日志 ✅
-**问题**：无法追踪引脚绑定过程，难以诊断问题
+### 4. Debug logs
+**Issue**: Pin-net binding path was hard to trace during diagnostics.
 
-**解决方案**：添加详细的 pin-net 绑定调试日志
-- 记录每个引脚尝试的策略（L1/L2/L3/L4）
-- 记录最终绑定的网络名称和置信度
+**Fix**: Added verbose pin-net binding logs.
+- Log each strategy attempted per pin (`L1/L2/L3/L4`).
+- Log final net name and confidence.
 
-**提交记录**：`536e27a debug: 添加详细的pin-net绑定调试日志`
+**Commit**: `536e27a debug: add detailed pin-net binding logs`
 
-### 5. 多页采集问题 ✅
-**问题**：跨页引脚 ID 失效，导致引脚采集失败
+### 5. Multi-page collection
+**Issue**: Pin IDs became invalid when switching schematic pages, causing missed pin collection.
 
-**解决方案**：改为完全逐页采集策略
-- 每页单独采集器件、引脚、导线
-- 标注 schematicPageUuid 字段
+**Fix**: Switched to fully page-by-page collection.
+- Collect components, pins, and wires per page.
+- Tag every item with `schematicPageUuid`.
 
-**提交记录**：`4413367 fix: 修复引脚采集跨页ID失效问题，添加网表超时保护`
+**Commit**: `4413367 fix: resolve multi-page pin ID regression and add netlist timeout guard`
 
 ---
 
-## 需要确认的关键信息
+## Key Info to Confirm
 
-### 1. 导线的 net 属性是否为空？
+### 1. Is wire `net` field empty?
 
-请在 EDA 中：
-1. 选中一条连接芯片和电阻的导线
-2. 查看其属性面板
-3. 确认是否有 "Net" 或 "网络" 字段，以及该字段的值
+In EDA:
+1. Select a wire connecting a chip pin and resistor.
+2. Open its property panel.
+3. Confirm whether `Net` / `Network` exists and its value.
 
-### 2. 导线采集的实际情况
+### 2. Actual wire collection quality
 
-请在调试日志中添加以下信息：
-- 总共采集了多少条导线？
-- 其中有多少条导线的 `net` 属性为空？
-- 被丢弃的导线数量？
+Add these counts in debug logs:
+- Total wires collected.
+- How many wires have empty `net` value.
+- How many wires were dropped.
 
-### 3. 网络标记的位置
+### 3. Net-label placement
 
-请确认：
-- GND 标记是直接放在芯片引脚上，还是通过导线连接？
-- GND 标记是直接放在电阻引脚上，还是通过导线连接？
-- 如果通过导线，导线的长度大概是多少？（用于判断容差是否足够）
+Confirm:
+- Is `GND` label attached directly to component pins, or linked by wire?
+- Is `GND` attached directly to resistor pins, or linked by wire?
+- If linked by wire, approximate wire length (for tolerance validation).
 
-### 4. 原理图的网络分析状态
+### 4. Schematic network analysis state
 
-请确认：
-- 原理图是否有 "未连接" 或 "网络错误" 的警告？
-- 是否需要手动触发 "更新网络" 或 "重新分析" 操作？
+Confirm:
+- Any "unconnected" or "network error" warnings present.
+- Whether manual actions are required (e.g. `refresh network` or `reanalyze`).
 
-## 可能的解决方案
+## Candidate Approaches
 
-### 方案A：改进导线采集逻辑
-不丢弃 `net` 为空的导线，而是给它们分配临时网络名（如 "WIRE_001"），然后通过拓扑分析合并连接的导线。
+### Option A: Improve wire collection logic
+Keep wires with empty `net` instead of dropping them. Assign temporary names (for example, `WIRE_001`) and merge connected wires by topology.
 
-### 方案B：增加 L4 策略 - 导线拓扑分析
-通过导线的起点和终点坐标，构建拓扑图，推断哪些引脚通过导线连接在一起。
+### Option B: Add L4 wire topology strategy
+Build a topology graph from wire endpoints and infer connectivity between pins.
 
-### 方案C：增大 L3 容差
-将网络标记匹配的容差从 50 增大到 100 或更大。
+### Option C: Increase L3 tolerance
+Increase net-label matching tolerance from `50` to `100+`.
 
-### 方案D：添加详细的调试日志
-在采集过程中输出每个引脚的绑定详情，包括：
-- 尝试了哪些策略（L1/L2/L3）
-- 每个策略的匹配结果
-- 最终绑定的网络名称和置信度
+### Option D: Add deeper debug logs
+Emit detailed binding details during collection:
+- Tried strategies (`L1/L2/L3`).
+- Match outcome per strategy.
+- Final net name and confidence score.

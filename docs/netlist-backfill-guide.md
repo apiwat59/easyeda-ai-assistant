@@ -1,253 +1,234 @@
-# 网表延迟回填机制 - 功能说明与验证指南
+# Netlist Delayed Backfill Mechanism — Functional Guide and Validation
 
-## 功能概述
+## Overview
 
-实现了"非阻塞网表获取 + 延迟回填"机制，解决网表获取超时导致引脚无法绑定的问题。
+The extension uses a **non-blocking netlist flow** with delayed backfill to avoid blocking the UI when netlist generation is slow.
 
-## 工作原理
+## How It Works
 
-### 1. 主流程（非阻塞）
+### 1) Main flow (non-blocking)
 
-```
-启动网表获取
-    ↓
-等待 10 秒
-    ↓
-超时？
-├─ 是 → 跳过网表绑定，使用 L2/L3/L4 策略继续
-└─ 否 → 使用网表（L1 策略）绑定引脚
-```
-
-### 2. 后台流程（延迟回填）
-
-```
-网表在后台继续获取
-    ↓
-每 2 秒检查一次完成状态（最多 60 秒）
-    ↓
-网表获取成功？
-├─ 是 → 重新解析网表 → 回填引脚绑定 → 更新缓存 → 通知 IFrame
-└─ 否 → 放弃回填
+```text
+start netlist collection
+  ↓
+wait 10 seconds
+  ↓
+timeout?
+├─ yes -> continue using L2/L3/L4 and skip immediate L1
+└─ no  -> use netlist directly with L1
 ```
 
-## 关键特性
+### 2) Background flow (delayed backfill)
 
-### 1. 非阻塞设计
-- 主流程在 10 秒后继续，不等待网表完成
-- 用户可以立即开始对话，不会被阻塞
+```text
+netlist generation continues in background
+  ↓
+poll every 2 seconds (max 60 seconds)
+  ↓
+netlist completed?
+├─ yes -> reparse -> backfill -> update cache -> notify IFrame
+└─ no  -> stop backfill
+```
 
-### 2. 自动回填
-- 如果网表最终成功（即使超过 10 秒），自动回填引脚绑定
-- 使用 L1 策略（置信度 1.0）覆盖 L2/L3/L4 的低置信度绑定
+## Core features
 
-### 3. 版本控制（Epoch）
-- 使用 epoch 版本号，避免过期任务覆盖新任务
-- 如果用户重新触发采集，旧的回填任务会被自动取消
+### 1) Non-blocking behavior
+- Main flow continues after 10 seconds, no hard UI block.
+- Users can begin chat immediately.
 
-### 4. 详细日志
-- 记录网表实际获取时间
-- 统计回填效果（新绑定引脚数、改进引脚数）
-- 所有日志通过调试面板可见
+### 2) Automatic backfill
+- If netlist eventually succeeds, low-confidence bindings are improved with L1.
+- L1 (confidence `1.0`) can replace L2/L3/L4 results when better data arrives.
 
-## 代码实现
+### 3) Epoch-based versioning
+- Each collection creates an epoch number.
+- Newer collects invalidate older in-flight backfills.
 
-### 核心文件
+### 4) Observability
+- Actual netlist fetch time is logged.
+- Backfill metrics are logged (new bindings, improved bindings).
+- All events are shown in debug logs.
 
-1. **src/review/collector.ts**
-   - `collectNetlist()`: 网表获取（带超时保护）
-   - `backgroundNetlistState`: 后台状态跟踪
-   - `parseNetlist()`: 网表解析（已导出）
+## Implementation
 
-2. **src/review/orchestrator.ts**
-   - `scheduleNetlistBackfill()`: 延迟回填调度器
-   - 使用 `eda.sys_Timer.setIntervalTimer()` 轮询检查
+### Key files
 
-### 关键数据结构
+1. `src/review/collector.ts`
+   - `collectNetlist()` with timeout handling
+   - `backgroundNetlistState` for deferred workflow
+   - `parseNetlist()` now exported for reuse
+
+2. `src/review/orchestrator.ts`
+   - `scheduleNetlistBackfill()` scheduler
+   - uses `eda.sys_Timer.setIntervalTimer()` polling
+
+### Core structure
 
 ```typescript
 interface BackgroundNetlistState {
-	promise: Promise<string | undefined>;
-	startTime: number;
-	completed: boolean;
-	result?: string;
-	duration?: number;
+  promise: Promise<string | undefined>;
+  startTime: number;
+  completed: boolean;
+  result?: string;
+  duration?: number;
 }
 ```
 
-## 验证方法
+## Validation scenarios
 
-### 测试场景 1：网表快速完成（< 10 秒）
+### Scenario 1 — netlist completes quickly (< 10s)
 
-**预期行为**：
-1. 网表在 10 秒内完成
-2. 主流程直接使用网表（L1 策略）
-3. 不触发延迟回填
+Expected:
+1. Netlist completes before timeout.
+2. Main flow uses L1 directly.
+3. No delayed backfill occurs.
 
-**验证步骤**：
-1. 打开一个小型原理图（< 50 个器件）
-2. 打开 AI 助手面板
-3. 打开调试日志（Ctrl+D 或点击 🐛 按钮）
-4. 观察日志输出
+How to test:
+1. Open a small schematic (< 50 components).
+2. Open AI assistant panel.
+3. Open debug log (`Ctrl+D` or 🐛).
+4. Verify log output.
 
-**预期日志**：
-```
-[INFO] 网表格式: Protel2, 大小: xxx 字符 (耗时 xxxms)
-[INFO] 网表解析完成: xxx 个 pin-net 映射
-```
-
-### 测试场景 2：网表超时但最终成功（10-60 秒）
-
-**预期行为**：
-1. 网表在 10 秒后超时
-2. 主流程使用 L2/L3/L4 策略继续
-3. 网表在后台继续获取
-4. 网表完成后自动回填引脚绑定
-
-**验证步骤**：
-1. 打开一个大型原理图（> 200 个器件）
-2. 打开 AI 助手面板
-3. 打开调试日志
-4. 观察日志输出
-
-**预期日志**：
-```
-[WARN] 网表获取超时 (10000ms)，跳过网表绑定（后台继续获取中...）
-[INFO] 网表后台获取中，将在完成后自动回填引脚绑定...
-[INFO] 采集完成 (耗时 xxxms)
-... (等待一段时间) ...
-[SUCCESS] 网表后台获取成功 (耗时 xxxms, 大小: xxx 字符)
-[INFO] 网表后台获取成功（耗时 xxxms），开始回填引脚绑定...
-[SUCCESS] 网表回填完成：新绑定 xxx 个引脚，改进 xxx 个引脚绑定
+Expected log sample:
+```text
+[INFO] Netlist format: Protel2, size: xxx chars (xxxms)
+[INFO] Netlist parsed: xxx pin-net mappings
 ```
 
-### 测试场景 3：网表超时且失败（> 60 秒）
+### Scenario 2 — timeout then success (10-60s)
 
-**预期行为**：
-1. 网表在 10 秒后超时
-2. 主流程使用 L2/L3/L4 策略继续
-3. 网表在后台继续获取
-4. 60 秒后仍未完成，放弃回填
+Expected:
+1. Timeout at 10s.
+2. Main flow continues with L2/L3/L4.
+3. Netlist keeps fetching in background.
+4. On success, automatic backfill updates pin bindings.
 
-**验证步骤**：
-1. 打开一个超大型原理图（> 500 个器件）
-2. 打开 AI 助手面板
-3. 打开调试日志
-4. 观察日志输出
+How to test:
+1. Open a large schematic (> 200 components).
+2. Open panel and logs.
+3. Wait and inspect output.
 
-**预期日志**：
-```
-[WARN] 网表获取超时 (10000ms)，跳过网表绑定（后台继续获取中...）
-[INFO] 网表后台获取中，将在完成后自动回填引脚绑定...
-... (等待 60 秒) ...
-[WARN] 网表后台获取超时（60秒），放弃回填
-```
-
-### 测试场景 4：重新触发采集（Epoch 版本控制）
-
-**预期行为**：
-1. 第一次采集触发网表后台获取
-2. 在网表完成前，用户重新触发采集
-3. 旧的回填任务被取消，不会覆盖新数据
-
-**验证步骤**：
-1. 打开一个大型原理图
-2. 打开 AI 助手面板（触发第一次采集）
-3. 等待 5 秒
-4. 关闭并重新打开 AI 助手面板（触发第二次采集）
-5. 观察调试日志
-
-**预期日志**：
-```
-[INFO] 后台采集开始 (原因: start-ai-chat, epoch: 1)
-[WARN] 网表获取超时 (10000ms)，跳过网表绑定（后台继续获取中...）
-[INFO] 采集完成 (耗时 xxxms)
-... (用户重新打开面板) ...
-[INFO] 后台采集开始 (原因: start-ai-chat, epoch: 2)
-... (旧任务被取消) ...
-[WARN] 网表回填任务被取消（epoch 1 已过期）
+Expected logs:
+```text
+[WARN] Netlist fetch timeout (10000ms), continue without direct netlist binding
+[INFO] Netlist fetching in background...
+[INFO] Collect complete (xxxms)
+... wait ...
+[SUCCESS] Background netlist fetch succeeded (xxxms, xxx chars)
+[INFO] Starting backfill with completed netlist...
+[SUCCESS] Backfill complete: new bound pins xxx, improved pins xxx
 ```
 
-## 性能指标
+### Scenario 3 — timeout and failure (> 60s)
 
-### 网表获取时间（实测数据）
+Expected:
+1. Timeout at 10s, no immediate L1.
+2. Main flow uses fallback strategies.
+3. Background fetch times out after 60s and gives up.
 
-| 原理图规模 | 器件数 | 引脚数 | 网表获取时间 |
-|-----------|--------|--------|-------------|
-| 小型      | < 50   | < 200  | 1-3 秒      |
-| 中型      | 50-200 | 200-1000 | 5-15 秒   |
-| 大型      | > 200  | > 1000 | 15-60 秒   |
-
-### 回填效果统计
-
-- **新绑定引脚数**：原来 `netName = null` 的引脚，现在绑定了网络
-- **改进引脚数**：原来使用 L2/L3/L4 策略（置信度 < 1.0），现在用 L1 覆盖
-
-## 故障排查
-
-### 问题 1：网表一直超时
-
-**可能原因**：
-- 原理图过大（> 500 个器件）
-- EDA 性能问题
-
-**解决方案**：
-- 增加超时时间（修改 `NETLIST_TIMEOUT_MS`）
-- 增加轮询最大次数（修改 `MAX_POLL_COUNT`）
-
-### 问题 2：回填没有生效
-
-**可能原因**：
-- 网表解析失败
-- Epoch 版本过期
-
-**排查步骤**：
-1. 检查调试日志中的 "网表解析完成" 消息
-2. 检查是否有 "epoch 已过期" 警告
-3. 检查 `netlistMap.size` 是否为 0
-
-### 问题 3：回填后引脚数量没有变化
-
-**可能原因**：
-- 网表中的引脚已经在 L2/L3/L4 中绑定了
-- 网表格式不匹配
-
-**排查步骤**：
-1. 检查 "新绑定 xxx 个引脚，改进 xxx 个引脚绑定" 日志
-2. 如果两个数字都是 0，说明网表没有提供新信息
-3. 检查网表格式是否为 PROTEL2
-
-## 未来优化方向
-
-### 1. 自适应超时
-- 根据原理图规模动态调整超时时间
-- 小型原理图 5 秒，大型原理图 20 秒
-
-### 2. 增量回填
-- 只回填 `netName = null` 的引脚
-- 避免覆盖已有的高置信度绑定
-
-### 3. 网表缓存
-- 缓存网表解析结果
-- 避免重复解析相同的网表
-
-### 4. 进度提示
-- 在 IFrame 中显示网表获取进度
-- "网表获取中... (已等待 15 秒)"
-
-## 相关文件
-
-- `src/review/collector.ts` - 网表采集和解析
-- `src/review/orchestrator.ts` - 延迟回填调度
-- `src/review/types.ts` - 类型定义
-- `debug-questions.md` - 调试问题清单
-- `verify-build.sh` - 构建验证脚本
-
-## 提交记录
-
+Expected:
+```text
+[WARN] Netlist timeout (60s) exceeded, skipping backfill
 ```
-9b2ea08 feat: 实现网表延迟回填机制
-8de0ab5 feat: 实现 L4 导线拓扑分析策略
-536e27a debug: 添加详细的pin-net绑定调试日志
-1560802 feat: 添加网络标记采集功能以修复pin-net绑定问题
-4413367 fix: 修复引脚采集跨页ID失效问题，添加网表超时保护
+
+or
+
+```text
+[ERROR] Background netlist failed: ...
+[WARN] Failed to backfill due to fetch error
+```
+
+### Scenario 4 — retrigger with epoch control
+
+Expected:
+1. First collect starts and hits timeout.
+2. User triggers second collect before first finishes.
+3. First backfill should be dropped as stale.
+
+Expected log:
+```text
+[INFO] Background collect started (reason: start-ai-chat, epoch: 1)
+[WARN] Netlist timeout (10000ms)...
+[INFO] Collect complete...
+... user restarts panel ...
+[INFO] Background collect started (reason: start-ai-chat, epoch: 2)
+[WARN] Backfill task canceled: epoch 1 expired
+```
+
+## Performance and impact
+
+### Measured netlist fetch time
+
+| Size | Components | Pins | Netlist fetch |
+|------|------------|------|---------------|
+| Small | < 50 | < 200 | 1-3s |
+| Medium | 50-200 | 200-1000 | 5-15s |
+| Large | > 200 | > 1000 | 15-60s |
+
+### Backfill effects
+- New bindings: previously `netName = null` now resolved.
+- Improved bindings: L2/L3/L4 updated to L1 where appropriate.
+
+## Troubleshooting
+
+### Symptom: Netlist always times out
+Possible causes:
+- Schema too large ( > 500 components).
+- EDA environment performance issue.
+
+Fix:
+- Increase `NETLIST_TIMEOUT_MS`.
+- Increase `MAX_POLL_COUNT`.
+
+### Symptom: No backfill effect
+Possible causes:
+- Parse failure.
+- Backfill task already expired.
+
+Check:
+1. Look for `Netlist parsed` success log.
+2. Look for `epoch expired` warning.
+3. Validate `netlistMap.size` is non-zero.
+
+### Symptom: No pin count change after backfill
+Possible causes:
+- Pins already bound with lower-tier strategies.
+- Netlist format mismatch.
+
+Check:
+1. Verify "new bindings x, improved x" values.
+2. If both are zero, no new signal was provided.
+3. Ensure netlist format is PROTEL2.
+
+## Future improvements
+
+### 1) Adaptive timeout
+- Adjust timeout by schematic size (small 5s, large 20s).
+
+### 2) Incremental backfill
+- Only backfill `netName = null` pins.
+- Avoid overriding high-confidence existing bindings.
+
+### 3) Netlist cache
+- Cache parsed netlists to avoid re-parsing.
+
+### 4) Progress UX
+- Add in-IFrame progress: `Netlist in progress... (waited 15s)`.
+
+## Related files
+
+- `src/review/collector.ts`
+- `src/review/orchestrator.ts`
+- `src/review/types.ts`
+- `docs/debug-questions.md`
+- `verify-build.sh`
+
+## Commit history
+
+```text
+9b2ea08 feat: implement delayed netlist backfill
+8de0ab5 feat: implement L4 wire topology strategy
+536e27a debug: add detailed pin-net logs
+1560802 feat: add net-label collection to fix pin-net binding
+4413367 fix: fix cross-page pin-id regression and timeout guard
 ```

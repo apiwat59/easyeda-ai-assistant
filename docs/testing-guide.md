@@ -1,408 +1,271 @@
-# 网表延迟回填机制 - 测试验证指南
+# Netlist Delayed Backfill — Testing Guide
 
-## 测试目标
+## Goal
 
-验证网表延迟回填机制是否正常工作，包括：
-1. 网表超时检测
-2. 后台继续获取
-3. 自动回填引脚绑定
-4. Epoch 版本控制
-5. 调试日志完整性
+Validate delayed netlist backfill behavior for:
+1. timeout handling,
+2. background collection,
+3. automatic backfill,
+4. epoch cancellation,
+5. debug log completeness.
 
-## 测试环境准备
+## Setup
 
-### 1. 构建扩展
-
+### 1) Build extension
 ```bash
 cd /home/ubuntu/pro-api-sdk-master
 npm run build
 ```
 
-### 2. 在 EDA 中重新加载扩展
+### 2) Reload extension in EDA
+1. Open EasyEDA Pro.
+2. Open Extension Manager.
+3. Find `AI Schematic Assistant`.
+4. Disable and re-enable.
+5. Wait ~2 seconds.
 
-1. 打开嘉立创 EDA 专业版
-2. 进入 **扩展 → 扩展管理器**
-3. 找到 "AI 原理图助手" 扩展
-4. 点击 **禁用** 按钮
-5. 等待 2 秒
-6. 点击 **启用** 按钮
+### 3) Prepare schematics
+- Small: `< 50` components (`< 3s` netlist).
+- Medium: `50-200` components (`5-15s` netlist).
+- Large: `> 200` components (`> 10s`, timeout expected).
 
-### 3. 准备测试原理图
+## Test scenarios
 
-需要准备三种规模的原理图：
-- **小型**：< 50 个器件（网表 < 3 秒）
-- **中型**：50-200 个器件（网表 5-15 秒）
-- **大型**：> 200 个器件（网表 > 10 秒，会触发超时）
+### Scenario 1 — netlist completes before timeout
 
-## 测试场景
+Goal: verify normal flow when netlist is quick.
 
-### 场景 1：网表快速完成（< 10 秒）
+Steps:
+1. Open a small schematic.
+2. Open `AI Review -> AI Schematic Chat...`.
+3. Open debug logs (`Ctrl+D` / 🐛).
+4. Check output.
 
-**目的**：验证网表在超时前完成时的正常流程
-
-**步骤**：
-1. 在 EDA 中打开小型原理图（< 50 个器件）
-2. 点击菜单 **AI Review → AI Schematic Chat...**
-3. 等待面板打开
-4. 按 **Ctrl+D** 或点击 **🐛** 按钮打开调试日志
-5. 观察日志输出
-
-**预期结果**：
-```
-[INFO] 后台采集开始 (原因: start-ai-chat, epoch: 1)
-[INFO] 网表格式: Protel2, 大小: xxx 字符 (耗时 xxxms)
-[INFO] 网表解析完成: xxx 个 pin-net 映射
-[SUCCESS] 采集完成 (耗时 xxxms)
+Expected logs:
+```text
+[INFO] Background collect started (reason: start-ai-chat, epoch: 1)
+[INFO] Netlist format: Protel2, size: xxx chars (xxxms)
+[INFO] Netlist parsed: xxx pin-net mappings
+[SUCCESS] Collect complete (xxxms)
 ```
 
-**验证点**：
-- ✅ 没有 "网表获取超时" 警告
-- ✅ 没有 "网表后台获取中" 提示
-- ✅ 网表耗时 < 10 秒
-- ✅ 引脚绑定数量正常
+Checks:
+- No `netlist timeout` warning.
+- No `background netlist fetching` message.
+- Netlist time `< 10s`.
+- Pin binding count is within expected.
 
 ---
 
-### 场景 2：网表超时但最终成功（10-60 秒）
+### Scenario 2 — timeout then success
 
-**目的**：验证网表延迟回填机制的核心功能
+Goal: verify delayed backfill path.
 
-**步骤**：
-1. 在 EDA 中打开大型原理图（> 200 个器件）
-2. 点击菜单 **AI Review → AI Schematic Chat...**
-3. 等待面板打开
-4. 按 **Ctrl+D** 或点击 **🐛** 按钮打开调试日志
-5. 观察日志输出
-6. 等待 30-60 秒，观察是否有回填日志
+Steps:
+1. Open a large schematic.
+2. Open chat and logs.
+3. Wait 30-60 seconds for background behavior.
 
-**预期结果**：
-```
-[INFO] 后台采集开始 (原因: start-ai-chat, epoch: 1)
-[WARN] 网表获取超时 (10000ms)，跳过网表绑定（后台继续获取中...）
-[INFO] 网表后台获取中，将在完成后自动回填引脚绑定...
-[SUCCESS] 采集完成 (耗时 xxxms)
-[INFO] 数据摘要: 组件 xxx, 引脚 xxx, 网络 xxx
-
-... (等待 10-50 秒) ...
-
-[SUCCESS] 网表后台获取成功 (耗时 xxxms, 大小: xxx 字符)
-[INFO] 网表后台获取成功（耗时 xxxms），开始回填引脚绑定...
-[INFO] 网表解析完成: xxx 个 pin-net 映射
-[SUCCESS] 网表回填完成：新绑定 xxx 个引脚，改进 xxx 个引脚绑定
+Expected logs:
+```text
+[INFO] Background collect started (reason: start-ai-chat, epoch: 1)
+[WARN] Netlist fetch timeout (10000ms), continuing without direct netlist binding
+[INFO] Netlist in background...
+[SUCCESS] Collect complete (xxxms)
+[INFO] Data summary: components xxx, pins xxx, nets xxx
+... wait 10-50s ...
+[SUCCESS] Background netlist fetch succeeded (xxxms, xxx chars)
+[INFO] Starting backfill...
+[SUCCESS] Backfill complete: new xxx, improved xxx
 ```
 
-**验证点**：
-- ✅ 有 "网表获取超时" 警告
-- ✅ 有 "网表后台获取中" 提示
-- ✅ 采集完成后，主流程继续（不阻塞）
-- ✅ 10-60 秒后，有 "网表后台获取成功" 日志
-- ✅ 有 "网表回填完成" 日志
-- ✅ 新绑定引脚数 > 0 或改进引脚数 > 0
-- ✅ 侧边栏数据摘要更新（引脚数、网络数增加）
+Checks:
+- Timeout warning exists.
+- Background fetching starts.
+- Main flow completes without waiting.
+- Backfill logs appear.
+- New/improved bindings are positive.
 
 ---
 
-### 场景 3：网表超时且失败（> 60 秒）
+### Scenario 3 — timeout and failure
 
-**目的**：验证网表获取失败时的降级处理
+Goal: verify graceful degradation.
 
-**步骤**：
-1. 在 EDA 中打开超大型原理图（> 500 个器件）
-2. 点击菜单 **AI Review → AI Schematic Chat...**
-3. 等待面板打开
-4. 按 **Ctrl+D** 或点击 **🐛** 按钮打开调试日志
-5. 观察日志输出
-6. 等待 60 秒以上
+Steps:
+1. Open very large schematic (`> 500` components).
+2. Open chat and logs.
+3. Wait 60+ seconds.
 
-**预期结果**：
-```
-[INFO] 后台采集开始 (原因: start-ai-chat, epoch: 1)
-[WARN] 网表获取超时 (10000ms)，跳过网表绑定（后台继续获取中...）
-[INFO] 网表后台获取中，将在完成后自动回填引脚绑定...
-[SUCCESS] 采集完成 (耗时 xxxms)
-
-... (等待 60 秒) ...
-
-[WARN] 网表后台获取超时（60秒），放弃回填
+Expected:
+```text
+[WARN] Netlist background fetch timeout (60s), backfill skipped
 ```
 
-或者：
+or:
 
-```
-[ERROR] 网表后台获取失败 (耗时 xxxms): [错误信息]
-[WARN] 网表后台获取失败（耗时 xxxms），无法回填
+```text
+[ERROR] Background netlist fetch failed (...): [error]
+[WARN] Backfill not performed (fetch error)
 ```
 
-**验证点**：
-- ✅ 有 "网表获取超时" 警告
-- ✅ 有 "网表后台获取中" 提示
-- ✅ 采集完成后，主流程继续（不阻塞）
-- ✅ 60 秒后，有 "放弃回填" 或 "获取失败" 日志
-- ✅ 引脚绑定使用 L2/L3/L4 策略（置信度 < 1.0）
+Checks:
+- Timeout warning exists.
+- Main flow completes.
+- Failure or timeout message appears after ~60s.
+- Binding confidence stays < 1.0 when backfill did not succeed.
 
 ---
 
-### 场景 4：重新触发采集（Epoch 版本控制）
+### Scenario 4 — epoch cancellation
 
-**目的**：验证 Epoch 机制是否正确工作
+Goal: confirm stale task cancellation.
 
-**步骤**：
-1. 在 EDA 中打开大型原理图（> 200 个器件）
-2. 点击菜单 **AI Review → AI Schematic Chat...**
-3. 等待面板打开
-4. 按 **Ctrl+D** 或点击 **🐛** 按钮打开调试日志
-5. 观察日志输出
-6. **等待 5 秒**（不要等到回填完成）
-7. **关闭对话面板**
-8. **重新打开对话面板**（触发第二次采集）
-9. 观察日志输出
+Steps:
+1. Open large schematic.
+2. Open chat and note epoch.
+3. Wait 5 seconds.
+4. Close panel, reopen it again.
+5. Compare logs.
 
-**预期结果**：
-```
-[INFO] 后台采集开始 (原因: start-ai-chat, epoch: 1)
-[WARN] 网表获取超时 (10000ms)，跳过网表绑定（后台继续获取中...）
-[INFO] 网表后台获取中，将在完成后自动回填引脚绑定...
-[SUCCESS] 采集完成 (耗时 xxxms)
-
-... (用户关闭并重新打开面板) ...
-
-[INFO] 后台采集开始 (原因: start-ai-chat, epoch: 2)
-[WARN] 网表获取超时 (10000ms)，跳过网表绑定（后台继续获取中...）
-[SUCCESS] 采集完成 (耗时 xxxms)
-
-... (第一次采集的网表完成) ...
-
-[SUCCESS] 网表后台获取成功 (耗时 xxxms, 大小: xxx 字符)
-[WARN] 网表回填任务被取消（epoch 1 已过期）
+Expected:
+```text
+[INFO] Background collect started (reason: start-ai-chat, epoch: 1)
+...
+[INFO] Background collect started (reason: start-ai-chat, epoch: 2)
+...
+[WARN] Backfill task canceled (epoch 1 expired)
 ```
 
-**验证点**：
-- ✅ 第一次采集的 epoch 为 1
-- ✅ 第二次采集的 epoch 为 2
-- ✅ 第一次采集的回填任务被取消（epoch 已过期）
-- ✅ 第二次采集的回填任务正常执行
+Checks:
+- First collect is `epoch: 1`, second is `epoch: 2`.
+- First backfill is canceled.
+- Second backfill runs.
 
 ---
 
-### 场景 5：插件自动启动
+### Scenario 5 — auto-start (plugin initialization)
 
-**目的**：验证插件自动启动功能是否正常
+Goal: ensure background collect runs without opening chat.
 
-**步骤**：
-1. **完全关闭** EDA
-2. **重新启动** EDA
-3. 打开一个原理图
-4. **不要手动打开** AI 助手面板
-5. 等待 5-10 秒
-6. 打开 AI 助手面板
-7. 按 **Ctrl+D** 打开调试日志
-8. 检查是否有自动采集的日志
+Steps:
+1. Close and reopen EDA.
+2. Open a schematic.
+3. Wait 5-10 seconds without opening chat.
+4. Open chat and check logs.
 
-**预期结果**：
-```
-[INFO] 后台采集开始 (原因: doc-change:xxx-uuid, epoch: 1)
-[INFO] 网表格式: Protel2, 大小: xxx 字符 (耗时 xxxms)
-[SUCCESS] 采集完成 (耗时 xxxms)
+Expected:
+```text
+[INFO] Background collect started (reason: doc-change:xxx-uuid, epoch: 1)
+[SUCCESS] Collect complete (xxxms)
 ```
 
-**验证点**：
-- ✅ 有自动采集的日志（原因包含 "doc-change"）
-- ✅ 采集在打开面板前就已经完成
-- ✅ 侧边栏数据摘要已有数据
+Checks:
+- Auto collect log exists.
+- Data is ready before chat open.
 
 ---
 
-### 场景 6：切换原理图自动重新采集
+### Scenario 6 — document switch re-collect
 
-**目的**：验证文档变化检测是否正常
+Goal: verify document-change detection.
 
-**步骤**：
-1. 在 EDA 中打开原理图 A
-2. 打开 AI 助手面板
-3. 按 **Ctrl+D** 打开调试日志
-4. 观察采集日志（epoch: 1）
-5. **切换到原理图 B**（不关闭面板）
-6. 等待 5-10 秒
-7. 观察调试日志
+Steps:
+1. Open schematic A and panel.
+2. Wait for initial collect.
+3. Switch to schematic B (keep panel open).
+4. Wait 5-10 seconds.
+5. Check logs.
 
-**预期结果**：
-```
-[INFO] 后台采集开始 (原因: start-ai-chat, epoch: 1)
-[SUCCESS] 采集完成 (耗时 xxxms)
-
-... (用户切换到原理图 B) ...
-
-[INFO] 后台采集开始 (原因: doc-change:yyy-uuid, epoch: 2)
-[SUCCESS] 采集完成 (耗时 xxxms)
+Expected:
+```text
+[INFO] Background collect started (reason: start-ai-chat, epoch: 1)
+...
+[INFO] Background collect started (reason: doc-change:yyy-uuid, epoch: 2)
 ```
 
-**验证点**：
-- ✅ 切换原理图后，自动触发新的采集
-- ✅ Epoch 递增（从 1 到 2）
-- ✅ 侧边栏数据摘要更新为新原理图的数据
+Checks:
+- Collect triggers on document switch.
+- Epoch increments from 1 to 2.
+- Sidebar values update.
 
----
+## Performance baseline
 
-## 性能基准测试
+Record for each scenario:
 
-### 测试数据收集
+| Metric | Small | Medium | Large |
+|--------|-------|--------|-------|
+| Components | | | |
+| Pins | | | |
+| Nets | | | |
+| Total collect time | | | |
+| Netlist time | | | |
+| Timeout? | | | |
+| Backfill time | | | |
+| New bindings | | | |
+| Improved bindings | | | |
 
-对于每个测试场景，记录以下数据：
+Targets:
+- Small: total < 5s, netlist < 3s.
+- Medium: total < 15s, netlist < 15s.
+- Large: total < 30s, netlist < 60s.
 
-| 指标 | 小型 | 中型 | 大型 |
-|------|------|------|------|
-| 器件数 | | | |
-| 引脚数 | | | |
-| 网络数 | | | |
-| 采集总耗时 | | | |
-| 网表获取耗时 | | | |
-| 网表是否超时 | | | |
-| 回填耗时 | | | |
-| 新绑定引脚数 | | | |
-| 改进引脚数 | | | |
+## Troubleshooting
 
-### 性能目标
+### Missing timeout logs
+- Schematic too small (netlist done under 10s), or direct exception before timeout.
+- Use larger schematic and check error logs.
 
-- **小型原理图**：采集 < 5 秒，网表 < 3 秒
-- **中型原理图**：采集 < 15 秒，网表 < 15 秒
-- **大型原理图**：采集 < 30 秒，网表 < 60 秒
+### Missing backfill success
+- Netlist not parseable.
+- Epoch expired.
+- Backfill logic issue.
 
-## 常见问题排查
+### No binding change after backfill
+- Pins already bound by fallback strategies.
+- Netlist format mismatch.
 
-### 问题 1：没有看到 "网表获取超时" 日志
+### Auto-start not working
+- `activate()` not called.
+- Timer not set.
+- Document UUID detection failing.
 
-**可能原因**：
-- 原理图太小，网表在 10 秒内完成
-- 网表获取失败，直接抛出异常
+For each case, verify debug logs and EDA console, restart plugin if needed.
 
-**解决方案**：
-- 使用更大的原理图（> 200 个器件）
-- 检查是否有错误日志
-
-### 问题 2：没有看到 "网表回填完成" 日志
-
-**可能原因**：
-- 网表获取失败
-- Epoch 版本过期
-- 回填逻辑有 bug
-
-**解决方案**：
-- 检查是否有 "网表后台获取成功" 日志
-- 检查是否有 "epoch 已过期" 警告
-- 检查是否有错误日志
-
-### 问题 3：回填后引脚数量没有变化
-
-**可能原因**：
-- 网表中的引脚已经在 L2/L3/L4 中绑定了
-- 网表格式不匹配
-
-**解决方案**：
-- 检查 "新绑定 xxx 个引脚，改进 xxx 个引脚绑定" 日志
-- 如果两个数字都是 0，说明网表没有提供新信息
-- 检查网表格式是否为 PROTEL2
-
-### 问题 4：插件自动启动不工作
-
-**可能原因**：
-- activate() 函数未被调用
-- 定时器未启动
-- 文档 UUID 检测失败
-
-**解决方案**：
-- 检查 EDA 控制台是否有错误
-- 检查是否有 "doc-change" 原因的采集日志
-- 重启 EDA 并重新加载扩展
-
-## 测试报告模板
+## Test report template
 
 ```markdown
-# 网表延迟回填机制 - 测试报告
+# Netlist Delayed Backfill — Test Report
 
-## 测试环境
+## Environment
+- EDA version:
+- Extension version:
+- Test date:
+- Tester:
 
-- EDA 版本：
-- 扩展版本：
-- 测试日期：
-- 测试人员：
+## Results
+- Scenario 1: [ ] Pass [ ] Fail
+- Scenario 2: [ ] Pass [ ] Fail
+- Scenario 3: [ ] Pass [ ] Fail
+- Scenario 4: [ ] Pass [ ] Fail
+- Scenario 5: [ ] Pass [ ] Fail
+- Scenario 6: [ ] Pass [ ] Fail
 
-## 测试结果
-
-### 场景 1：网表快速完成
-- [ ] 通过
-- [ ] 失败
-- 备注：
-
-### 场景 2：网表超时但最终成功
-- [ ] 通过
-- [ ] 失败
-- 备注：
-
-### 场景 3：网表超时且失败
-- [ ] 通过
-- [ ] 失败
-- 备注：
-
-### 场景 4：Epoch 版本控制
-- [ ] 通过
-- [ ] 失败
-- 备注：
-
-### 场景 5：插件自动启动
-- [ ] 通过
-- [ ] 失败
-- 备注：
-
-### 场景 6：切换原理图自动重新采集
-- [ ] 通过
-- [ ] 失败
-- 备注：
-
-## 性能数据
-
-| 指标 | 小型 | 中型 | 大型 |
-|------|------|------|------|
-| 器件数 | | | |
-| 引脚数 | | | |
-| 采集总耗时 | | | |
-| 网表获取耗时 | | | |
-| 回填耗时 | | | |
-
-## 问题和建议
-
+## Notes
 1.
 2.
 3.
 
-## 总体评价
+## Overall status
+- [ ] Fully working
+- [ ] Mostly working with minor issues
+- [ ] Fails major requirements
 
-- [ ] 功能完全正常
-- [ ] 功能基本正常，有小问题
-- [ ] 功能有严重问题
-
-## 签名
-
-测试人员：__________
-日期：__________
+## Signature
+Tester: __________
+Date: __________
 ```
 
-## 下一步行动
+## Next action
 
-测试完成后，根据测试结果决定：
-
-1. **如果测试全部通过**：
-   - 项目可以投入使用
-   - 考虑添加其他可选功能
-
-2. **如果有小问题**：
-   - 记录问题并修复
-   - 重新测试
-
-3. **如果有严重问题**：
-   - 分析根本原因
-   - 修复 bug
-   - 全面重新测试
-
----
-
-**测试验证是确保功能正常的关键步骤，请认真执行每个测试场景！**
+If all scenarios pass, proceed to next milestone.
