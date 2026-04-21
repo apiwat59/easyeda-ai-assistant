@@ -6,160 +6,168 @@
 [![GitHub Issues](https://img.shields.io/github/issues/jifengshandian/easyeda-ai-assistant)](https://github.com/jifengshandian/easyeda-ai-assistant/issues)
 [![GitHub Stars](https://img.shields.io/github/stars/jifengshandian/easyeda-ai-assistant)](https://github.com/jifengshandian/easyeda-ai-assistant/stargazers)
 
-> 你的原理图审查小助手 - 让 AI 真正"看懂"你的电路设计
+> Your schematic review sidekick for EasyEDA Pro, built to help AI actually understand your circuit design.
 
-基于嘉立创 EDA 专业版的 AI 原理图对话助手，**不是帮你画图，而是帮你检查**！
-
-[English](README.en.md) | 简体中文
+EasyEDA AI Assistant is an AI-powered schematic chat and review extension for JLCEDA / EasyEDA Pro. It is **not** a schematic drawing tool. It is designed to **inspect, explain, and review the schematic you already built**.
 
 ---
 
-## 🎯 核心定位
+## 🎯 What This Plugin Is For
 
-**它并不会帮你绘制原理图**，而是作为你画完原理图后帮你检查的小助手 🧐
+This plugin does **not** generate schematics for you. Instead, it acts as a review assistant after your schematic is already on the page.
 
-### 为什么选择这个插件？
+### Why use it?
 
-传统方式：截图 → 发给 AI → AI 看不懂电路细节 → 只能给出模糊建议 😤
+The traditional workflow usually looks like this:
 
-**本插件的优势**：
-- ✅ **以文字形式**完整理解你的原理图（器件、引脚、网络、连接关系）
-- ✅ **打破截图局限**，AI 能精确知道每个引脚连接到哪个网络
-- ✅ **智能跳转**，点击对话中的蓝色标签直接定位到原理图元件
-- ✅ **联网搜索**，AI 可以查询芯片手册、数据手册，给出专业建议
+Screenshot your schematic -> send it to an AI tool -> the AI cannot see the electrical details clearly -> you only get vague suggestions.
 
-### 🌟 推荐配置
+### What this plugin does better
 
-**强烈推荐使用 Grok 4.2 模型**！
-- 🔍 联网搜索能力超强，能实时查询芯片资料
-- 🧠 深度思考模式，显示完整推理过程
-- 🚀 后续将加入 MCP 功能（grok-search mcp），搭配更强大的模型体验更佳
+- ✅ Converts your schematic into structured text that AI can reason about, including components, pins, nets, and connectivity
+- ✅ Breaks past screenshot limitations so the model can understand which pin connects to which net
+- ✅ Lets you click blue labels in the chat to jump directly to the matching schematic object
+- ✅ Supports online lookup so the AI can reference datasheets and component documentation when needed
 
-### 🤖 支持的 Reasoning 模型
+### 🌟 Recommended setup
 
-本插件支持 **13+ 种主流 AI 服务商**的 reasoning/thinking 功能，内置一键预设：
+**Grok 4.2 is currently the recommended model** for the best experience in this project:
 
-| 服务商 | 推荐模型 | Reasoning 支持 |
-|--------|---------|---------------|
-| **OpenAI** | gpt-5.2 | ✅ 完整支持 |
-| **xAI (Grok)** | grok-4.20-beta | ✅ 完整支持（推荐） |
-| **DeepSeek** | deepseek-chat | ✅ 完整支持 |
-| **Google Gemini** | gemini-3-flash | ✅ 完整支持 |
-| **OpenRouter** | claude-sonnet-4.6 | ✅ 完整支持 |
-| **Groq** | qwen/qwen3-32b | ✅ 完整支持 |
-| **Mistral** | mistral-large-latest | ✅ 完整支持 |
-| **Qwen (通义千问)** | qwen3.5-plus | ✅ 完整支持 |
-| **Zhipu (智谱)** | glm-4.7 | ✅ 完整支持 |
-| **Kimi** | kimi-k2.5 | ✅ 完整支持 |
-| **SiliconFlow** | DeepSeek-V3 | ✅ 完整支持 |
-| **Doubao (豆包)** | doubao-seed-2-0-pro | ✅ 完整支持 |
-| **Yi (零一万物)** | yi-large | ✅ 完整支持 |
+- 🔍 Strong web search capability for live datasheet lookup
+- 🧠 Deep reasoning support with visible thinking blocks
+- 🚀 Future MCP integration support for a stronger end-to-end workflow
 
-**自动检测**：插件会自动识别模型类型，无需手动配置 reasoning 参数。
+### 🤖 Supported reasoning models
 
----
+The plugin includes presets for **13+ mainstream AI providers** with reasoning or thinking support:
 
-## 📸 界面展示
+| Provider | Recommended model | Reasoning support |
+|----------|-------------------|-------------------|
+| **OpenAI** | `gpt-5.2` | ✅ Full support |
+| **xAI (Grok)** | `grok-4.20-beta` | ✅ Full support (recommended) |
+| **DeepSeek** | `deepseek-chat` | ✅ Full support |
+| **Google Gemini** | `gemini-3-flash` | ✅ Full support |
+| **OpenRouter** | `claude-sonnet-4.6` | ✅ Full support |
+| **Groq** | `qwen/qwen3-32b` | ✅ Full support |
+| **Mistral** | `mistral-large-latest` | ✅ Full support |
+| **Qwen** | `qwen3.5-plus` | ✅ Full support |
+| **Zhipu** | `glm-4.7` | ✅ Full support |
+| **Kimi** | `kimi-k2.5` | ✅ Full support |
+| **SiliconFlow** | `DeepSeek-V3` | ✅ Full support |
+| **Doubao** | `doubao-seed-2-0-pro` | ✅ Full support |
+| **Yi** | `yi-large` | ✅ Full support |
 
-### AI 对话分析
-> 与 AI 自由对话，讨论原理图中的芯片选型、电路设计等问题
-
-![AI 对话界面](screenshots/screenshot-1.png)
-
-### 引脚级精准分析
-> AI 能精确分析每个引脚的连接关系，指出悬空引脚和潜在问题
-
-![引脚分析功能](screenshots/screenshot-2.png)
-
-### 联网搜索 Datasheet
-> 遇到不熟悉的芯片，AI 自动联网搜索数据手册，给出专业建议
-
-![联网搜索能力](screenshots/screenshot-3.png)
-
-### MCP 工具集成
-> 支持 MCP 协议，集成 web_search、web_fetch 等工具，增强 AI 的信息获取能力
-
-![MCP 工具集成](screenshots/screenshot-4.png)
+**Automatic detection:** the plugin detects model type automatically, so you do not need to configure reasoning parameters manually.
 
 ---
 
-## ✨ 功能特性
+## 📸 Screenshots
 
-### 🆕 v1.1.0 新特性
+### AI chat analysis
 
-- 🧠 **Thinking Block 完美显示** - AI 思考过程清晰可见，显示在正文上方
-- 🤖 **支持 10+ AI 模型** - OpenAI o1/o3、Grok、DeepSeek、Claude 3.7、Gemini、Qwen、Doubao、Zhipu、Kimi、Hunyuan 等思考类模型
-- 📜 **历史会话增强** - 从历史对话无缝继续，保持完整上下文
-- 🛡️ **稳定性大幅提升** - 修复多个 Bug，添加类型安全防护
-- 🐛 **调试日志优化** - 详细的 SSE 解析和 reasoning 提取日志
+Talk naturally with the AI about component choice, circuit behavior, and design issues inside your schematic.
 
-### 核心功能
+![AI chat interface](screenshots/screenshot-1.png)
 
-- 🤖 **AI 对话助手** - 与 AI 对话，分析原理图设计
-- 📊 **智能数据采集** - 自动采集原理图数据（器件、引脚、网络）
-- 🔗 **Pin-Net 绑定** - 基于网表的引脚-网络绑定（置信度 1.0）
-- 📝 **网表解析** - 支持 PROTEL NETLIST 2.0 格式
-- ⚡ **非阻塞设计** - 网表延迟回填，不阻塞用户操作
-- 🎯 **保守模式** - 避免 NC 引脚假阳性，只信任网表
+### Pin-level analysis
 
-### 用户体验
+The AI can inspect exact pin connectivity and point out floating pins or suspicious wiring.
 
-- 📱 **流式响应** - 实时显示 AI 思考过程和回答
-- 🎯 **智能跳转** - 点击蓝色标签（如 `U1`、`VCC`）直接定位到原理图
-- 📎 **上传附件** - 支持上传芯片手册、数据手册等文件
-- 📜 **历史记录** - 自动保存对话历史，随时回顾
-- 🧠 **显示思考过程** - 支持 Grok、DeepSeek、OpenAI o1 等模型的 reasoning 显示
-- 🛡️ **安全防护** - XSS 防护，Markdown 安全渲染
+![Pin analysis](screenshots/screenshot-2.png)
+
+### Online datasheet lookup
+
+When you reference an unfamiliar part, the AI can search for datasheets and return grounded recommendations.
+
+![Online search](screenshots/screenshot-3.png)
+
+### MCP tool integration
+
+The plugin can work with MCP-compatible tools such as `web_search` and `web_fetch` to expand what the model can inspect.
+
+![MCP integration](screenshots/screenshot-4.png)
 
 ---
 
-## 🔌 MCP 数据暴露（v1.4.0 新功能）
+## ✨ Features
 
-让 Cursor、Claude Code、Codex 等外部 AI 工具通过 MCP 协议**只读访问**你的原理图数据。
+### 🆕 Highlights from v1.1.0
 
-### 架构
+- 🧠 **Clean thinking-block rendering** so the AI reasoning process is visible above the answer body
+- 🤖 **Support for 10+ AI model families** including OpenAI o1/o3, Grok, DeepSeek, Claude 3.7, Gemini, Qwen, Doubao, Zhipu, Kimi, and Hunyuan
+- 📜 **Improved conversation history** so you can continue prior chats with full context
+- 🛡️ **Better stability** through multiple bug fixes and stronger type-safety guards
+- 🐛 **Better debug logging** with detailed SSE parsing and reasoning extraction traces
 
-```
-┌─────────────────────────────┐
-│  EDA 扩展 (沙盒 WebView)     │
-│  mcp-bridge.ts              │
-└──────────┬──────────────────┘
-           │ WebSocket 出站
+### Core capabilities
+
+- 🤖 **AI chat assistant** for schematic analysis and design review
+- 📊 **Automatic data collection** for components, pins, nets, and connectivity
+- 🔗 **Pin-net binding** based on the netlist with confidence `1.0`
+- 📝 **Netlist parsing** with support for `PROTEL NETLIST 2.0`
+- ⚡ **Non-blocking architecture** with delayed netlist backfill to avoid disrupting user interaction
+- 🎯 **Conservative analysis mode** that trusts the netlist and avoids false positives on NC pins
+
+### User experience
+
+- 📱 **Streaming responses** so the reasoning and answer appear in real time
+- 🎯 **Smart jump-to-object navigation** from blue labels such as `U1` or `VCC`
+- 📎 **Attachment upload support** for datasheets and related design files
+- 📜 **Persistent chat history** so previous analysis stays available
+- 🧠 **Visible reasoning output** for providers that support it
+- 🛡️ **Secure rendering** with XSS protection and safe Markdown handling
+
+---
+
+## 🔌 MCP Data Exposure (new in v1.4.0)
+
+Expose your schematic data in **read-only** form to external AI tools such as Cursor, Claude Code, and Codex over MCP.
+
+### Architecture
+
+```text
+┌──────────────────────────────┐
+│  EDA extension (sandboxed)   │
+│  mcp-bridge.ts               │
+└──────────┬───────────────────┘
+           │ outbound WebSocket
            ▼
-┌─────────────────────────────┐
+┌──────────────────────────────┐
 │  eda-mcp-server (Node.js)    │
-│  WS Server + MCP Server      │
-└──────────┬──────────────────┘
+│  WS server + MCP server      │
+└──────────┬───────────────────┘
            │ stdio transport
            ▼
-┌─────────────────────────────┐
-│  Cursor / Claude Code / Codex │
-│  等 AI 工具                   │
-└─────────────────────────────┘
+┌──────────────────────────────┐
+│  Cursor / Claude Code / Codex│
+│  and other AI tools          │
+└──────────────────────────────┘
 ```
 
-### 快速使用
+### Quick usage
 
-**1. 启动 MCP Server**
+**1. Start the MCP server**
 
 ```bash
 cd packages/eda-mcp-server
 npm install
 npm run build
-node dist/index.js                        # 默认 127.0.0.1:3100
-node dist/index.js --host 0.0.0.0         # 允许远程连接
-node dist/index.js --host 0.0.0.0 --port 3200  # 自定义端口
+node dist/index.js                              # default: 127.0.0.1:3100
+node dist/index.js --host 0.0.0.0               # allow remote access
+node dist/index.js --host 0.0.0.0 --port 3200   # custom port
 ```
 
-**2. 配置 EDA 扩展**
+**2. Configure the EDA extension**
 
-在插件配置面板中设置 MCP Bridge URL：
-- 本机：`ws://127.0.0.1:3100`（默认）
-- 远程：`ws://<server-ip>:3100`
+Set the MCP Bridge URL in the plugin settings:
 
-**3. 配置 AI 工具**
+- Local: `ws://127.0.0.1:3100` (default)
+- Remote: `ws://<server-ip>:3100`
 
-**Cursor** (`~/.cursor/mcp.json`)：
+**3. Configure your AI tool**
+
+**Cursor** (`~/.cursor/mcp.json`)
+
 ```json
 {
   "mcpServers": {
@@ -171,7 +179,8 @@ node dist/index.js --host 0.0.0.0 --port 3200  # 自定义端口
 }
 ```
 
-**Claude Code** (`~/.claude/mcp.json`)：
+**Claude Code** (`~/.claude/mcp.json`)
+
 ```json
 {
   "mcpServers": {
@@ -183,287 +192,289 @@ node dist/index.js --host 0.0.0.0 --port 3200  # 自定义端口
 }
 ```
 
-### 可用 Resources
+### Available resources
 
-| URI | 说明 |
-|-----|------|
-| `eda://schematic/status` | 连接状态、快照版本、时间戳 |
-| `eda://schematic/summary` | 器件/引脚/网络数量、DRC 状态摘要 |
-| `eda://schematic/components` | 全部器件列表 |
-| `eda://schematic/pins` | 全部引脚列表 |
-| `eda://schematic/nets` | 全部网络列表 |
-| `eda://schematic/drc` | DRC 检查结果 |
-| `eda://schematic/project-info` | 工程元信息 |
-| `eda://schematic/netlist` | 原始网表文本 |
-| `eda://schematic/compact` | 紧凑序列化格式（完整输出） |
+| URI | Description |
+|-----|-------------|
+| `eda://schematic/status` | Connection state, snapshot version, and timestamp |
+| `eda://schematic/summary` | Component, pin, and net counts plus DRC summary |
+| `eda://schematic/components` | Full component list |
+| `eda://schematic/pins` | Full pin list |
+| `eda://schematic/nets` | Full net list |
+| `eda://schematic/drc` | DRC results |
+| `eda://schematic/project-info` | Project metadata |
+| `eda://schematic/netlist` | Raw netlist text |
+| `eda://schematic/compact` | Compact serialized full snapshot |
 
-### 可用 Tools
+### Available tools
 
-| Tool | 参数 | 说明 |
-|------|------|------|
-| `schematic_status` | 无 | 返回连接状态、数据版本 |
-| `query_component` | `designator` | 查询单个器件及其关联引脚和网络 |
-| `query_net` | `netName` | 查询网络及连接的引脚/器件 |
-| `search_schematic` | `keyword`, `type?` | 关键词搜索 |
-| `configure_bridge` | `host?`, `port?` | 动态修改 WS 监听地址（均可选） |
-| `get_bom` | `includeBomExcluded?` | 生成 BOM 清单 |
-| `find_unconnected_pins` | `designator?` | 查找悬空引脚（可选指定器件） |
-| `analyze_power_nets` | 无 | 分析电源网络拓扑 |
-| `check_drc` | 无 | 获取 DRC 结果摘要 |
-| `refresh_data` | 无 | 请求扩展重新推送快照 |
-| `trace_connectivity` | `from`, `to` | 查找两器件间的电气连接路径 |
-| `list_components_by_type` | 无 | 按类型分组统计器件 |
-| `get_netlist_raw` | 无 | 获取原始网表 |
-| `get_pin_map` | `designator` | 获取器件引脚映射表 |
+| Tool | Parameters | Description |
+|------|------------|-------------|
+| `schematic_status` | none | Return connection state and data version |
+| `query_component` | `designator` | Query one component with its pins and nets |
+| `query_net` | `netName` | Query a net and the connected pins or components |
+| `search_schematic` | `keyword`, `type?` | Search the schematic by keyword |
+| `configure_bridge` | `host?`, `port?` | Change the WS bind address dynamically |
+| `get_bom` | `includeBomExcluded?` | Generate a BOM |
+| `find_unconnected_pins` | `designator?` | Find floating pins, optionally for one component |
+| `analyze_power_nets` | none | Analyze power-net topology |
+| `check_drc` | none | Return a DRC summary |
+| `refresh_data` | none | Request the extension to push a fresh snapshot |
+| `trace_connectivity` | `from`, `to` | Trace an electrical path between two components |
+| `list_components_by_type` | none | Group and summarize components by type |
+| `get_netlist_raw` | none | Return the raw netlist |
+| `get_pin_map` | `designator` | Return the pin map for a component |
 
 ---
 
-## 🚀 快速开始
+## 🚀 Quick Start
 
-### 安装
+### Installation
 
-#### 方式 1：从立创开源广场安装（推荐）
+#### Option 1: Install from the Lichuang Open Source Plaza (recommended)
 
-1. 打开嘉立创 EDA 专业版
-2. 进入 **扩展 → 扩展管理器**
-3. 搜索 "AI Schematic Assistant"
-4. 点击安装
-5. 重启 EasyEDA Pro
+1. Open EasyEDA Pro.
+2. Go to **Extensions -> Extension Manager**.
+3. Search for `AI Schematic Assistant`.
+4. Click install.
+5. Restart EasyEDA Pro.
 
-#### 方式 2：从 GitHub Releases 下载
+#### Option 2: Download from GitHub Releases
 
-1. 访问 [Releases](https://github.com/jifengshandian/easyeda-ai-assistant/releases) 页面
-2. 下载最新版本的 `.eext` 文件
-3. 在 EasyEDA Pro 中：**扩展 → 扩展管理器 → 安装本地扩展**
-4. 选择下载的 `.eext` 文件
-5. 重启 EasyEDA Pro
+1. Open the [Releases](https://github.com/jifengshandian/easyeda-ai-assistant/releases) page.
+2. Download the latest `.eext` file.
+3. In EasyEDA Pro, go to **Extensions -> Extension Manager -> Install Local Extension**.
+4. Select the downloaded `.eext` file.
+5. Restart EasyEDA Pro.
 
-#### 方式 3：从源码构建
+#### Option 3: Build from source
 
 ```bash
-# 克隆仓库
+# Clone the repository
 git clone https://github.com/jifengshandian/easyeda-ai-assistant.git
 cd easyeda-ai-assistant
 
-# 安装依赖
+# Install dependencies
 npm install
 
-# 构建扩展
+# Build the extension
 npm run build
 ```
 
-### 使用
+### Usage
 
-1. 打开原理图
-2. 点击菜单 **AI Review → AI 原理图助手...**
-3. 首次使用需要配置 AI API：
-   - 点击配置按钮 ⚙️
-   - 填写 API URL 和 API Key
-   - 选择模型（**推荐 Grok 4.2**）
-4. 开始与 AI 对话！
+1. Open a schematic.
+2. Click **AI Review -> AI Schematic Assistant...**
+3. On first use, configure your AI API:
+   - Click the settings button `⚙️`
+   - Enter the API URL and API key
+   - Choose a model (**Grok 4.2 is recommended**)
+4. Start chatting with the AI.
 
-### 配置示例
+### Example configuration
 
-**推荐配置（Grok）**：
+**Recommended configuration (Grok)**
+
 - API URL: `https://api.x.ai/v1`
-- 模型: `grok-4.20-beta`
-- API Key: 从 [x.ai](https://x.ai) 获取
+- Model: `grok-4.20-beta`
+- API key: obtain one from [x.ai](https://x.ai)
 
-**其他兼容 API**：
+**Other compatible APIs**
+
 - OpenAI API (`gpt-5.2`)
 - DeepSeek API (`deepseek-chat`)
 - Google Gemini API (`gemini-3-flash`)
-- OpenRouter（聚合多模型，如 `claude-sonnet-4.6`）
-- 任何 OpenAI 兼容的 API
+- OpenRouter (multi-model access such as `claude-sonnet-4.6`)
+- Any OpenAI-compatible API
 
 ---
 
-## 📖 使用场景
+## 📖 Example Use Cases
 
-### 场景 1：原理图审查
+### Use case 1: Schematic review
 
-```
-你：帮我检查一下这个电源电路有没有问题
+```text
+You: Can you check whether there is anything wrong with this power supply circuit?
 
-AI：我看到你的电源电路使用了 LM2596 降压芯片...
-    [分析 U1 的引脚连接]
-    [检查去耦电容 C1、C2]
-    [验证反馈电阻 R1、R2 的分压比]
+AI: I can see that your power circuit uses an LM2596 buck regulator...
+    [Analyze the pin connections on U1]
+    [Check decoupling capacitors C1 and C2]
+    [Verify the divider ratio of feedback resistors R1 and R2]
 
-    建议：
-    1. C1 的位置应该更靠近 U1 的 VIN 引脚
-    2. R1、R2 的分压比计算...
-```
-
-点击对话中的 `U1`、`C1` 等蓝色标签，直接跳转到原理图对应位置！
-
-### 场景 2：芯片选型咨询
-
-```
-你：我需要一个 5V 转 3.3V 的 LDO，推荐一下
-
-AI：[联网搜索芯片资料]
-    根据你的原理图，我看到负载电流约 500mA...
-    推荐使用 AMS1117-3.3，理由：
-    1. 输出电流最大 1A，满足需求
-    2. 压差低（1.2V），发热小
-    3. 封装兼容，易于采购
-
-    [附上数据手册链接]
+    Suggestions:
+    1. C1 should be placed closer to the VIN pin of U1
+    2. The resistor divider ratio of R1 and R2 should be recalculated...
 ```
 
-### 场景 3：调试问题排查
+Click labels such as `U1` or `C1` in the conversation to jump directly to the right location in the schematic.
 
+### Use case 2: Component selection
+
+```text
+You: I need an LDO to convert 5V to 3.3V. What would you recommend?
+
+AI: [Searching component information online]
+    Based on your schematic, the load current looks to be around 500 mA...
+    I recommend AMS1117-3.3 for these reasons:
+    1. Up to 1 A output current, which is enough here
+    2. Low dropout voltage (1.2 V), so heat is manageable
+    3. Compatible package and easy to source
+
+    [Datasheet link attached]
 ```
-你：我的 STM32 无法启动，帮我看看
 
-AI：让我检查启动相关的电路...
-    [分析 BOOT0、BOOT1 引脚]
-    [检查复位电路]
-    [验证电源去耦]
+### Use case 3: Debugging startup issues
 
-    发现问题：
-    1. BOOT0 引脚悬空，应该下拉到 GND
-    2. NRST 引脚缺少上拉电阻
+```text
+You: My STM32 will not boot. Can you take a look?
+
+AI: Let me inspect the startup-related circuitry...
+    [Analyze BOOT0 and BOOT1]
+    [Check the reset circuit]
+    [Verify power decoupling]
+
+    Problems found:
+    1. BOOT0 is floating and should be pulled down to GND
+    2. NRST is missing a pull-up resistor
 ```
 
 ---
 
-## 🛠️ 开发
+## 🛠️ Development
 
-### 环境要求
+### Requirements
 
-- **Node.js** >= 20.17.0
-- **npm** >= 9.0.0
-- **EasyEDA Pro** >= 3.0.0
+- **Node.js** >= `20.17.0`
+- **npm** >= `9.0.0`
+- **EasyEDA Pro** >= `3.0.0`
 
-### 开发流程
+### Development workflow
 
 ```bash
-# 安装依赖
+# Install dependencies
 npm install
 
-# 开发构建
+# Build for development
 npm run build
 
-# 代码检查
+# Lint the code
 npm run lint
 
-# 自动修复
+# Auto-fix lint issues
 npm run fix
 ```
 
-### 项目结构
+### Project structure
 
-```
+```text
 .
-├── src/                    # 源代码
-│   ├── index.ts           # 扩展入口
-│   └── review/            # AI 审查模块
-│       ├── types.ts       # 类型定义
-│       ├── config.ts      # 配置管理
-│       ├── collector.ts   # 数据采集
-│       ├── mcp-bridge.ts  # MCP Bridge（WS 客户端）
-│       ├── chat-adapter.ts # AI 通信
-│       └── orchestrator.ts # 流程编排
-├── iframe/                # 对话 UI
+├── src/                      # Source code
+│   ├── index.ts              # Extension entry point
+│   └── review/               # AI review module
+│       ├── types.ts          # Shared types
+│       ├── config.ts         # Configuration management
+│       ├── collector.ts      # Data collection
+│       ├── mcp-bridge.ts     # MCP bridge (WS client)
+│       ├── chat-adapter.ts   # AI communication
+│       └── orchestrator.ts   # Flow orchestration
+├── iframe/                   # Chat UI
 │   └── chat.html
-├── packages/              # 独立子项目
-│   └── eda-mcp-server/   # MCP Server（对外暴露原理图数据）
+├── packages/                 # Standalone subprojects
+│   └── eda-mcp-server/       # MCP server for schematic data exposure
 │       ├── src/
-│       │   ├── index.ts          # 入口（CLI 启动）
-│       │   ├── ws-bridge.ts      # WS 接收扩展推送
-│       │   ├── snapshot-store.ts # 快照内存存储
-│       │   ├── mcp-server.ts     # Resources + Tools 注册
-│       │   └── types.ts          # 共享类型
+│       │   ├── index.ts          # CLI entry point
+│       │   ├── ws-bridge.ts      # Receives snapshots pushed by the extension
+│       │   ├── snapshot-store.ts # In-memory snapshot storage
+│       │   ├── mcp-server.ts     # Resource and tool registration
+│       │   └── types.ts          # Shared types
 │       └── package.json
-├── docs/                  # 文档
-├── extension.json         # 扩展配置
-├── package.json           # 项目配置
-├── CHANGELOG.md           # 更新日志
-└── README.md             # 本文件
+├── docs/                     # Documentation
+├── extension.json            # Extension manifest
+├── package.json              # Project configuration
+├── CHANGELOG.md              # Changelog
+└── README.md                 # This file
 ```
 
 ---
 
-## 📊 路线图
+## 📊 Roadmap
 
-### 近期计划
+### Near-term plan
 
-- [x] **MCP 数据暴露** - 独立 MCP Server，让 Cursor/Claude Code/Codex 等外部 AI 工具读取原理图数据（v1.4.0 已完成）
-- [x] **多页原理图支持** - 逐页采集策略（v1.0.0 已实现）
-- [x] **扩展元素类型** - 支持文本标注、总线、网络标记、图形图元等（v1.3.0 已实现）
-- [x] **Markdown 渲染增强** - GFM 表格、代码高亮、脚注等（v1.1.1 已实现）
+- [x] **MCP data exposure** so Cursor, Claude Code, Codex, and similar tools can read schematic data (`v1.4.0`)
+- [x] **Multi-page schematic support** with page-by-page collection (`v1.0.0`)
+- [x] **Expanded element coverage** for text annotations, buses, net labels, graphic primitives, and more (`v1.3.0`)
+- [x] **Improved Markdown rendering** with GFM tables, code highlighting, footnotes, and related features (`v1.1.1`)
 
-### 长期计划
+### Long-term plan
 
-- [ ] 支持更多网表格式（JLCEDA_PRO、EASYEDA_PRO）
-- [ ] 添加规则引擎，自动检测常见设计问题
-- [ ] 支持 PCB 审查
-- [ ] 多语言支持（英文、日文）
-- [ ] 导出审查报告（PDF、Markdown）
+- [ ] Support more netlist formats such as `JLCEDA_PRO` and `EASYEDA_PRO`
+- [ ] Add a rule engine for automatic detection of common design issues
+- [ ] Add PCB review support
+- [ ] Expand localization support
+- [ ] Export review reports as PDF or Markdown
 
 ---
 
-## 🤝 贡献
+## 🤝 Contributing
 
-欢迎贡献！本插件已上架**立创开源广场**和 **GitHub**，期待广大电子爱好者的指正和批评 🫡
+Contributions are welcome. The plugin is already published on the Lichuang Open Source Plaza and on GitHub, and feedback from electronics developers and hobbyists is very welcome.
 
-请查看 [贡献指南](CONTRIBUTING.md) 了解如何参与。
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
 
-### 贡献者
+### Contributors
 
-感谢所有贡献者的付出！
+Thanks to everyone who has contributed to the project.
 
 <!-- ALL-CONTRIBUTORS-LIST:START -->
 <!-- ALL-CONTRIBUTORS-LIST:END -->
 
 ---
 
-## 🐛 问题反馈
+## 🐛 Bug Reports
 
-如果你发现了 Bug 或有功能建议，请：
+If you find a bug or want to request a feature:
 
-1. 查看 [现有 Issues](https://github.com/jifengshandian/easyeda-ai-assistant/issues)
-2. 如果没有相关 Issue，[创建新 Issue](https://github.com/jifengshandian/easyeda-ai-assistant/issues/new/choose)
-3. 使用 Issue 模板，提供详细信息
-
----
-
-## 💬 讨论
-
-有问题或想法？欢迎在 [Discussions](https://github.com/jifengshandian/easyeda-ai-assistant/discussions) 讨论！
+1. Check the [existing issues](https://github.com/jifengshandian/easyeda-ai-assistant/issues).
+2. If there is no matching issue, [open a new one](https://github.com/jifengshandian/easyeda-ai-assistant/issues/new/choose).
+3. Use the issue template and include enough detail to reproduce the problem.
 
 ---
 
-## 📖 文档
+## 💬 Discussions
 
-- [更新日志](CHANGELOG.md) - 版本历史
-- [贡献指南](CONTRIBUTING.md) - 如何参与贡献
-- [行为准则](CODE_OF_CONDUCT.md) - 社区行为准则
-- [功能实现总结](docs/implementation-summary.md) - 技术细节
-- [网表延迟回填指南](docs/netlist-backfill-guide.md) - 延迟回填机制
-- [测试验证指南](docs/testing-guide.md) - 测试场景和方法
+Questions or ideas? Join the conversation in [Discussions](https://github.com/jifengshandian/easyeda-ai-assistant/discussions).
 
 ---
 
-## 📄 许可证
+## 📖 Documentation
 
-本项目采用 [Apache 2.0 许可证](LICENSE)。
+- [CHANGELOG.md](CHANGELOG.md) - version history
+- [CONTRIBUTING.md](CONTRIBUTING.md) - contribution guide
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) - community guidelines
+- [docs/implementation-summary.md](docs/implementation-summary.md) - implementation notes
+- [docs/netlist-backfill-guide.md](docs/netlist-backfill-guide.md) - delayed netlist backfill guide
+- [docs/testing-guide.md](docs/testing-guide.md) - testing scenarios and methods
 
 ---
 
-## 🙏 致谢
+## 📄 License
 
-感谢以下项目和工具：
+This project is licensed under the [Apache 2.0 License](LICENSE).
 
-- [嘉立创 EDA](https://pro.lceda.cn/) - 提供扩展 API
-- [pro-api-sdk](https://github.com/easyeda/pro-api-sdk) - 本项目基于此 SDK 开发，提供了 EDA 扩展开发的基础框架和 API 示例
-- [jlc-eda-mcp](https://github.com/XuF163/jlc-eda-mcp) - MCP 数据暴露功能的架构设计参考，提供了 EDA 扩展与 MCP Server 通过 WebSocket 桥接的思路
-- [@modelcontextprotocol/sdk](https://github.com/modelcontextprotocol/typescript-sdk) - MCP 协议 TypeScript 实现
-- [marked.js](https://marked.js.org/) - Markdown 解析
-- [DOMPurify](https://github.com/cure53/DOMPurify) - XSS 防护
-- [Cherry Studio](https://github.com/kangfenmao/cherry-studio) - 流式响应参考
+---
+
+## 🙏 Acknowledgements
+
+Thanks to the following projects and tools:
+
+- [JLCEDA / EasyEDA Pro](https://pro.lceda.cn/) for the extension APIs
+- [pro-api-sdk](https://github.com/easyeda/pro-api-sdk) for the SDK foundation and API examples used by this project
+- [jlc-eda-mcp](https://github.com/XuF163/jlc-eda-mcp) for architectural ideas behind the MCP data-exposure bridge
+- [@modelcontextprotocol/sdk](https://github.com/modelcontextprotocol/typescript-sdk) for the TypeScript MCP implementation
+- [marked.js](https://marked.js.org/) for Markdown parsing
+- [DOMPurify](https://github.com/cure53/DOMPurify) for XSS protection
+- [Cherry Studio](https://github.com/kangfenmao/cherry-studio) for streaming-response inspiration
 
 ---
 
@@ -473,6 +484,6 @@ npm run fix
 
 ---
 
-**注意**：本项目基于 [pro-api-sdk](https://github.com/easyeda/pro-api-sdk) 开发，是一个独立的 AI 原理图助手扩展实现。
+**Note:** this project is built on top of [pro-api-sdk](https://github.com/easyeda/pro-api-sdk), but it is an independent AI schematic assistant extension.
 
-如果这个项目对你有帮助，请给个 ⭐️ Star！
+If this project helps you, consider giving it a star.
