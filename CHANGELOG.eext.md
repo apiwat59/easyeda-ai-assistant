@@ -1,155 +1,49 @@
-# 更新日志
+# Changelog
 
 ## [1.4.1] - 2026-03-13
 
-### 修复
+### Fixes
 
-- **修复 Kimi API 400 错误** - thinking 模式下 temperature 必须为 1，已自动适配
-- **修复 OpenAI o1/o3 模型报错** - reasoning 模型不接受 temperature 参数，已自动跳过
-- **修复存储污染导致配置保存失败** - 新增自动检测与修复机制，无需手动清除数据
+- Fixed a Kimi API 400 issue by adapting `temperature=1` automatically in thinking mode
+- Fixed OpenAI o1/o3 model errors by skipping unsupported temperature parameters
+- Fixed config-save failures caused by storage corruption with automatic detection and recovery
 
-### 优化
+### Improvements
 
-- **插件体积大幅缩减** - 从 23MB 降至 1.2MB
+- Reduced plugin package size from 23 MB to 1.2 MB
 
 ## [1.4.0] - 2026-03-07
 
-### 新增功能
+### Added
 
-- **MCP 数据暴露** - 让 Cursor、Claude Code、Codex 等外部 AI 工具通过 MCP 协议读取原理图数据
-  - 独立 eda-mcp-server（`npx eda-mcp-server` 即可启动）
-  - 9 个数据资源（器件、引脚、网络、DRC、工程信息等）
-  - 14 个查询工具（器件查询、网络追踪、电源分析、BOM 生成、悬空引脚检查等）
-  - 支持远程连接（`--host 0.0.0.0`），EDA 和 AI 工具可跨机器协作
-  - AI 可在运行时动态修改连接地址，无需编辑配置文件
-- **MCP Bridge** - 扩展端自动将原理图数据推送到 MCP Server
-  - 数据采集后自动推送，server 重连后自动拉取
-  - 配置面板新增 WS 桥接地址设置
+- MCP data exposure for external AI tools such as Cursor, Claude Code, and Codex
+- Standalone `eda-mcp-server`
+- Read-only schematic resources and tool APIs
+- Remote MCP bridge support
 
 ## [1.3.2] - 2026-03-07
 
-### 修复
+### Fixes
 
-- **修复 Thinking Block 收起/展开按钮失效** - 终止 AI → 刷新 → 继续提问 → AI 回答后，点击思考过程的收起按钮无反应
-  - 将展开状态从 DOM className 提升到数据层 (block.uiExpanded)，renderMessages 全量重建不再丢失状态
-  - StreamManager 新增 reset() 方法，全量重渲染前取消挂起的 RAF 回调，防止旧更新覆写新 DOM
-  - className 操作从字符串拼接/replace 改为 classList API，消除边界条件风险
-
-### 移除
-
-- **移除最大化按钮** - 移除窗口标题栏的最大化按钮（有 bug），保留最小化按钮
+- Fixed the Thinking Block collapse/expand button after refresh and continued chat
+- Improved render-state persistence for thinking blocks
+- Prevented stale RAF updates from overwriting fresh DOM state
 
 ## [1.3.1] - 2026-03-06
 
-### 修复
+### Fixes
 
-- **修复模块多实例导致的三重处理问题** - EDA 平台加载模块 3 次，每条消息触发 3 次 AI 请求和 3 个独立响应
-  - 将 11 个关键状态统一收敛到 globalThis 全局共享对象，确保所有实例操作同一份状态
-  - epoch 版本号全局化，只有最后注册的订阅能通过校验
-  - RequestGuard 全局共享，重复请求被正确拦截
+- Fixed triple-processing caused by multiple module instances
+- Consolidated shared state into a single global object
+- Improved duplicate-request protection
 
 ## [1.3.0] - 2026-03-05
 
-### 新增功能
+### Added
 
-- **DRC 检查结果采集** - 自动运行 DRC 检查并将结果提供给 AI 分析
-- **工程元信息采集** - 采集项目名称、描述等工程信息
-- **图形图元采集** - 支持圆弧、圆、多边形、矩形等图形元素采集
-- **独立引脚图元采集** - 采集原理图中的独立引脚信息
-- **SCH-REVIEW-COMPACT v2 格式** - 新的序列化格式，向后兼容 v1
-- **配置面板增强** - 新增"图形图元"和"增强数据"两个 checkbox 分组
-
-### 设计要点
-
-- 所有新字段默认关闭，不增加默认 Token 消耗
-- 7 个采集函数均有完整降级处理，不阻塞主流程
-
-## [1.2.6] - 2026-02-28
-
-### 改进
-
-- **配置面板折叠分组** - 配置项按功能分为「基础配置」「MCP 工具网关」「原理图字段」「高级设置」四个可折叠分组，默认仅展开基础配置
-- **配置面板可滚动** - 模态框内容超出窗口高度时自动出现滚动条，不再溢出
-
-### 技术改进
-
-- 模态框采用 flex 布局 + max-height 约束，适配不同窗口尺寸
-- 折叠分组支持 aria-expanded 无障碍属性
-- 自定义系统提示词功能（v1.2.5 新增）
-
-## [1.2.5] - 2026-02-23
-
-### 重大修复
-
-- **修复原理图刷新后 AI 无法感知数据变化** - AI 在对话中修改原理图后，不再依赖旧的分析结论，会自动以最新数据为准
-- **修复 AI 重复回答问题** - 事件发送从 API 层上移到消息循环层，避免工具调用中间轮次重复触发
-- **修复 MCP 工具提示框重复显示** - ToolOrchestrator 复用时正确更新 requestId
-- **修复插件重开后消息重复处理** - 引入 epoch 版本号机制，自动丢弃旧订阅回调
-- **修复重新生成功能被通知消息干扰** - clear() 方法正确跳过数据更新通知对
-
-### 新增功能
-
-- **数据更新智能通知** - 刷新后向 AI 注入包含数据摘要的通知，帮助 AI 确认数据已变化
-- **实时数据原则提示词** - System Prompt 中增加明确指令，引导 AI 以最新数据为唯一事实来源
-
-### 技术改进
-
-- System Prompt 提取到独立模块 prompt-builder.ts
-- emitCompleteBlocks 事件发送统一由 sendMessage 控制
-- epoch 守卫覆盖所有关键 MessageBus 订阅（USER_MESSAGE、ABORT、REGENERATE、CLEAR、LOCATE、RESTORE）
-- 会话清理时同步清除防重集合，避免旧请求 ID 残留
-
-## [1.2.4] - 2026-02-22
-
-### 重大修复
-
-- **修复中文元件名导致的并发采集问题** - 手动刷新不再触发多次并发采集
-- **修复元件丢失问题** - 采集过程中不再因单个字段失败而丢失整个元件
-- **增强采集鲁棒性** - 关键字段失败才跳过元件，非关键字段失败使用默认值
-
-### 新增功能
-
-- **刷新按钮** - 无需关闭 UI 即可重新采集原理图数据
-- **智能跳转优化** - AI 消息中的器件标签可正常点击跳转
-
-### 技术改进
-
-- 全局采集锁 - 防止多实例并发采集
-- 引脚逐个容错 - 单个引脚失败不影响其他引脚
-- 日志体系优化 - 结构化日志、级别过滤、聚合输出
-
-## [1.1.2] - 2026-02-20
-
-### 修复
-
-- 修复 Markdown 库加载失败 - CDN + 本地双重加载策略
-
-## [1.1.1] - 2026-02-20
-
-### 新增
-
-- 窗口大小可配置
-- 代码语法高亮
-- Markdown 渲染增强
-
-### 修复
-
-- 修复图片上传失败
-- 修复重复回答问题
-
-## [1.1.0] - 2026-02-19
-
-### 新增
-
-- 思考过程显示
-- 支持更多 AI 模型
-- 历史会话增强
-
-## [1.0.0] - 2026-02-19
-
-### 首次发布
-
-- 文字形式获取原理图信息
-- AI 对话分析
-- 智能跳转定位
-- 历史记录保存
+- DRC result collection
+- Project metadata collection
+- Graphic primitive collection
+- Primitive pin collection
+- SCH-REVIEW-COMPACT v2 format
+- Expanded configuration groups

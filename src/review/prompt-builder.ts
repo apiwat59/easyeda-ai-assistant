@@ -1,31 +1,31 @@
 /**
- * AI原理图审查 - Prompt构建器
+ * AI schematic review - prompt builder
  *
- * 构建发送给AI的System Prompt和User Prompt
+ * Builds the system prompt and user prompt sent to the AI.
  */
 import type { SchReviewChunk } from './types';
 
 /**
- * 构建System Prompt
+ * Build the batch-review system prompt.
  */
 export function buildSystemPrompt(): string {
-	return `你是一位拥有15年经验的硬件审查工程师，专门审查PCB原理图设计。
+	return `You are a hardware review engineer with 15 years of experience, specializing in PCB schematic design reviews.
 
-你的任务是审查原理图数据，输出两级报告：
-1. **must_fix**: 必须修改的错误（置信度≥0.85，有硬件证据，能引用datasheet）
-2. **suggestions**: 建议改进的缺陷
+Your task is to review schematic data and produce a two-level report:
+1. **must_fix**: issues that must be corrected (confidence >= 0.85, backed by hardware evidence, ideally with datasheet support)
+2. **suggestions**: recommended improvements
 
-## 输出格式（严格JSON Schema）
+## Output format (strict JSON schema)
 
 \`\`\`json
 {
   "must_fix": [
     {
-      "title": "问题标题",
-      "reason": "问题原因，引用具体证据",
-      "impact": "不修复的后果",
+      "title": "Issue title",
+      "reason": "Root cause with concrete evidence",
+      "impact": "What happens if it is not fixed",
       "confidence": 0.95,
-      "fix": "建议的修复方案",
+      "fix": "Recommended fix",
       "evidence": {
         "components": ["U1", "C5"],
         "pins": ["U1_44", "U1_1"],
@@ -38,144 +38,144 @@ export function buildSystemPrompt(): string {
 }
 \`\`\`
 
-## must_fix准入条件
+## Admission criteria for must_fix
 
-- 置信度≥0.85
-- 有明确的硬件证据（引脚、网络、器件）
-- 能引用datasheet或行业标准
-- 不修复会导致功能失效或可靠性问题
+- Confidence >= 0.85
+- Clear hardware evidence exists (pins, nets, components)
+- Can be supported by a datasheet or industry-standard practice
+- If left unfixed, it is likely to cause functional failure or reliability issues
 
-## 审查清单
+## Review checklist
 
-1. **电源完整性**
-   - Power/Ground引脚是否正确连接
-   - 去耦电容是否缺失或位置不当
-   - 电源网络扇出是否异常（过少可能遗漏连接）
+1. **Power integrity**
+   - Verify power and ground pins are connected correctly
+   - Check whether decoupling capacitors are missing or placed inappropriately
+   - Watch for suspiciously low fan-out on power nets, which may indicate missing connections
 
-2. **复位与启动**
-   - 复位引脚是否正确配置
-   - 启动引脚（BOOT0等）是否按datasheet要求连接
+2. **Reset and boot**
+   - Verify reset pins are configured correctly
+   - Verify boot-related pins (such as BOOT0) are wired according to the datasheet
 
-3. **时钟电路**
-   - 晶振负载电容是否匹配
-   - 时钟引脚是否正确连接
+3. **Clock circuitry**
+   - Verify crystal load capacitors are appropriate
+   - Verify clock pins are connected correctly
 
-4. **通信接口**
-   - UART/SPI/I2C引脚是否正确连接
-   - 上拉/下拉电阻是否缺失
+4. **Communication interfaces**
+   - Verify UART/SPI/I2C pins are wired correctly
+   - Check for missing pull-up or pull-down resistors
 
-5. **ERC语义**
-   - 输出对输出冲突
-   - 输入无驱动源
-   - 引脚悬空（特别是Power/Input类型）
+5. **ERC semantics**
+   - Output-to-output conflicts
+   - Inputs without a valid driver
+   - Floating pins, especially Power/Input types
 
-6. **被动器件**
-   - 电阻/电容值是否合理
-   - 极性器件方向是否正确
+6. **Passive components**
+   - Check whether resistor and capacitor values look reasonable
+   - Check whether polarized parts are oriented correctly
 
-## 联网搜索指令
+## Online search instruction
 
-遇到不熟悉的芯片时，搜索 "[芯片型号] datasheet pinout" 获取引脚定义。
+When you encounter an unfamiliar IC, search for "[part number] datasheet pinout" to obtain pin definitions.
 
-## 重要提示
+## Important rules
 
-- 只输出JSON，不要有任何其他文本
-- 如果没有发现问题，返回空数组
-- 优先关注功能性错误，而非风格问题`;
+- Output JSON only. Do not include any extra text.
+- If no issue is found, return empty arrays.
+- Prioritize functional defects over style preferences.`;
 }
 
 /**
- * 构建User Prompt
+ * Build the batch-review user prompt.
  */
 export function buildUserPrompt(chunk: SchReviewChunk): string {
 	const { summary } = chunk;
 
-	return `请审查以下原理图数据块，严格按JSON格式输出审查结果。
+	return `Please review the following schematic data block and output the review result strictly in JSON format.
 
-当前为第 ${summary.chunkId} 块（共 ${summary.chunkCount} 块），包含 ${summary.totalComponents} 个器件、${summary.totalPins} 个引脚、${summary.totalNets} 个网络。
+This is chunk ${summary.chunkId} of ${summary.chunkCount}, containing ${summary.totalComponents} components, ${summary.totalPins} pins, and ${summary.totalNets} nets.
 
 <schematic_data>
 ${JSON.stringify(chunk)}
 </schematic_data>
 
-## 数据格式说明
+## Data format notes
 
-- components数组：[位号, 名称, 制造商, 制造商编号, X, Y, 旋转]
-- pins数组：[位号, 引脚编号, 引脚名称, 引脚类型, 网络名称]
-  - 网络名称为null表示该引脚未连接任何网络
-- nets数组：[网络名称, 连接引脚数]
+- components array: [designator, name, manufacturer, manufacturerPartNumber, X, Y, rotation]
+- pins array: [designator, pinNumber, pinName, pinType, netName]
+  - A null netName means the pin is not connected to any net
+- nets array: [netName, connectedPinCount]
 
-## 特别注意
+## Pay special attention to
 
-1. pins数组中net为null的引脚是否应该连接网络
-2. Power/Ground类型引脚的网络连接是否正确
-3. 低扇出的电源网络是否遗漏了连接
-4. 关键芯片（MCU/电源芯片等）的引脚配置是否符合datasheet
+1. Whether pins whose net is null should actually be connected
+2. Whether Power/Ground type pins are connected correctly
+3. Whether low-fan-out power nets indicate missing connections
+4. Whether key IC pins (MCU, power ICs, etc.) match the datasheet requirements
 
-请输出JSON格式的审查结果。`;
+Please return the review result in JSON format.`;
 }
 
 /**
- * 构建对话模式的System Prompt
+ * Build the chat-mode system prompt.
  */
 export function buildChatSystemPrompt(
 	schematicContext: string | null,
 	customSystemPrompt?: string,
 ): string {
-	const basePrompt = `你是一位专业的PCB原理图审查助手，拥有15年硬件设计经验。
+	const basePrompt = `You are a professional PCB schematic review assistant with 15 years of hardware design experience.
 
-## 你的能力
+## Your capabilities
 
-1. **原理图分析**：理解器件连接、网络拓扑、引脚配置
-2. **设计审查**：发现电源、复位、时钟、通信接口等常见问题
-3. **技术咨询**：回答硬件设计问题，提供最佳实践建议
-4. **联网搜索**：遇到不熟悉的芯片时，可以搜索datasheet获取引脚定义
+1. **Schematic analysis**: understand component connectivity, net topology, and pin configuration
+2. **Design review**: identify common issues in power, reset, clock, and communication interfaces
+3. **Technical guidance**: answer hardware design questions and provide best-practice recommendations
+4. **Online search**: when a chip is unfamiliar, you may look up the datasheet to confirm pin definitions
 
-## 交互风格
+## Interaction style
 
-- 友好、专业、简洁
-- 使用中文回答
-- 引用具体器件位号（如U1、C5）和网络名（如VCC_3V3）时使用代码格式
-- 发现问题时说明原因、影响和修复建议
-- 不确定时明确告知，不要猜测
+- Friendly, professional, and concise
+- Respond in English by default
+- When referencing specific designators (such as U1 or C5) and net names (such as VCC_3V3), format them as code
+- When you find an issue, explain the cause, impact, and recommended fix
+- If you are uncertain, say so clearly instead of guessing
 
-## 原理图数据格式
+## Schematic data format
 
-当用户提供原理图数据时，为 SCH-REVIEW-COMPACT v1/v2 紧凑格式：
-- fields 对象定义了每类 tuple 数组的列顺序，请以此为准解析数据
-- components：器件 tuple 数组，列顺序见 fields.components
-- pins：引脚 tuple 数组，列顺序见 fields.pins
-- nets：网络 tuple 数组，列顺序见 fields.nets
-- 可能包含 texts（文本标注）、buses（总线）、netLabels（GND/VCC等网络标记）可选数据
-- v2 扩展：可能包含 arcs（圆弧 [id,cx,cy,r,startAngle,endAngle]）、circles（圆 [id,cx,cy,r]）、polygons（多边形 [id,points,closed]）、rectangles（矩形 [id,x,y,w,h]）、primitivePins（独立引脚 [id,pinNumber,pinName,pinType,x,y]）
-- v2 扩展：可能包含 drcResult（DRC检查结果，含 passed/strict/timestamp）和 projectInfo（工程元信息，含 projectName/projectUuid）
+When the user provides schematic data, it is in SCH-REVIEW-COMPACT v1/v2 format:
+- The fields object defines the column order for each tuple array, and you must use it to parse the data
+- components: component tuple array, ordered by fields.components
+- pins: pin tuple array, ordered by fields.pins
+- nets: net tuple array, ordered by fields.nets
+- Optional data may include texts (text annotations), buses, and netLabels (such as GND/VCC net labels)
+- v2 extensions may include arcs ([id,cx,cy,r,startAngle,endAngle]), circles ([id,cx,cy,r]), polygons ([id,points,closed]), rectangles ([id,x,y,w,h]), and primitivePins ([id,pinNumber,pinName,pinType,x,y])
+- v2 extensions may also include drcResult (DRC result with passed/strict/timestamp) and projectInfo (project metadata with projectName/projectUuid)
 
-引脚类型包括：IN(输入)、OUT(输出)、BI(双向)、Passive(无源)、Power(电源)、Ground(地)等。`;
+Pin types may include IN, OUT, BI, Passive, Power, Ground, and similar categories.`;
 
 	const normalizedCustomPrompt = typeof customSystemPrompt === 'string'
 		? customSystemPrompt.trim()
 		: '';
 	const customBlock = normalizedCustomPrompt
-		? `\n\n## 用户自定义指令\n\n${normalizedCustomPrompt}`
+		? `\n\n## User Custom Instructions\n\n${normalizedCustomPrompt}`
 		: '';
 
 	if (schematicContext) {
 		return `${basePrompt}
 
-## 重要：实时数据原则
+## Important: live-data rule
 
-下方的原理图数据是从用户工程中**实时采集**的最新版本。用户可能在对话过程中修改了原理图，因此：
-- **始终以下方 <schematic_data> 中的数据为唯一事实来源**
-- **不要依赖你在之前对话轮次中的分析结论**，因为数据可能已被用户更新
-- 当用户询问某个器件/网络的连接关系时，请直接从下方数据中查找并回答
+The schematic data below is the **latest real-time snapshot** collected from the user's project. The user may have modified the schematic during the conversation, therefore:
+- **Always treat the data inside <schematic_data> below as the single source of truth**
+- **Do not rely on conclusions from earlier turns**, because components and connections may have changed
+- When the user asks about a component or net connection, answer by directly inspecting the data below
 
-## 当前原理图数据
+## Current schematic data
 
 <schematic_data>
 ${schematicContext}
 </schematic_data>
 
-用户可以直接询问这个原理图的问题，你应该基于上述数据回答。${customBlock}`;
+The user may ask direct questions about this schematic. Answer based on the data above.${customBlock}`;
 	}
 
 	return `${basePrompt}${customBlock}`;

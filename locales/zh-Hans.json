@@ -1,15 +1,15 @@
 {
-	"About": "关于",
-	"EasyEDA extension SDK v": "嘉立创EDA 扩展 SDK v${1}",
-	"AI Schematic Review...": "AI 原理图审查...",
-	"Review Settings...": "审查设置...",
-	"AI Review": "AI 审查",
-	"Schematic review started": "原理图审查已开始",
-	"Collecting schematic data...": "正在提取原理图数据...",
-	"Running local rule checks...": "正在执行本地规则检查...",
-	"Sending to AI for analysis...": "正在发送给AI分析...",
-	"Review complete": "审查完成",
-	"Review failed": "审查失败",
-	"No active schematic document": "没有打开的原理图文档",
-	"AI API Key not configured": "AI API Key未配置"
+	"About": "About",
+	"EasyEDA extension SDK v": "EasyEDA extension SDK v${1}",
+	"AI Schematic Review...": "AI Schematic Review...",
+	"Review Settings...": "Review Settings...",
+	"AI Review": "AI Review",
+	"Schematic review started": "Schematic review started",
+	"Collecting schematic data...": "Collecting schematic data...",
+	"Running local rule checks...": "Running local rule checks...",
+	"Sending to AI for analysis...": "Sending to AI for analysis...",
+	"Review complete": "Review complete",
+	"Review failed": "Review failed",
+	"No active schematic document": "No active schematic document",
+	"AI API Key not configured": "AI API Key not configured"
 }

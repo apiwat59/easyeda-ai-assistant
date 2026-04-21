@@ -202,7 +202,7 @@ export function isCollectionInProgress(): boolean {
 export async function startAIChat(): Promise<void> {
 	// 防重入：openIFrame 是异步调用，双击菜单会导致两次调用并发执行
 	if (state.startAIChatInFlight) {
-		publishDebugLog('warn', '[startAIChat] 忽略重复调用（上次尚未完成）');
+		publishDebugLog('warn', '[startAIChat] Ignoring duplicate call because the previous one has not finished yet');
 		return;
 	}
 	state.startAIChatInFlight = true;
@@ -220,7 +220,7 @@ export async function startAIChat(): Promise<void> {
 			});
 		}
 		catch {
-			throw new ReviewError(ErrorCode.UI_IFRAME_FAILED, '无法打开对话面板');
+			throw new ReviewError(ErrorCode.UI_IFRAME_FAILED, 'Failed to open the chat panel');
 		}
 
 		// 打开新面板时重置会话容器，避免旧面板状态串入
@@ -259,7 +259,7 @@ export function triggerBackgroundCollection(
 		lock.rerunReason = reason;
 		lock.rerunNotify = lock.rerunNotify || notifyIFrame;
 		if (!wasPending) {
-			publishDebugLog('info', '后台采集进行中，已登记重跑', {
+			publishDebugLog('info', 'Background collection is already running. A rerun has been queued', {
 				reason,
 				notifyIFrame,
 				epoch: lock.epoch,
@@ -384,7 +384,7 @@ async function executeBackgroundCollection(
 		const errorMsg = error instanceof Error ? error.message : String(error);
 
 		// 发送错误日志到 IFrame
-		publishDebugLog('error', `采集失败 (耗时 ${elapsed}ms): ${errorMsg}`, {
+		publishDebugLog('error', `Collection failed (elapsed ${elapsed}ms): ${errorMsg}`, {
 			reason,
 			epoch,
 		});
@@ -423,14 +423,14 @@ async function scheduleNetlistBackfill(
 	if (!netlistState || netlistState.completed) {
 		publishToIFrame('ai-chat/debug-log', {
 			level: 'info',
-			message: `网表回填检查: ${!netlistState ? '无后台网表任务' : '网表已完成（无需回填）'}`,
+			message: `Netlist backfill check: ${!netlistState ? 'no background netlist task' : 'netlist already completed (no backfill needed)'}`,
 		});
 		return;
 	}
 
 	publishToIFrame('ai-chat/debug-log', {
 		level: 'info',
-		message: '网表后台获取中，将在完成后自动回填引脚绑定...',
+		message: 'Background netlist fetch is in progress. Pin bindings will be backfilled automatically when it completes...',
 	});
 
 	let pollCount = 0;
@@ -446,7 +446,7 @@ async function scheduleNetlistBackfill(
 			eda.sys_Timer.clearIntervalTimer(TIMER_ID);
 			publishToIFrame('ai-chat/debug-log', {
 				level: 'warn',
-				message: '网表后台获取超时（60秒），放弃回填',
+				message: 'Background netlist fetch timed out after 60 seconds. Skipping backfill',
 			});
 			clearBackgroundNetlistState();
 			return;
@@ -458,7 +458,7 @@ async function scheduleNetlistBackfill(
 			eda.sys_Timer.clearIntervalTimer(TIMER_ID);
 			publishToIFrame('ai-chat/debug-log', {
 				level: 'warn',
-				message: `网表回填任务被取消（epoch ${epoch} 已过期）`,
+				message: `Netlist backfill task was canceled because epoch ${epoch} expired`,
 			});
 			return;
 		}
@@ -476,7 +476,7 @@ async function scheduleNetlistBackfill(
 		if (!currentState.result) {
 			publishToIFrame('ai-chat/debug-log', {
 				level: 'warn',
-				message: `网表后台获取失败（耗时 ${currentState.duration}ms），无法回填`,
+				message: `Background netlist fetch failed (elapsed ${currentState.duration}ms). Backfill cannot continue`,
 			});
 			clearBackgroundNetlistState();
 			return;
@@ -485,7 +485,7 @@ async function scheduleNetlistBackfill(
 		// 网表获取成功，开始回填
 		publishToIFrame('ai-chat/debug-log', {
 			level: 'info',
-			message: `网表后台获取成功（耗时 ${currentState.duration}ms），开始回填引脚绑定...`,
+			message: `Background netlist fetch succeeded (elapsed ${currentState.duration}ms). Starting pin-binding backfill...`,
 		});
 
 		try {
@@ -495,7 +495,7 @@ async function scheduleNetlistBackfill(
 			if (netlistMap.size === 0) {
 				publishToIFrame('ai-chat/debug-log', {
 					level: 'warn',
-					message: '网表解析结果为空，无法回填',
+					message: 'The parsed netlist result is empty, so backfill cannot be performed',
 				});
 				clearBackgroundNetlistState();
 				return;
@@ -612,10 +612,10 @@ function setupChatListeners(): void {
 
 	// 递增版本号，使旧回调在执行时自动失效
 	const currentEpoch = ++state.listenerEpoch;
-	publishDebugLog('info', '[setupChatListeners] 初始化订阅', {
+	publishDebugLog('info', '[setupChatListeners] Initializing subscriptions', {
 		previousSubscriptionCount: prevCount,
 		listenerEpoch: currentEpoch,
-		note: prevCount > 0 ? '检测到旧订阅，已尝试清理并递增 epoch' : '首次注册',
+		note: prevCount > 0 ? 'stale subscriptions detected; attempted cleanup and incremented epoch' : 'first registration',
 	});
 
 	// 监听IFrame请求原理图数据
@@ -647,7 +647,7 @@ function setupChatListeners(): void {
 
 	// 监听IFrame请求刷新原理图数据
 	subscribe(CHAT_TOPICS.REFRESH_DATA, () => {
-		publishDebugLog('info', '[手动刷新] 用户触发原理图数据刷新');
+		publishDebugLog('info', '[manual refresh] User triggered a schematic-data refresh');
 		void triggerBackgroundCollection('manual-refresh', true);
 	});
 
@@ -656,7 +656,7 @@ function setupChatListeners(): void {
 		const config = loadConfig();
 		const customPrompt = typeof config.customSystemPrompt === 'string' ? config.customSystemPrompt.trim() : '';
 		if (customPrompt) {
-			publishDebugLog('info', '[REQUEST_CONFIG] 加载自定义系统提示词', {
+			publishDebugLog('info', '[REQUEST_CONFIG] Loading custom system prompt', {
 				length: customPrompt.length,
 			});
 		}
@@ -791,7 +791,7 @@ function setupChatListeners(): void {
 			return;
 		// epoch 校验：丢弃旧版本订阅产生的回调（EDA MessageBus cancel 可能不彻底）
 		if (currentEpoch !== state.listenerEpoch) {
-			publishDebugLog('warn', '[USER_MESSAGE] 丢弃过期订阅回调', {
+			publishDebugLog('warn', '[USER_MESSAGE] Dropping stale subscription callback', {
 				callbackEpoch: currentEpoch,
 				currentEpoch: state.listenerEpoch,
 				requestId: (data as any)?.requestId,
@@ -806,7 +806,7 @@ function setupChatListeners(): void {
 		if (!data || typeof data !== 'object')
 			return;
 		if (currentEpoch !== state.listenerEpoch) {
-			publishDebugLog('warn', '[ABORT_REQUEST] 丢弃过期订阅回调', {
+			publishDebugLog('warn', '[ABORT_REQUEST] Dropping stale subscription callback', {
 				callbackEpoch: currentEpoch,
 				currentEpoch: state.listenerEpoch,
 			});
@@ -820,7 +820,7 @@ function setupChatListeners(): void {
 		if (!data || typeof data !== 'object')
 			return;
 		if (currentEpoch !== state.listenerEpoch) {
-			publishDebugLog('warn', '[REGENERATE_REQUEST] 丢弃过期订阅回调', {
+			publishDebugLog('warn', '[REGENERATE_REQUEST] Dropping stale subscription callback', {
 				callbackEpoch: currentEpoch,
 				currentEpoch: state.listenerEpoch,
 			});
@@ -832,7 +832,7 @@ function setupChatListeners(): void {
 	// 监听定位请求
 	subscribe(CHAT_TOPICS.LOCATE, async (data: any) => {
 		if (currentEpoch !== state.listenerEpoch) {
-			publishDebugLog('warn', '[LOCATE] 丢弃过期订阅回调', {
+			publishDebugLog('warn', '[LOCATE] Dropping stale subscription callback', {
 				callbackEpoch: currentEpoch,
 				currentEpoch: state.listenerEpoch,
 			});
@@ -850,52 +850,52 @@ function setupChatListeners(): void {
 
 		// 验证字段类型和长度
 		if (data.apiUrl && (typeof data.apiUrl !== 'string' || data.apiUrl.length > 500)) {
-			publishDebugLog('warn', '配置验证失败: 无效的 apiUrl');
+			publishDebugLog('warn', 'Config validation failed: invalid apiUrl');
 			return;
 		}
 		if (data.apiKey && (typeof data.apiKey !== 'string' || data.apiKey.length > 500)) {
-			publishDebugLog('warn', '配置验证失败: 无效的 apiKey');
+			publishDebugLog('warn', 'Config validation failed: invalid apiKey');
 			return;
 		}
 		if (data.model && (typeof data.model !== 'string' || data.model.length > 100)) {
-			publishDebugLog('warn', '配置验证失败: 无效的 model');
+			publishDebugLog('warn', 'Config validation failed: invalid model');
 			return;
 		}
 		if (data.mcpEnabled !== undefined && typeof data.mcpEnabled !== 'boolean') {
-			publishDebugLog('warn', '配置验证失败: 无效的 mcpEnabled');
+			publishDebugLog('warn', 'Config validation failed: invalid mcpEnabled');
 			return;
 		}
 		if (data.mcpAutoApprove !== undefined && typeof data.mcpAutoApprove !== 'boolean') {
-			publishDebugLog('warn', '配置验证失败: 无效的 mcpAutoApprove');
+			publishDebugLog('warn', 'Config validation failed: invalid mcpAutoApprove');
 			return;
 		}
 		if (data.mcpGatewayUrl && (typeof data.mcpGatewayUrl !== 'string' || data.mcpGatewayUrl.length > 500)) {
-			publishDebugLog('warn', '配置验证失败: 无效的 mcpGatewayUrl');
+			publishDebugLog('warn', 'Config validation failed: invalid mcpGatewayUrl');
 			return;
 		}
 		if (data.mcpGatewayApiKey && (typeof data.mcpGatewayApiKey !== 'string' || data.mcpGatewayApiKey.length > 500)) {
-			publishDebugLog('warn', '配置验证失败: 无效的 mcpGatewayApiKey');
+			publishDebugLog('warn', 'Config validation failed: invalid mcpGatewayApiKey');
 			return;
 		}
 		if (data.mcpBridgeUrl !== undefined && (typeof data.mcpBridgeUrl !== 'string' || data.mcpBridgeUrl.length > 500)) {
-			publishDebugLog('warn', '配置验证失败: 无效的 mcpBridgeUrl');
+			publishDebugLog('warn', 'Config validation failed: invalid mcpBridgeUrl');
 			return;
 		}
 		if (data.customSystemPrompt !== undefined) {
 			if (typeof data.customSystemPrompt !== 'string') {
-				publishDebugLog('warn', '配置验证失败: customSystemPrompt 类型错误');
+				publishDebugLog('warn', 'Config validation failed: customSystemPrompt has the wrong type');
 				publishToIFrame(CHAT_TOPICS.ERROR, {
-					message: '配置保存失败: 自定义系统提示词格式无效',
+					message: 'Failed to save config: invalid custom system prompt format',
 					code: 'CONFIG_VALIDATION_FAILED',
 				});
 				return;
 			}
 			if (data.customSystemPrompt.length > 5000) {
-				publishDebugLog('warn', '配置验证失败: customSystemPrompt 超长', {
+				publishDebugLog('warn', 'Config validation failed: customSystemPrompt is too long', {
 					length: data.customSystemPrompt.length,
 				});
 				publishToIFrame(CHAT_TOPICS.ERROR, {
-					message: '配置保存失败: 自定义系统提示词最多 5000 字符',
+					message: 'Failed to save config: the custom system prompt must be at most 5000 characters',
 					code: 'CONFIG_VALIDATION_FAILED',
 				});
 				return;
@@ -905,9 +905,9 @@ function setupChatListeners(): void {
 		// 验证 schematicFields（若存在，必须是纯 boolean 键值对对象）
 		if (data.schematicFields !== undefined) {
 			if (typeof data.schematicFields !== 'object' || data.schematicFields === null || Array.isArray(data.schematicFields)) {
-				publishDebugLog('warn', '配置验证失败: schematicFields 类型错误');
+				publishDebugLog('warn', 'Config validation failed: schematicFields has the wrong type');
 				publishToIFrame(CHAT_TOPICS.ERROR, {
-					message: '配置保存失败: schematicFields 格式无效',
+					message: 'Failed to save config: schematicFields has an invalid format',
 					code: 'CONFIG_VALIDATION_FAILED',
 				});
 				return;
@@ -915,7 +915,7 @@ function setupChatListeners(): void {
 			// 校验所有值必须是 boolean（允许空对象）
 			for (const [k, v] of Object.entries(data.schematicFields)) {
 				if (typeof v !== 'boolean') {
-					publishDebugLog('warn', `配置验证失败: schematicFields.${k} 不是 boolean`);
+					publishDebugLog('warn', `Config validation failed: schematicFields.${k} is not a boolean`);
 					publishToIFrame(CHAT_TOPICS.ERROR, {
 						message: `配置保存失败: schematicFields.${k} 值无效`,
 						code: 'CONFIG_VALIDATION_FAILED',
@@ -930,12 +930,12 @@ function setupChatListeners(): void {
 			try {
 				const url = new URL(data.apiUrl);
 				if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-					publishDebugLog('warn', '配置验证失败: apiUrl 必须是 http 或 https 协议');
+					publishDebugLog('warn', 'Config validation failed: apiUrl must use HTTP or HTTPS');
 					return;
 				}
 			}
 			catch {
-				publishDebugLog('warn', '配置验证失败: apiUrl 格式无效');
+				publishDebugLog('warn', 'Config validation failed: apiUrl has an invalid format');
 				return;
 			}
 		}
@@ -943,12 +943,12 @@ function setupChatListeners(): void {
 			try {
 				const gatewayUrl = new URL(data.mcpGatewayUrl);
 				if (gatewayUrl.protocol !== 'http:' && gatewayUrl.protocol !== 'https:') {
-					publishDebugLog('warn', '配置验证失败: mcpGatewayUrl 必须是 http 或 https 协议');
+					publishDebugLog('warn', 'Config validation failed: mcpGatewayUrl must use HTTP or HTTPS');
 					return;
 				}
 			}
 			catch {
-				publishDebugLog('warn', '配置验证失败: mcpGatewayUrl 格式无效');
+				publishDebugLog('warn', 'Config validation failed: mcpGatewayUrl has an invalid format');
 				return;
 			}
 		}
@@ -956,12 +956,12 @@ function setupChatListeners(): void {
 			try {
 				const bridgeUrl = new URL(data.mcpBridgeUrl);
 				if (bridgeUrl.protocol !== 'ws:' && bridgeUrl.protocol !== 'wss:') {
-					publishDebugLog('warn', '配置验证失败: mcpBridgeUrl 必须是 ws 或 wss 协议');
+					publishDebugLog('warn', 'Config validation failed: mcpBridgeUrl must use WS or WSS');
 					return;
 				}
 			}
 			catch {
-				publishDebugLog('warn', '配置验证失败: mcpBridgeUrl 格式无效');
+				publishDebugLog('warn', 'Config validation failed: mcpBridgeUrl has an invalid format');
 				return;
 			}
 		}
@@ -973,7 +973,7 @@ function setupChatListeners(): void {
 		// 记录自定义系统提示词变更
 		if (data.customSystemPrompt !== undefined) {
 			const trimmed = typeof data.customSystemPrompt === 'string' ? data.customSystemPrompt.trim() : '';
-			publishDebugLog('info', `[CONFIG_UPDATE] 自定义系统提示词${trimmed ? '已设置' : '已清空'}`, {
+			publishDebugLog('info', `[CONFIG_UPDATE] Custom system prompt ${trimmed ? 'set' : 'cleared'}`, {
 				length: trimmed.length,
 			});
 		}
@@ -982,7 +982,7 @@ function setupChatListeners(): void {
 
 		if (!result.success) {
 			publishToIFrame(CHAT_TOPICS.ERROR, {
-				message: `配置保存失败: ${result.error || '未知错误'}`,
+				message: `Failed to save config: ${result.error || 'unknown error'}`,
 				code: 'CONFIG_SAVE_FAILED',
 			});
 			return;
@@ -1012,7 +1012,7 @@ function setupChatListeners(): void {
 		// 若字段配置有变更，刷新所有现有会话
 		if (data.schematicFields !== undefined) {
 			const newFields = result.config.schematicFields;
-			publishDebugLog('info', '[CONFIG_UPDATE] schematicFields 已变更，刷新所有会话字段配置', {
+			publishDebugLog('info', '[CONFIG_UPDATE] schematicFields changed. Refreshing field settings for all sessions', {
 				sessionCount: state.chatSessions.size,
 				hasData: !!state.cachedSchematicData,
 			});
@@ -1036,36 +1036,36 @@ function setupChatListeners(): void {
 
 		// 验证数组大小
 		if (data.messages.length > 100) {
-			publishDebugLog('warn', '历史记录验证失败: 会话数量过多');
+			publishDebugLog('warn', 'History validation failed: too many sessions');
 			return;
 		}
 
 		// 验证每个会话的结构
 		for (const session of data.messages) {
 			if (!session || typeof session !== 'object') {
-				publishDebugLog('warn', '历史记录验证失败: 无效的会话结构');
+				publishDebugLog('warn', 'History validation failed: invalid session structure');
 				return;
 			}
 			if (!session.id || typeof session.id !== 'string' || session.id.length > 100) {
-				publishDebugLog('warn', '历史记录验证失败: 无效的会话 ID');
+				publishDebugLog('warn', 'History validation failed: invalid session ID');
 				return;
 			}
 			if (!Array.isArray(session.messages) || session.messages.length > 1000) {
-				publishDebugLog('warn', '历史记录验证失败: 无效的会话消息列表');
+				publishDebugLog('warn', 'History validation failed: invalid session message list');
 				return;
 			}
 			// 验证消息结构
 			for (const msg of session.messages) {
 				if (!msg || typeof msg !== 'object') {
-					publishDebugLog('warn', '历史记录验证失败: 无效的消息结构');
+					publishDebugLog('warn', 'History validation failed: invalid message structure');
 					return;
 				}
 				if (!msg.role || (msg.role !== 'user' && msg.role !== 'ai')) {
-					publishDebugLog('warn', '历史记录验证失败: 无效的消息角色');
+					publishDebugLog('warn', 'History validation failed: invalid message role');
 					return;
 				}
 				if (typeof msg.content !== 'string' || msg.content.length > 100000) {
-					publishDebugLog('warn', '历史记录验证失败: 无效的消息内容');
+					publishDebugLog('warn', 'History validation failed: invalid message content');
 					return;
 				}
 			}
@@ -1075,7 +1075,7 @@ function setupChatListeners(): void {
 
 		if (!result.success) {
 			publishToIFrame(CHAT_TOPICS.ERROR, {
-				message: `历史记录保存失败: ${result.error || '未知错误'}`,
+				message: `Failed to save history: ${result.error || 'unknown error'}`,
 				code: 'HISTORY_SAVE_FAILED',
 			});
 		}
@@ -1084,7 +1084,7 @@ function setupChatListeners(): void {
 	// 监听清空会话请求（支持按 sessionId 清空或全部清空）
 	subscribe(CHAT_TOPICS.CLEAR_SESSION, (data: any) => {
 		if (currentEpoch !== state.listenerEpoch) {
-			publishDebugLog('warn', '[CLEAR_SESSION] 丢弃过期订阅回调', {
+			publishDebugLog('warn', '[CLEAR_SESSION] Dropping stale subscription callback', {
 				callbackEpoch: currentEpoch,
 				currentEpoch: state.listenerEpoch,
 			});
@@ -1116,7 +1116,7 @@ function setupChatListeners(): void {
 	// 监听恢复会话请求（从历史记录恢复上下文）
 	subscribe('ai-chat/restore-session', (data: any) => {
 		if (currentEpoch !== state.listenerEpoch) {
-			publishDebugLog('warn', '[RESTORE_SESSION] 丢弃过期订阅回调', {
+			publishDebugLog('warn', '[RESTORE_SESSION] Dropping stale subscription callback', {
 				callbackEpoch: currentEpoch,
 				currentEpoch: state.listenerEpoch,
 			});
@@ -1159,7 +1159,7 @@ function setupChatListeners(): void {
 			});
 		}
 
-		publishDebugLog('info', '[restoreSession] 会话恢复完成', {
+		publishDebugLog('info', '[restoreSession] Session restore completed', {
 			sessionId,
 			messageCount: messages.length,
 		});
@@ -1178,12 +1178,12 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 	// 验证必需字段
 	if (!msg.requestId || !msg.sessionId) {
 		publishToIFrame(CHAT_TOPICS.ERROR, {
-			message: '消息格式错误：缺少 requestId 或 sessionId',
+			message: 'Invalid message format: requestId or sessionId is missing',
 		});
 		return;
 	}
 
-	publishDebugLog('info', '[handleUserMessage] 收到请求', {
+	publishDebugLog('info', '[handleUserMessage] Request received', {
 		requestId: msg.requestId,
 		sessionId: msg.sessionId,
 		hasText: !!msg.text,
@@ -1195,14 +1195,14 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 	if (!state.requestGuard.tryAcquire(msg.requestId)) {
 		const completed = state.requestGuard.getCompleted(msg.requestId);
 		if (completed) {
-			publishDebugLog('info', '[handleUserMessage] 忽略已完成请求', {
+			publishDebugLog('info', '[handleUserMessage] Ignoring request that already completed', {
 				requestId: msg.requestId,
 				elapsed: Date.now() - completed.timestamp,
 				outcome: completed.outcome,
 			});
 		}
 		else {
-			publishDebugLog('warn', '[handleUserMessage] 忽略重复请求（正在处理中）', {
+			publishDebugLog('warn', '[handleUserMessage] Ignoring duplicate request that is already in progress', {
 				requestId: msg.requestId,
 				guardProcessingCount: state.requestGuard.processingCount,
 			});
@@ -1218,7 +1218,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		if (msg.text && msg.text.length > 50000) {
 			requestOutcome = 'rejected';
 			publishToIFrame(CHAT_TOPICS.ERROR, {
-				message: '消息过长（最大 50000 字符）',
+				message: 'The message is too long (maximum 50000 characters)',
 				requestId: msg.requestId,
 				sessionId: msg.sessionId,
 			});
@@ -1230,7 +1230,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 			if (msg.images.length > 10) {
 				requestOutcome = 'rejected';
 				publishToIFrame(CHAT_TOPICS.ERROR, {
-					message: '图片数量过多（最大 10 张）',
+					message: 'Too many images (maximum 10)',
 					requestId: msg.requestId,
 					sessionId: msg.sessionId,
 				});
@@ -1241,7 +1241,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 				if (img.data && img.data.length > 10 * 1024 * 1024) {
 					requestOutcome = 'rejected';
 					publishToIFrame(CHAT_TOPICS.ERROR, {
-						message: '图片过大（单张最大 10MB）',
+						message: 'An image is too large (maximum 10 MB per image)',
 						requestId: msg.requestId,
 						sessionId: msg.sessionId,
 					});
@@ -1285,7 +1285,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 				publishToolEvent,
 			);
 			state.toolOrchestratorsBySession.set(msg.sessionId, toolOrchestrator);
-			publishDebugLog('info', '[handleUserMessage] 创建新的 ToolOrchestrator', {
+			publishDebugLog('info', '[handleUserMessage] Created a new ToolOrchestrator', {
 				requestId: msg.requestId,
 				sessionId: msg.sessionId,
 			});
@@ -1293,7 +1293,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		else {
 			// 复用时必须更新 requestId，否则工具事件会携带旧请求 ID，
 			// 导致前端匹配不到当前消息，创建多余的工具调用提示框
-			publishDebugLog('info', '[handleUserMessage] 复用已有 ToolOrchestrator，更新 requestId', {
+			publishDebugLog('info', '[handleUserMessage] Reusing the existing ToolOrchestrator and updating requestId', {
 				requestId: msg.requestId,
 				sessionId: msg.sessionId,
 			});
@@ -1313,7 +1313,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 					eventId: `tool-list-error-${Date.now()}`,
 					stage: 'tools-list',
 					status: 'error',
-					title: '加载工具清单失败，继续纯文本对话',
+					title: 'Failed to load tool list. Continuing with plain-text conversation',
 					error: toolListError instanceof Error ? toolListError.message : String(toolListError),
 					timestamp: Date.now(),
 				});
@@ -1355,7 +1355,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 
 		if (abortController.signal.aborted) {
 			requestOutcome = 'aborted';
-			publishDebugLog('info', '[handleUserMessage] 请求已中止', {
+			publishDebugLog('info', '[handleUserMessage] Request aborted', {
 				requestId: msg.requestId,
 				sessionId: msg.sessionId,
 			});
@@ -1373,7 +1373,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 			sessionId: msg.sessionId,
 		});
 
-		publishDebugLog('success', '[handleUserMessage] 响应发送完成', {
+		publishDebugLog('success', '[handleUserMessage] Response sent successfully', {
 			requestId: msg.requestId,
 			sessionId: msg.sessionId,
 			replyLength: reply.length,
@@ -1381,7 +1381,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		});
 	}
 	catch (error) {
-		publishDebugLog('error', '[handleUserMessage] 处理失败', {
+		publishDebugLog('error', '[handleUserMessage] Processing failed', {
 			requestId: msg.requestId,
 			sessionId: msg.sessionId,
 			error: error instanceof Error ? error.message : String(error),
@@ -1390,7 +1390,7 @@ async function handleUserMessage(msg: UserMessage): Promise<void> {
 		// 如果是中止错误，静默处理
 		if (isAbortError(error)) {
 			requestOutcome = 'aborted';
-			publishDebugLog('info', '[handleUserMessage] 中止错误，静默处理', {
+			publishDebugLog('info', '[handleUserMessage] Abort error handled silently', {
 				requestId: msg.requestId,
 				sessionId: msg.sessionId,
 			});
@@ -1419,9 +1419,9 @@ async function handleLocateRequest(reference: string): Promise<void> {
 	try {
 		// 判断是器件位号还是网络名
 		const isComponent = /^[URCLDQJK]\d+$/i.test(reference);
-		const type = isComponent ? '器件' : '网络';
+		const type = isComponent ? 'component' : 'net';
 
-		publishDebugLog('info', `[定位] 尝试定位${type}`, {
+		publishDebugLog('info', `[locate] Attempting to locate ${type}`, {
 			reference,
 			type: isComponent ? 'component' : 'net',
 		});
@@ -1448,20 +1448,20 @@ async function handleLocateRequest(reference: string): Promise<void> {
 		}
 
 		if (success) {
-			publishDebugLog('success', `[定位] ${type}定位成功`, {
+			publishDebugLog('success', `[locate] ${type} located successfully`, {
 				reference,
 				type: isComponent ? 'component' : 'net',
 			});
 		}
 		else {
-			publishDebugLog('warn', `[定位] ${type}定位失败：API 返回 false（可能不存在或不在当前页面）`, {
+			publishDebugLog('warn', `[locate] Failed to locate ${type}: API returned false (it may not exist or may not be on the current page)`, {
 				reference,
 				type: isComponent ? 'component' : 'net',
 			});
 		}
 	}
 	catch (error) {
-		publishDebugLog('error', '[定位] 定位异常', {
+		publishDebugLog('error', '[locate] Locate operation failed', {
 			reference,
 			error: error instanceof Error ? error.message : String(error),
 		});
@@ -1506,7 +1506,7 @@ function clearAllChatSessions(): void {
 	clearSessionCache(); // 清空 MCP Session 缓存
 	state.toolOrchestratorsBySession.clear(); // 清空 ToolOrchestrator 缓存
 
-	publishDebugLog('info', '[clearAllChatSessions] 已清理所有会话状态（RequestGuard 保持不变）');
+	publishDebugLog('info', '[clearAllChatSessions] Cleared all session state (RequestGuard preserved)');
 }
 
 // ============ 中止管理 ============
@@ -1519,17 +1519,17 @@ function handleAbortRequest(data: AbortRequest): void {
 	const sessionId = typeof data?.sessionId === 'string' ? data.sessionId : '';
 
 	if (!requestId || !sessionId) {
-		publishDebugLog('warn', '[abort] 请求格式无效', { requestId, sessionId });
+		publishDebugLog('warn', '[abort] Invalid request format', { requestId, sessionId });
 		return;
 	}
 
 	const pending = state.pendingRequests.get(requestId);
 	if (!pending) {
-		publishDebugLog('info', '[abort] 未找到进行中请求', { requestId, sessionId });
+		publishDebugLog('info', '[abort] No in-progress request was found', { requestId, sessionId });
 		return;
 	}
 	if (pending.sessionId !== sessionId) {
-		publishDebugLog('warn', '[abort] sessionId 不匹配，忽略', {
+		publishDebugLog('warn', '[abort] sessionId mismatch, ignoring request', {
 			requestId,
 			expectedSessionId: pending.sessionId,
 			actualSessionId: sessionId,
@@ -1538,7 +1538,7 @@ function handleAbortRequest(data: AbortRequest): void {
 	}
 
 	pending.abortController.abort();
-	publishDebugLog('info', '[abort] 请求已中止', { requestId, sessionId });
+	publishDebugLog('info', '[abort] Request aborted', { requestId, sessionId });
 	publishPausedCompleteBlocks(requestId, sessionId, pending);
 	state.pendingRequests.delete(requestId);
 }
@@ -1552,7 +1552,7 @@ async function handleRegenerateRequest(data: RegenerateRequest): Promise<void> {
 
 	if (!requestId || !sessionId) {
 		publishToIFrame(CHAT_TOPICS.ERROR, {
-			message: '重新生成请求格式错误',
+			message: 'Invalid regenerate-request format',
 			code: 'REGENERATE_REQUEST_INVALID',
 		});
 		return;
@@ -1564,7 +1564,7 @@ async function handleRegenerateRequest(data: RegenerateRequest): Promise<void> {
 	const session = state.chatSessions.get(sessionId);
 	if (!session) {
 		publishToIFrame(CHAT_TOPICS.ERROR, {
-			message: '未找到可重新生成的会话',
+			message: 'No session was found for regeneration',
 			code: 'REGENERATE_SESSION_NOT_FOUND',
 			requestId,
 			sessionId,
@@ -1575,7 +1575,7 @@ async function handleRegenerateRequest(data: RegenerateRequest): Promise<void> {
 	const lastUserMessage = state.lastUserMessageBySession.get(sessionId);
 	if (!lastUserMessage) {
 		publishToIFrame(CHAT_TOPICS.ERROR, {
-			message: '当前会话没有可重新生成的用户消息',
+			message: 'The current session has no user message that can be regenerated',
 			code: 'REGENERATE_NO_MESSAGE',
 			requestId,
 			sessionId,
@@ -1749,7 +1749,7 @@ function publishToIFrame(topic: string, data: unknown): void {
 		eda.sys_MessageBus.publishPublic(topic, data);
 	}
 	catch (error) {
-		console.warn('发布消息失败:', topic, error instanceof Error ? error.message : '未知错误');
+		console.warn('Failed to publish message:', topic, error instanceof Error ? error.message : 'unknown error');
 	}
 }
 

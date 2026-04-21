@@ -1,5 +1,5 @@
 /**
- * AI 原理图助手 - 扩展入口
+ * AI Schematic Assistant - extension entrypoint
  */
 import { showConfigDialog } from './review/config';
 import { isCollectionInProgress, startAIChat, triggerBackgroundCollection } from './review/orchestrator';
@@ -11,7 +11,7 @@ let autoCollectorInitialized = false;
 let lastObservedSchematicUuid: string | null = null;
 
 /**
- * 扩展激活入口：初始化后台采集定时监控
+ * Extension activation entrypoint. Initializes background collection monitoring.
  */
 export function activate(status?: 'onStartupFinished', arg?: string): void {
 	void status;
@@ -22,15 +22,15 @@ export function activate(status?: 'onStartupFinished', arg?: string): void {
 	}
 	autoCollectorInitialized = true;
 
-	// 防御式清理，避免重复注册同名定时器
+	// Defensively clear any existing timer to avoid duplicate registration.
 	try {
 		eda.sys_Timer.clearIntervalTimer(AUTO_COLLECT_TIMER_ID);
 	}
 	catch (error) {
-		console.warn('[auto-collect] 清理旧定时器失败(可忽略):', error);
+		console.warn('[auto-collect] Failed to clear previous timer (safe to ignore):', error);
 	}
 
-	// 启动定时器：每5秒检测文档变化
+	// Start the timer and check for document changes every 5 seconds.
 	eda.sys_Timer.setIntervalTimer(
 		AUTO_COLLECT_TIMER_ID,
 		AUTO_COLLECT_INTERVAL_MS,
@@ -39,61 +39,61 @@ export function activate(status?: 'onStartupFinished', arg?: string): void {
 		},
 	);
 
-	// 立即执行一次，不等待第一个 5s 周期
+	// Run once immediately instead of waiting for the first interval.
 	void probeDocumentAndTriggerCollection();
 }
 
 /**
- * 检测当前文档变化并触发后台采集
+ * Detect changes to the current document and trigger background collection.
  */
 async function probeDocumentAndTriggerCollection(): Promise<void> {
 	try {
-		// 如果正在采集中，跳过本次检测（避免被逐页采集的内部切页干扰）
+		// Skip checks while collection is in progress to avoid interference from page switching.
 		if (isCollectionInProgress()) {
 			return;
 		}
 
 		const docInfo = await eda.dmt_SelectControl.getCurrentDocumentInfo();
 		if (!docInfo || docInfo.documentType !== 1 || !docInfo.uuid) {
-			// 不是原理图文档或无效文档
+			// Not a valid schematic document.
 			lastObservedSchematicUuid = null;
 			return;
 		}
 		if (lastObservedSchematicUuid === docInfo.uuid) {
-			// 文档未变化，跳过采集
+			// Document did not change.
 			return;
 		}
 		lastObservedSchematicUuid = docInfo.uuid;
-		console.warn('[auto-collect] 检测到原理图切换，触发后台采集:', docInfo.uuid);
-		// 触发后台采集（不通知 IFrame，因为可能没有打开对话面板）
+		console.warn('[auto-collect] Schematic switch detected, triggering background collection:', docInfo.uuid);
+		// Trigger background collection without notifying the IFrame.
 		void triggerBackgroundCollection(`doc-change:${docInfo.uuid}`, false);
 	}
 	catch (error) {
-		console.warn('[auto-collect] 后台文档变化检测失败:', error);
+		console.warn('[auto-collect] Background document-change detection failed:', error);
 	}
 }
 
 /**
- * AI原理图对话助手入口
+ * AI schematic chat assistant entrypoint.
  */
 export function aiSchematicReview(): void {
 	startAIChat().catch((error) => {
 		const message = error instanceof Error ? error.message : String(error);
-		console.error('[aiSchematicReview] AI Chat 启动失败:', message);
+		console.error('[aiSchematicReview] Failed to start AI chat:', message);
 		try {
 			eda.sys_Dialog.showInformationMessage(
-				`AI助手启动失败: ${message}`,
-				'启动失败',
+				`Failed to start AI assistant: ${message}`,
+				'Startup Failed',
 			);
 		}
 		catch (dialogError) {
-			console.warn('[aiSchematicReview] 启动失败对话框显示失败:', dialogError);
+			console.warn('[aiSchematicReview] Failed to show startup error dialog:', dialogError);
 		}
 	});
 }
 
 /**
- * AI配置入口
+ * AI configuration entrypoint.
  */
 export function aiReviewConfig(): void {
 	showConfigDialog();

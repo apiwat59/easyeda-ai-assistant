@@ -99,26 +99,26 @@ export class ChatSession {
 	 * 构建数据更新通知消息（包含数据摘要，帮助 AI 确认数据已变化）
 	 */
 	private static buildDataUpdateNotice(data: CollectedData): string {
-		return `[系统通知] 用户已修改原理图并重新采集数据。
+		return `[System Notice] The user modified the schematic and the data was collected again.
 
-当前最新数据摘要：${data.components.length} 个器件、${data.pins.length} 个引脚、${data.nets.length} 个网络。
+Latest data summary: ${data.components.length} components, ${data.pins.length} pins, ${data.nets.length} nets.
 
-重要：你当前对话最开头的 system prompt 中的 <schematic_data> 就是最新版本的数据，请直接从中查找信息来回答问题。不要依赖你在之前对话轮次中的分析结论，因为器件/连接可能已被用户修改。`;
+Important: the <schematic_data> block in the first system prompt of this conversation is now the latest version. Use it directly when answering questions. Do not rely on conclusions from previous turns, because components and connections may have changed.`;
 	}
 
 	private static buildDataUpdateAck(data: CollectedData): string {
-		return `收到，我已确认 system prompt 中的 <schematic_data> 已更新为最新版本（${data.components.length} 个器件、${data.pins.length} 个引脚、${data.nets.length} 个网络）。我将直接从 system prompt 的数据中查找信息来回答后续问题，不依赖之前的分析结论。`;
+		return `Understood. I confirm that the <schematic_data> block in the system prompt has been updated to the latest version (${data.components.length} components, ${data.pins.length} pins, ${data.nets.length} nets). I will answer follow-up questions by checking that data directly instead of relying on earlier conclusions.`;
 	}
 
 	/**
 	 * 判断一条消息是否为数据更新通知（用于 clear() 跳过和去重）
 	 */
 	private static isDataUpdateNotice(content: string | unknown): boolean {
-		return typeof content === 'string' && content.startsWith('[系统通知] 用户已修改原理图并重新采集数据。');
+		return typeof content === 'string' && content.startsWith('[System Notice] The user modified the schematic and the data was collected again.');
 	}
 
 	private static isDataUpdateAck(content: string | unknown): boolean {
-		return typeof content === 'string' && content.startsWith('收到，我已确认 system prompt 中的 <schematic_data> 已更新为最新版本');
+		return typeof content === 'string' && content.startsWith('Understood. I confirm that the <schematic_data> block in the system prompt has been updated to the latest version');
 	}
 
 	/**
@@ -147,7 +147,7 @@ export class ChatSession {
 			) {
 				this.history[len - 2].content = ChatSession.buildDataUpdateNotice(data);
 				this.history[len - 1].content = ChatSession.buildDataUpdateAck(data);
-				logDebug('info', '[setSchematicContext] 更新末尾通知对的数据摘要', {
+				logDebug('info', '[setSchematicContext] Updated the summary in the trailing notice pair', {
 					historyLength: len,
 					components: data.components.length,
 					pins: data.pins.length,
@@ -164,7 +164,7 @@ export class ChatSession {
 				role: 'assistant',
 				content: ChatSession.buildDataUpdateAck(data),
 			});
-			logDebug('info', '[setSchematicContext] 已注入数据更新通知到 history', {
+			logDebug('info', '[setSchematicContext] Injected the data-update notice into history', {
 				historyLength: this.history.length,
 				components: data.components.length,
 				pins: data.pins.length,
@@ -172,7 +172,7 @@ export class ChatSession {
 			});
 		}
 		else {
-			logDebug('info', '[setSchematicContext] history 为空，仅更新 schematicContext（不注入通知）');
+			logDebug('info', '[setSchematicContext] History is empty. Only schematicContext was updated (no notice injected)');
 		}
 	}
 
@@ -217,7 +217,7 @@ export class ChatSession {
 		options?: SendMessageOptions,
 	): Promise<string> {
 		if (signal?.aborted) {
-			throw createAbortReviewError('请求在发送前已取消', undefined, signal.reason);
+			throw createAbortReviewError('The request was canceled before sending', undefined, signal.reason);
 		}
 
 		const systemPrompt = buildChatSystemPrompt(this.schematicContext, config.customSystemPrompt);
@@ -225,7 +225,7 @@ export class ChatSession {
 			? config.customSystemPrompt.trim()
 			: '';
 		if (customPromptTrimmed) {
-			logDebug('info', '[sendMessage] 已启用自定义系统提示词', {
+			logDebug('info', '[sendMessage] Custom system prompt is enabled', {
 				length: customPromptTrimmed.length,
 			});
 		}
@@ -247,18 +247,18 @@ export class ChatSession {
 			let round = 1;
 			while (true) {
 				if (signal?.aborted) {
-					throw createAbortReviewError('请求已取消', undefined, signal.reason);
+					throw createAbortReviewError('The request was canceled', undefined, signal.reason);
 				}
 
 				// 硬性上限保护（防止死循环）
 				if (round > hardLimitRounds) {
-					logDebug('warn', `工具调用轮次达到硬性上限（${hardLimitRounds}），强制终止`, { round });
-					throw new Error(`工具调用轮次达到硬性上限（>${hardLimitRounds}），可能存在循环调用问题`);
+					logDebug('warn', `Tool-call rounds reached the hard limit (${hardLimitRounds}). Forcing termination`, { round });
+					throw new Error(`Tool-call rounds exceeded the hard limit (>${hardLimitRounds}), which may indicate a loop`);
 				}
 
 				// 软提醒（超过建议轮次时警告但继续）
 				if (round > warnToolRounds) {
-					logDebug('warn', `工具调用轮次超过建议值（${warnToolRounds}），当前第 ${round} 轮`, { round, warnToolRounds });
+					logDebug('warn', `Tool-call rounds exceeded the recommended limit (${warnToolRounds}). Current round: ${round}`, { round, warnToolRounds });
 				}
 
 				// 每轮都基于最新历史重建消息
@@ -269,7 +269,7 @@ export class ChatSession {
 
 				const result = await callOpenAICompatibleChat(messages, config, signal, availableTools);
 
-				logDebug('info', `[sendMessage] 第 ${round} 轮 API 返回`, {
+				logDebug('info', `[sendMessage] API returned in round ${round}`, {
 					round,
 					hasText: !!result.textContent,
 					textLength: result.textContent.length,
@@ -288,13 +288,13 @@ export class ChatSession {
 
 					if (!options?.onToolCalls) {
 						// 无工具执行器时回退成普通文本提示，避免死循环
-						const fallbackText = result.textContent || '模型请求了工具调用，但当前未启用工具执行。';
+						const fallbackText = result.textContent || 'The model requested a tool call, but tool execution is not enabled.';
 						this.history.pop();
 						this.history.push({
 							role: 'assistant',
 							content: fallbackText,
 						});
-						logDebug('info', '[sendMessage] 无工具执行器，回退为纯文本（触发 emitCompleteBlocks）', {
+						logDebug('info', '[sendMessage] No tool executor is available. Falling back to plain text (emitting complete blocks)', {
 							round,
 							fallbackTextLength: fallbackText.length,
 						});
@@ -309,7 +309,7 @@ export class ChatSession {
 							role: 'tool',
 							tool_call_id: firstCall.id,
 							name: firstCall.function.name,
-							content: '工具执行器未返回结果。',
+							content: 'The tool executor did not return a result.',
 						});
 						round++;
 						continue;
@@ -328,7 +328,7 @@ export class ChatSession {
 				}
 
 				// 普通文本回答结束：仅在此处向 UI 发送事件，避免工具调用中间轮次重复触发
-				logDebug('info', `[sendMessage] 最终文本响应（第 ${round} 轮），触发 emitCompleteBlocks`, {
+				logDebug('info', `[sendMessage] Final text response in round ${round}; emitting complete blocks`, {
 					round,
 					textLength: result.textContent.length,
 					reasoningLength: result.reasoningContent.length,
@@ -372,14 +372,14 @@ export class ChatSession {
 					}
 				}
 				this.history.splice(i);
-				logDebug('info', '[clear] 已回滚最后一轮对话', {
+				logDebug('info', '[clear] Rolled back the last conversation turn', {
 					removedFromIndex: i,
 					remainingHistoryLength: this.history.length,
 				});
 				return;
 			}
 		}
-		logDebug('warn', '[clear] 未找到可回滚的真实用户消息', {
+		logDebug('warn', '[clear] No real user message was found to roll back', {
 			historyLength: this.history.length,
 		});
 	}
@@ -488,7 +488,7 @@ async function makeRequest(
 	const abortPromise = signal
 		? new Promise<never>((_, reject) => {
 				const onAbort = (): void => {
-					reject(createAbortReviewError('请求已取消', url, signal.reason));
+					reject(createAbortReviewError('The request was canceled', url, signal.reason));
 				};
 
 				if (signal.aborted) {
@@ -521,7 +521,7 @@ async function makeRequest(
 
 		if (!response.ok) {
 			const errorText = await response.text();
-			logDebug('warn', 'AI HTTP 非成功响应', {
+			logDebug('warn', 'AI HTTP request returned a non-success response', {
 				url,
 				status: response.status,
 				bodyLength: coerceToString(errorText).length,
@@ -530,7 +530,7 @@ async function makeRequest(
 		}
 
 		if (signal?.aborted) {
-			throw createAbortReviewError('请求已取消', url, signal.reason);
+			throw createAbortReviewError('The request was canceled', url, signal.reason);
 		}
 
 		// 读取完整响应（EDA API 不支持真正的流式传输）
@@ -539,26 +539,26 @@ async function makeRequest(
 			const rawResponseText = await response.text();
 			// 防御性类型转换：确保是字符串
 			responseText = coerceToString(rawResponseText);
-			logDebug('info', 'response.text() 成功', {
+			logDebug('info', 'response.text() succeeded', {
 				url,
 				textLength: responseText.length,
 				textType: typeof rawResponseText,
 			});
 		}
 		catch (error) {
-			logDebug('error', 'response.text() 失败', {
+			logDebug('error', 'response.text() failed', {
 				url,
 				error: error instanceof Error ? error.message : String(error),
 			});
 			throw new ReviewError(
 				ErrorCode.AI_INVALID_RESPONSE,
-				`读取响应内容失败: ${error instanceof Error ? error.message : String(error)}`,
+				`Failed to read response content: ${error instanceof Error ? error.message : String(error)}`,
 				{ url, originalError: serializeUnknownError(error) },
 			);
 		}
 
 		if (signal?.aborted) {
-			throw createAbortReviewError('请求已取消', url, signal.reason);
+			throw createAbortReviewError('The request was canceled', url, signal.reason);
 		}
 
 		// 检查是否是 SSE 格式
@@ -568,7 +568,7 @@ async function makeRequest(
 			|| responseText.startsWith('data:')
 			|| responseText.includes('\ndata:');
 
-		logDebug('info', '响应格式检测', {
+		logDebug('info', 'Response format detection', {
 			contentType,
 			isSSE,
 			startsWithData: responseText.startsWith('data:'),
@@ -585,13 +585,13 @@ async function makeRequest(
 			data = JSON.parse(responseText);
 		}
 		catch (parseError) {
-			logDebug('error', 'AI响应JSON解析失败', {
+			logDebug('error', 'Failed to parse AI response JSON', {
 				url,
 				responseLength: responseText.length,
 			});
 			throw new ReviewError(
 				ErrorCode.AI_INVALID_RESPONSE,
-				'AI响应解析失败：返回了非JSON内容',
+				'Failed to parse the AI response: the server returned non-JSON content',
 				{
 					url,
 					responseBody: responseText.substring(0, 2000),
@@ -605,7 +605,7 @@ async function makeRequest(
 		const reasoningContent = extractReasoningText(data);
 		const toolCalls = extractToolCalls(data);
 
-		logDebug('info', '原始提取结果', {
+		logDebug('info', 'Raw extraction result', {
 			textLength: textContent.length,
 			reasoningLength: reasoningContent.length,
 			toolCallCount: toolCalls.length,
@@ -615,7 +615,7 @@ async function makeRequest(
 		if (!textContent && !reasoningContent && toolCalls.length === 0) {
 			throw new ReviewError(
 				ErrorCode.AI_INVALID_RESPONSE,
-				'AI响应中既没有 content/reasoning_content，也没有 tool_calls',
+				'The AI response contained neither content/reasoning_content nor tool_calls',
 				{
 					url,
 					responseBody: JSON.stringify(data).substring(0, 2000),
@@ -629,10 +629,10 @@ async function makeRequest(
 		// 合并提取的 reasoning（优先使用非空白的 reasoningContent）
 		const finalReasoning = hasNonWhitespace(reasoningContent) ? reasoningContent : extractedReasoning;
 
-		logDebug('info', '最终提取结果', {
+		logDebug('info', 'Final extraction result', {
 			finalTextLength: finalText.length,
 			finalReasoningLength: finalReasoning.length,
-			reasoningSource: hasNonWhitespace(reasoningContent) ? 'API字段' : (extractedReasoning ? '<think>标签' : '无'),
+			reasoningSource: hasNonWhitespace(reasoningContent) ? 'API field' : (extractedReasoning ? '<think> tag' : 'none'),
 			toolCallCount: toolCalls.length,
 		});
 
@@ -640,7 +640,7 @@ async function makeRequest(
 	}
 	catch (error) {
 		if (isAbortLikeError(error)) {
-			throw createAbortReviewError('请求已取消', url, signal?.reason);
+			throw createAbortReviewError('The request was canceled', url, signal?.reason);
 		}
 
 		if (error instanceof ReviewError) {
@@ -651,8 +651,8 @@ async function makeRequest(
 		if (error instanceof Error) {
 			const msg = error.message.toLowerCase();
 			const permissionKeywords = [
-				'外部交互权限',
-				'外部交互',
+				'external interaction permission',
+				'external interaction',
 				'external interaction',
 				'permission denied',
 				'access denied',
@@ -662,7 +662,7 @@ async function makeRequest(
 			if (permissionKeywords.some(keyword => msg.includes(keyword.toLowerCase()))) {
 				throw new ReviewError(
 					ErrorCode.AI_NETWORK_ERROR,
-					'未启用扩展的外部交互权限。请在扩展管理器中找到本扩展，勾选"允许外部交互"选项。',
+					'External interaction permission is not enabled for this extension. Open the extension manager and enable "Allow external interaction".',
 					{
 						url,
 						originalError: serializeUnknownError(error),
@@ -673,7 +673,7 @@ async function makeRequest(
 
 		throw new ReviewError(
 			ErrorCode.AI_NETWORK_ERROR,
-			`网络请求失败: ${error instanceof Error ? error.message : String(error)}`,
+			`Network request failed: ${error instanceof Error ? error.message : String(error)}`,
 			{
 				url,
 				originalError: serializeUnknownError(error),
@@ -700,14 +700,14 @@ async function makeRequest(
 function parseSSEResponse(text: string): ChatCompletionResult {
 	// 防御性检查
 	if (!text || typeof text !== 'string') {
-		logDebug('error', 'SSE响应为空或格式错误', {
+		logDebug('error', 'The SSE response is empty or malformed', {
 			textType: typeof text,
 			textValue: text,
 		});
-		throw new ReviewError(ErrorCode.AI_INVALID_RESPONSE, 'SSE响应为空或格式错误');
+		throw new ReviewError(ErrorCode.AI_INVALID_RESPONSE, 'The SSE response is empty or malformed');
 	}
 
-	logDebug('info', '开始解析 SSE 响应', {
+	logDebug('info', 'Starting SSE response parsing', {
 		textLength: text.length,
 	});
 
@@ -782,13 +782,13 @@ function parseSSEResponse(text: string): ChatCompletionResult {
 		}
 	}
 
-	logDebug('info', 'SSE 解析完成（累积阶段）', {
+	logDebug('info', 'SSE parsing completed (accumulation phase)', {
 		textLength: textContent.length,
 		reasoningLength: reasoningContent.length,
 	});
 
 	if (parseErrorCount > 0) {
-		logDebug('warn', 'SSE 事件解析存在失败片段', { parseErrorCount });
+		logDebug('warn', 'Some SSE event fragments failed to parse', { parseErrorCount });
 	}
 
 	// 第二阶段：提取标签
@@ -801,30 +801,30 @@ function parseSSEResponse(text: string): ChatCompletionResult {
 				return match.replace(/<\/?(?:think|thought|thinking)>/gi, '').trim();
 			}).join('\n\n');
 			textContent = textContent.replace(thinkTagRegex, '').trim();
-			logDebug('info', '从 <think> 标签提取 reasoning', {
+			logDebug('info', 'Extracted reasoning from the <think> tag', {
 				extractedLength: reasoningContent.length,
 				matchCount: thinkMatches.length,
 			});
 		}
 		else {
-			logDebug('warn', '未找到完整的 <think> 标签', {
+			logDebug('warn', 'A complete <think> tag was not found', {
 				hasOpenTag: textContent.includes('<think>'),
 				hasCloseTag: textContent.includes('</think>'),
 			});
 		}
 	}
 
-	logDebug('info', 'SSE 最终提取结果', {
+	logDebug('info', 'Final SSE extraction result', {
 		textLength: textContent.length,
 		reasoningLength: reasoningContent.length,
 		toolCallCount: toolCallsBuffer.size,
-		reasoningSource: reasoningContent ? 'SSE delta' : '无',
+		reasoningSource: reasoningContent ? 'SSE delta' : 'none',
 	});
 
 	const toolCalls = buildToolCallsFromBuffer(toolCallsBuffer);
 
 	if (!textContent && !reasoningContent && toolCalls.length === 0) {
-		throw new ReviewError(ErrorCode.AI_INVALID_RESPONSE, '无法从SSE响应中提取内容');
+		throw new ReviewError(ErrorCode.AI_INVALID_RESPONSE, 'Failed to extract content from the SSE response');
 	}
 
 	return { textContent, reasoningContent, toolCalls };
@@ -977,15 +977,15 @@ function handleHttpError(status: number, errorText: unknown, url: string): never
 	let errorCode = ErrorCode.AI_NETWORK_ERROR;
 
 	if (status === 401 || status === 403) {
-		errorMessage = 'API Key 无效或权限不足';
+		errorMessage = 'The API key is invalid or does not have permission';
 		errorCode = ErrorCode.AI_AUTH_ERROR;
 	}
 	else if (status === 429) {
-		errorMessage = 'API 请求频率超限，请稍后重试';
+		errorMessage = 'The API rate limit was exceeded. Please retry later';
 		errorCode = ErrorCode.AI_RATE_LIMIT;
 	}
 	else if (status >= 500) {
-		errorMessage = 'AI 服务暂时不可用';
+		errorMessage = 'The AI service is temporarily unavailable';
 		errorCode = ErrorCode.AI_SERVER_ERROR;
 	}
 

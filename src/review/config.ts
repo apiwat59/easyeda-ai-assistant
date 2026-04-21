@@ -1,9 +1,9 @@
 import type { ConfigStore, SchematicFieldsConfig } from './types';
 /**
- * AI原理图审查 - 配置管理
+ * AI schematic review - configuration management
  *
- * 使用 eda.sys_Storage 持久化存储AI审查配置
- * 注意：扩展主上下文中 localStorage 不可用，必须使用 EDA 提供的存储 API
+ * Uses `eda.sys_Storage` to persist AI review settings.
+ * Note: `localStorage` is not available in the extension host context.
  */
 import { AIProvider, DEFAULT_SCHEMATIC_FIELDS } from './types';
 
@@ -11,8 +11,8 @@ const CONFIG_KEY = 'ai-sch-review-config';
 const HISTORY_KEY = 'ai-sch-chat-history';
 
 /**
- * 归一化 schematicFields 配置：
- * 将存储中的字段值 merge 到默认配置，过滤非布尔值，保证结构完整
+ * Normalize `schematicFields` by merging stored values into the defaults
+ * and filtering out any non-boolean values.
  */
 function mergeSchematicFields(saved?: unknown): Required<SchematicFieldsConfig> {
 	const merged: Required<SchematicFieldsConfig> = { ...DEFAULT_SCHEMATIC_FIELDS };
@@ -30,7 +30,7 @@ function mergeSchematicFields(saved?: unknown): Required<SchematicFieldsConfig> 
 }
 
 /**
- * 默认配置
+ * Default configuration.
  */
 const DEFAULT_CONFIG: ConfigStore = {
 	provider: AIProvider.OPENAI_COMPATIBLE,
@@ -49,10 +49,10 @@ const DEFAULT_CONFIG: ConfigStore = {
 	schematicFields: { ...DEFAULT_SCHEMATIC_FIELDS },
 };
 
-// ============ 存储污染检测与修复 ============
+// ============ Storage Corruption Detection and Repair ============
 
 /**
- * 判断错误是否为存储污染导致
+ * Check whether an error was caused by corrupted extension storage.
  */
 function isStorageCorruptionError(e: unknown): boolean {
 	const msg = e instanceof Error ? e.message : String(e);
@@ -60,10 +60,7 @@ function isStorageCorruptionError(e: unknown): boolean {
 }
 
 /**
- * 检测并修复存储污染
- * 某些情况下扩展存储区可能被意外写入非对象值（如 API key 字符串），
- * 导致后续 setExtensionUserConfig 失败（Cannot create property on string）
- * 返回 true 表示污染已修复
+ * Detect and repair corrupted extension storage.
  */
 async function repairStorageIfCorrupted(): Promise<boolean> {
 	try {
@@ -71,21 +68,21 @@ async function repairStorageIfCorrupted(): Promise<boolean> {
 		const corrupted = allConfigs !== undefined
 			&& (allConfigs === null || Array.isArray(allConfigs) || typeof allConfigs !== 'object');
 		if (corrupted) {
-			console.warn('[config] 检测到存储污染，正在修复...', typeof allConfigs);
+			console.warn('[config] Corrupted storage detected. Attempting repair...', typeof allConfigs);
 			const cleared = await eda.sys_Storage.clearExtensionAllUserConfigs?.();
 			return cleared === true;
 		}
 	}
 	catch {
-		// 忽略：部分 EDA 版本可能不支持这些 API
+		// Ignore: some EasyEDA versions may not support these APIs.
 	}
 	return false;
 }
 
-// ============ 配置读写 ============
+// ============ Config Read / Write ============
 
 /**
- * 从 eda.sys_Storage 加载配置
+ * Load configuration from `eda.sys_Storage`.
  */
 export function loadConfig(): ConfigStore {
 	try {
@@ -93,7 +90,6 @@ export function loadConfig(): ConfigStore {
 		if (!raw) {
 			return { ...DEFAULT_CONFIG, schematicFields: { ...DEFAULT_SCHEMATIC_FIELDS } };
 		}
-		// raw 可能是对象或字符串
 		const parsed = typeof raw === 'string' ? JSON.parse(raw) as Partial<ConfigStore> : raw as Partial<ConfigStore>;
 		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
 			void repairStorageIfCorrupted();
@@ -110,7 +106,7 @@ export function loadConfig(): ConfigStore {
 }
 
 /**
- * 保存配置到 eda.sys_Storage
+ * Save configuration to `eda.sys_Storage`.
  */
 export async function saveConfig(config: Partial<ConfigStore>): Promise<{ success: boolean; config: ConfigStore; error?: string }> {
 	const current = loadConfig();
@@ -118,7 +114,7 @@ export async function saveConfig(config: Partial<ConfigStore>): Promise<{ succes
 	try {
 		const success = await eda.sys_Storage.setExtensionUserConfig(CONFIG_KEY, merged);
 		if (!success) {
-			return { success: false, config: current, error: '存储写入失败' };
+			return { success: false, config: current, error: 'Failed to write configuration to storage' };
 		}
 		const saved = loadConfig();
 		return { success: true, config: saved };
@@ -127,7 +123,7 @@ export async function saveConfig(config: Partial<ConfigStore>): Promise<{ succes
 		const errMsg = e instanceof Error ? e.message : String(e);
 
 		if (isStorageCorruptionError(e) && await repairStorageIfCorrupted()) {
-			console.warn('[config] 存储污染导致保存失败，修复后重试');
+			console.warn('[config] Save failed due to corrupted storage. Retrying after repair.');
 			try {
 				const retrySuccess = await eda.sys_Storage.setExtensionUserConfig(CONFIG_KEY, merged);
 				if (retrySuccess) {
@@ -136,52 +132,51 @@ export async function saveConfig(config: Partial<ConfigStore>): Promise<{ succes
 				}
 			}
 			catch (retryError) {
-				console.warn('[config] 修复后重试仍然失败:', retryError);
+				console.warn('[config] Retry after repair still failed:', retryError);
 			}
 		}
 
-		console.warn('保存配置失败:', e);
+		console.warn('Failed to save configuration:', e);
 		return { success: false, config: current, error: errMsg };
 	}
 }
 
 /**
- * 校验配置是否可用于AI请求
+ * Validate whether a configuration is usable for AI requests.
  */
 export function validateConfig(config: ConfigStore): string | null {
 	if (!config.apiKey || config.apiKey.trim().length === 0) {
-		return 'API Key未配置';
+		return 'API key is not configured';
 	}
 	if (!config.model || config.model.trim().length === 0) {
-		return 'Model未配置';
+		return 'Model is not configured';
 	}
 	if (!config.apiUrl || config.apiUrl.trim().length === 0) {
-		return 'API URL未配置';
+		return 'API URL is not configured';
 	}
 
-	// MCP 启用时验证 Gateway URL
 	if (config.mcpEnabled) {
 		if (!config.mcpGatewayUrl || config.mcpGatewayUrl.trim().length === 0) {
-			return 'MCP Gateway URL未配置';
+			return 'MCP gateway URL is not configured';
 		}
 		try {
 			const gatewayUrl = new URL(config.mcpGatewayUrl);
 			if (gatewayUrl.protocol !== 'http:' && gatewayUrl.protocol !== 'https:') {
-				return 'MCP Gateway URL必须是http或https协议';
+				return 'MCP gateway URL must use HTTP or HTTPS';
 			}
 		}
 		catch {
-			return 'MCP Gateway URL格式无效';
+			return 'MCP gateway URL is invalid';
 		}
 	}
 
 	return null;
 }
 
-// ============ 对话历史 ============
+// ============ Chat History ============
 
 /**
- * 加载对话历史记录
+ * Load chat history.
  */
 export function loadChatHistory(): unknown[] {
 	try {
@@ -199,13 +194,13 @@ export function loadChatHistory(): unknown[] {
 }
 
 /**
- * 保存对话历史记录
+ * Save chat history.
  */
 export async function saveChatHistory(messages: unknown[]): Promise<{ success: boolean; error?: string }> {
 	try {
 		const success = await eda.sys_Storage.setExtensionUserConfig(HISTORY_KEY, messages);
 		if (!success) {
-			return { success: false, error: '存储写入失败' };
+			return { success: false, error: 'Failed to write chat history to storage' };
 		}
 		return { success: true };
 	}
@@ -213,7 +208,7 @@ export async function saveChatHistory(messages: unknown[]): Promise<{ success: b
 		const errMsg = e instanceof Error ? e.message : String(e);
 
 		if (isStorageCorruptionError(e) && await repairStorageIfCorrupted()) {
-			console.warn('[config] 存储污染导致历史记录保存失败，修复后重试');
+			console.warn('[config] Chat history save failed due to corrupted storage. Retrying after repair.');
 			try {
 				const retrySuccess = await eda.sys_Storage.setExtensionUserConfig(HISTORY_KEY, messages);
 				if (retrySuccess) {
@@ -221,29 +216,28 @@ export async function saveChatHistory(messages: unknown[]): Promise<{ success: b
 				}
 			}
 			catch (retryError) {
-				console.warn('[config] 历史记录修复后重试仍然失败:', retryError);
+				console.warn('[config] Chat history retry after repair still failed:', retryError);
 			}
 		}
 
-		console.warn('保存历史记录失败:', e);
+		console.warn('Failed to save chat history:', e);
 		return { success: false, error: errMsg };
 	}
 }
 
 /**
- * 显示配置对话框
+ * Show a basic configuration dialog.
  */
 export function showConfigDialog(): void {
 	const config = loadConfig();
 
-	// 使用简单的对话框提示用户配置
 	eda.sys_Dialog.showInformationMessage(
-		`当前配置：
+		`Current configuration:
 Provider: ${config.provider}
 Model: ${config.model}
-API Key: ${config.apiKey ? '已配置' : '未配置'}
+API Key: ${config.apiKey ? 'Configured' : 'Not configured'}
 
-请在审查面板中点击"配置"按钮进行设置。`,
-		'AI审查配置',
+Open the review panel and click "Configure AI" to edit these settings.`,
+		'AI Review Configuration',
 	);
 }

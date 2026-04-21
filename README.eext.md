@@ -1,60 +1,44 @@
-# AI 原理图检查助手
+# AI Schematic Assistant
 
-基于嘉立创 EDA 专业版的 AI 原理图检查助手。
+An AI-powered schematic review assistant for EasyEDA Pro.
 
-## 核心特点
+## Core Idea
 
-本插件可以直接以文字形式获取原理图信息，让 AI 真正理解你的电路设计。
+This plugin converts schematic information into structured text so AI can understand your circuit design more accurately than screenshot-only workflows.
 
-传统方式只能截图给 AI 看，AI 无法准确识别器件型号、引脚连接、网络关系等细节。
+## Features
 
-本插件将原理图的器件、引脚、网络等信息转换为文字格式，AI 可以精确理解每个器件的连接关系，提供专业的电路分析和建议。
+- Structured schematic extraction for components, pins, and nets
+- AI chat for schematic analysis
+- Clickable references that jump to schematic objects
+- Refresh support after schematic edits
+- Conversation history
+- MCP tool support
+- MCP data exposure for external AI tools
+- Custom system prompts
+- Grouped configuration panels
 
-## 功能展示
+## Installation
 
-![功能截图1](screenshots/screenshot-1.png)
+1. Open EasyEDA Pro
+2. Go to Extensions -> Extension Manager
+3. Search for `AI Schematic Assistant`
+4. Install the extension
+5. Restart EasyEDA Pro
 
-![功能截图2](screenshots/screenshot-2.png)
+## Usage
 
-![功能截图3](screenshots/screenshot-3.png)
+1. Open a schematic
+2. Open the `AI Review` menu and launch `AI Schematic Review...`
+3. Configure your AI API settings
+4. Start chatting with the assistant
 
-![功能截图4](screenshots/screenshot-4.png)
+## Open Source
 
-## 功能特性
+- Repository: [https://github.com/jifengshandian/easyeda-ai-assistant](https://github.com/jifengshandian/easyeda-ai-assistant)
+- Issues: [https://github.com/jifengshandian/easyeda-ai-assistant/issues](https://github.com/jifengshandian/easyeda-ai-assistant/issues)
+- Full documentation: [https://github.com/jifengshandian/easyeda-ai-assistant/blob/main/README.md](https://github.com/jifengshandian/easyeda-ai-assistant/blob/main/README.md)
 
-- **文字形式获取原理图** - 器件、引脚、网络信息完整提取
-- **AI 对话分析** - 与 AI 对话，分析原理图设计
-- **智能跳转定位** - 点击对话中的器件标签直接跳转到原理图
-- **刷新按钮** - 修改原理图后一键刷新，AI 自动感知最新数据
-- **历史记录保存** - 自动保存对话历史，随时回顾
-- **MCP 工具支持** - 支持通过 MCP 协议调用外部工具
-- **MCP 数据暴露** - 让 Cursor、Claude Code 等外部 AI 工具读取原理图数据，支持器件查询、网络追踪、BOM 生成、电源分析等 14 个工具
-- **自定义系统提示词** - 个性化 AI 回答风格或附加指令
-- **配置折叠分组** - 配置面板按功能分组折叠，清爽不杂乱
+## License
 
-## 安装
-
-1. 打开嘉立创 EDA 专业版
-2. 进入 扩展 → 扩展管理器
-3. 搜索 "AI 原理图检查助手"
-4. 点击安装
-5. 重启 EasyEDA Pro
-
-## 使用
-
-1. 打开原理图
-2. 点击菜单 AI 检查 → AI 原理图检查助手
-3. 配置 AI API（API URL 和 API Key）
-4. 开始与 AI 对话
-
-## 开源地址
-
-本项目完全开源，欢迎贡献代码和反馈问题：
-
-- **GitHub 仓库**：[https://github.com/jifengshandian/easyeda-ai-assistant](https://github.com/jifengshandian/easyeda-ai-assistant)
-- **问题反馈**：[https://github.com/jifengshandian/easyeda-ai-assistant/issues](https://github.com/jifengshandian/easyeda-ai-assistant/issues)
-- **完整文档**：[https://github.com/jifengshandian/easyeda-ai-assistant/blob/main/README.md](https://github.com/jifengshandian/easyeda-ai-assistant/blob/main/README.md)
-
-## 许可证
-
-本项目采用 Apache 2.0 许可证。
+Apache 2.0

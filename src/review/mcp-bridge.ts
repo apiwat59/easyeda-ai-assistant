@@ -160,7 +160,7 @@ function normalizeBridgeUrl(raw?: string): string {
 	try {
 		const parsed = new URL(trimmed);
 		if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:') {
-			bridgeLog('warn', 'MCP Bridge 地址协议无效，回退到默认值', { input: trimmed });
+			bridgeLog('warn', 'Invalid MCP Bridge protocol. Falling back to the default URL', { input: trimmed });
 			return DEFAULT_BRIDGE_URL;
 		}
 		// 移除纯根路径的尾部 /
@@ -171,7 +171,7 @@ function normalizeBridgeUrl(raw?: string): string {
 		return normalized;
 	}
 	catch {
-		bridgeLog('warn', 'MCP Bridge 地址格式无效，回退到默认值', { input: trimmed });
+		bridgeLog('warn', 'Invalid MCP Bridge URL format. Falling back to the default URL', { input: trimmed });
 		return DEFAULT_BRIDGE_URL;
 	}
 }
@@ -230,7 +230,7 @@ function sendRaw(json: string): boolean {
 		return true;
 	}
 	catch (error) {
-		bridgeLog('warn', '发送失败，触发重连', { error: toMsg(error) });
+		bridgeLog('warn', 'Send failed. Triggering reconnect', { error: toMsg(error) });
 		forceReconnect('send-failed');
 		return false;
 	}
@@ -244,7 +244,7 @@ function sendMessage(message: Record<string, unknown>): boolean {
 		return sendRaw(JSON.stringify(message));
 	}
 	catch (error) {
-		bridgeLog('error', '消息序列化失败', { type: message.type, error: toMsg(error) });
+		bridgeLog('error', 'Failed to serialize message', { type: message.type, error: toMsg(error) });
 		return false;
 	}
 }
@@ -287,13 +287,13 @@ function sendCachedSnapshot(source: 'connect' | 'request_data' | 'push'): void {
 	const state = getBridgeState();
 	if (!state.pendingSnapshot) {
 		if (source === 'request_data') {
-			bridgeLog('info', '收到 request_data 但当前无可发送快照');
+			bridgeLog('info', 'Received request_data, but there is no snapshot available to send');
 		}
 		return;
 	}
 
 	if (sendRaw(state.pendingSnapshot.json)) {
-		bridgeLog('success', `已发送原理图快照 (${source})`, {
+		bridgeLog('success', `Schematic snapshot sent (${source})`, {
 			version: state.pendingSnapshot.version,
 		});
 	}
@@ -329,7 +329,7 @@ function startHealthCheck(): void {
 
 		const idleMs = Date.now() - state.lastMessageAt;
 		if (idleMs > HEARTBEAT_TIMEOUT_MS) {
-			bridgeLog('warn', '心跳超时，触发重连', { idleMs, timeoutMs: HEARTBEAT_TIMEOUT_MS });
+			bridgeLog('warn', 'Heartbeat timed out. Triggering reconnect', { idleMs, timeoutMs: HEARTBEAT_TIMEOUT_MS });
 			forceReconnect('heartbeat-timeout');
 		}
 	});
@@ -364,7 +364,7 @@ function scheduleReconnect(reason: string): void {
 		RECONNECT_MAX_MS,
 	);
 
-	bridgeLog('info', `自动重连已安排 (#${attempt})`, { reason, delayMs, url: state.url });
+	bridgeLog('info', `Reconnect scheduled automatically (#${attempt})`, { reason, delayMs, url: state.url });
 
 	setOneShotTimer(TIMER_RECONNECT, delayMs, () => {
 		const current = getBridgeState();
@@ -397,7 +397,7 @@ function handleConnected(epoch: number): void {
 	// 启动健康检查
 	startHealthCheck();
 
-	bridgeLog('success', 'MCP Bridge 已连接', { url: state.url, epoch });
+	bridgeLog('success', 'MCP Bridge connected', { url: state.url, epoch });
 
 	// 发送 hello 握手
 	sendHello();
@@ -429,17 +429,17 @@ function handleMessage(epoch: number, event: any): void {
 			msg = rawData as Record<string, unknown>;
 		}
 		else {
-			bridgeLog('warn', '收到无法解析的消息', { rawData });
+			bridgeLog('warn', 'Received an unparsable message', { rawData });
 			return;
 		}
 	}
 	catch {
-		bridgeLog('warn', '收到非 JSON 消息', { rawData });
+		bridgeLog('warn', 'Received a non-JSON message', { rawData });
 		return;
 	}
 
 	if (typeof msg.type !== 'string') {
-		bridgeLog('warn', '收到缺少 type 字段的消息', { msg });
+		bridgeLog('warn', 'Received a message without a type field', { msg });
 		return;
 	}
 
@@ -459,11 +459,11 @@ function handleMessage(epoch: number, event: any): void {
 			break;
 		}
 		case 'ack': {
-			bridgeLog('info', '收到快照确认', { version: msg.version });
+			bridgeLog('info', 'Snapshot acknowledged', { version: msg.version });
 			break;
 		}
 		default: {
-			bridgeLog('warn', `收到未知消息类型: ${msg.type}`);
+			bridgeLog('warn', `Received an unknown message type: ${msg.type}`);
 			break;
 		}
 	}
@@ -488,7 +488,7 @@ function connectNow(reason: string): void {
 	state.connecting = true;
 	state.connected = false;
 
-	bridgeLog('info', '开始连接 MCP Bridge', { reason, url: state.url, epoch });
+	bridgeLog('info', 'Starting MCP Bridge connection', { reason, url: state.url, epoch });
 
 	try {
 		// 先关闭可能残存的旧连接
@@ -509,13 +509,13 @@ function connectNow(reason: string): void {
 		// 检测权限类错误（如未授权"外部交互"权限），此类错误无法通过重连恢复
 		const isPermissionError = /权限|permission|外部交互|not\s*allowed|forbidden|unauthorized/i.test(errorMsg);
 		if (isPermissionError) {
-			bridgeLog('error', 'MCP Bridge 连接被拒绝（可能缺少"外部交互"权限），已停止重连', { url: state.url, error: errorMsg });
+			bridgeLog('error', 'MCP Bridge connection was denied, possibly due to missing external-interaction permission. Reconnect has been stopped', { url: state.url, error: errorMsg });
 			state.initialized = false;
 			state.manualClose = true;
 			return;
 		}
 
-		bridgeLog('warn', '注册 WS 失败', { url: state.url, error: errorMsg });
+		bridgeLog('warn', 'Failed to register WebSocket', { url: state.url, error: errorMsg });
 		scheduleReconnect('register-failed');
 		return;
 	}
@@ -527,7 +527,7 @@ function connectNow(reason: string): void {
 			return;
 
 		current.connecting = false;
-		bridgeLog('warn', '连接超时', { url: current.url, epoch, timeoutMs: CONNECT_TIMEOUT_MS });
+		bridgeLog('warn', 'Connection timed out', { url: current.url, epoch, timeoutMs: CONNECT_TIMEOUT_MS });
 		scheduleReconnect('connect-timeout');
 	});
 }
@@ -569,7 +569,7 @@ export function initMcpBridge(url?: string): void {
 
 	// 地址变化时断开旧连接
 	if (urlChanged && (state.connected || state.connecting)) {
-		bridgeLog('info', 'MCP Bridge 地址变更，重新连接', { newUrl: nextUrl });
+		bridgeLog('info', 'MCP Bridge URL changed. Reconnecting', { newUrl: nextUrl });
 		retireConnection(4001, 'url-changed');
 	}
 
@@ -617,14 +617,14 @@ export function pushSnapshot(data: CollectedData): void {
 		state.pendingSnapshot = { version, json: JSON.stringify(message) };
 	}
 	catch (error) {
-		bridgeLog('error', '快照序列化失败', { version, error: toMsg(error) });
+		bridgeLog('error', 'Failed to serialize snapshot', { version, error: toMsg(error) });
 		return;
 	}
 
 	// 已连接则立即推送
 	if (state.connected) {
 		if (sendRaw(state.pendingSnapshot.json)) {
-			bridgeLog('success', '已推送原理图快照', {
+			bridgeLog('success', 'Schematic snapshot pushed', {
 				version,
 				components: data.components.length,
 				pins: data.pins.length,
@@ -633,7 +633,7 @@ export function pushSnapshot(data: CollectedData): void {
 		}
 	}
 	else {
-		bridgeLog('info', '快照已缓存，等待连接后发送', { version });
+		bridgeLog('info', 'Snapshot cached and will be sent after the connection is established', { version });
 	}
 }
 
@@ -652,7 +652,7 @@ export function disconnectMcpBridge(): void {
 	clearTimer(TIMER_RECONNECT);
 	retireConnection(1000, 'manual-disconnect');
 
-	bridgeLog('info', 'MCP Bridge 已手动断开');
+	bridgeLog('info', 'MCP Bridge disconnected manually');
 }
 
 /**

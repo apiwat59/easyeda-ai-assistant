@@ -209,7 +209,7 @@ export class ToolOrchestrator {
 		// 仅输出控制台调试信息（非警告级别，属于正常流程）
 		// eslint-disable-next-line no-console
 		console.log(
-			`[tool-orchestrator] requestId 已更新: ${oldRequestId.substring(0, 12)}→${requestId.substring(0, 12)}`,
+			`[tool-orchestrator] requestId updated: ${oldRequestId.substring(0, 12)}→${requestId.substring(0, 12)}`,
 		);
 	}
 
@@ -225,7 +225,7 @@ export class ToolOrchestrator {
 		this.emit({
 			stage: 'tools-list',
 			status: 'running',
-			title: '正在拉取 MCP 工具清单',
+			title: 'Loading MCP tool list',
 		});
 
 		try {
@@ -266,7 +266,7 @@ export class ToolOrchestrator {
 			this.emit({
 				stage: 'tools-list',
 				status: 'success',
-				title: `已加载 ${tools.length} 个 MCP 工具`,
+				title: `Loaded ${tools.length} MCP tools`,
 				detail: truncateText(tools.map(tool => tool.function.name).join(', '), 240),
 			});
 
@@ -276,7 +276,7 @@ export class ToolOrchestrator {
 			this.emit({
 				stage: 'tools-list',
 				status: 'error',
-				title: '工具清单加载失败',
+				title: 'Failed to load tool list',
 				error: error instanceof Error ? error.message : String(error),
 			});
 			throw error;
@@ -291,7 +291,7 @@ export class ToolOrchestrator {
 
 		for (const toolCall of toolCalls) {
 			if (signal?.aborted) {
-				throw new Error('工具调用已取消');
+				throw new Error('Tool call was canceled');
 			}
 
 			const toolName = toolCall.function.name;
@@ -302,7 +302,7 @@ export class ToolOrchestrator {
 				status: 'running',
 				toolCallId: toolCall.id,
 				toolName,
-				title: `调用工具 ${toolName}`,
+				title: `Calling tool ${toolName}`,
 				detail: argsPreview,
 			});
 
@@ -363,7 +363,7 @@ export class ToolOrchestrator {
 					status: isError ? 'error' : 'success',
 					toolCallId: toolCall.id,
 					toolName,
-					title: isError ? `工具 ${toolName} 返回错误` : `工具 ${toolName} 执行成功`,
+					title: isError ? `Tool ${toolName} returned an error` : `Tool ${toolName} completed successfully`,
 					resultPreview: truncateText(content, 320),
 				});
 			}
@@ -387,7 +387,7 @@ export class ToolOrchestrator {
 					status: 'error',
 					toolCallId: toolCall.id,
 					toolName,
-					title: `工具 ${toolName} 执行失败`,
+					title: `Tool ${toolName} failed`,
 					error: errorMessage,
 				});
 			}
@@ -412,14 +412,14 @@ export class ToolOrchestrator {
 				this.emit({
 					stage: 'mcp-session',
 					status: 'success',
-					title: `MCP Session 已缓存 (${cached.sessionId.substring(0, 8)}...)，跳过 initialize`,
+					title: `MCP session is cached (${cached.sessionId.substring(0, 8)}...), skipping initialize`,
 				});
 			}
 			else if (cached.mode === 'stateless') {
 				this.emit({
 					stage: 'mcp-session',
 					status: 'success',
-					title: 'MCP 无状态模式已初始化，跳过 initialize',
+					title: 'MCP stateless mode already initialized, skipping initialize',
 				});
 			}
 			return;
@@ -431,7 +431,7 @@ export class ToolOrchestrator {
 			this.emit({
 				stage: 'mcp-session',
 				status: 'running',
-				title: 'MCP initialize 合并到已有请求，等待中...',
+				title: 'MCP initialize merged into an existing request, waiting...',
 			});
 			const result = await existingInflight;
 			if (result?.mode === 'session' && result.sessionId) {
@@ -441,8 +441,8 @@ export class ToolOrchestrator {
 				stage: 'mcp-session',
 				status: 'success',
 				title: result?.mode === 'session'
-					? `MCP initialize 完成 (复用 ${result.sessionId!.substring(0, 8)}...)`
-					: 'MCP initialize 完成 (无状态模式)',
+					? `MCP initialize completed (reused ${result.sessionId!.substring(0, 8)}...)`
+					: 'MCP initialize completed (stateless mode)',
 			});
 			return;
 		}
@@ -451,7 +451,7 @@ export class ToolOrchestrator {
 		this.emit({
 			stage: 'mcp-session',
 			status: 'running',
-			title: '发起 MCP initialize 握手...',
+			title: 'Starting MCP initialize handshake...',
 		});
 		const inflightPromise = this.performInitialize(signal);
 		initializeInflight.set(this.gatewayBaseUrl, inflightPromise);
@@ -501,7 +501,7 @@ export class ToolOrchestrator {
 			this.emit({
 				stage: 'mcp-session',
 				status: 'success',
-				title: `MCP initialize 成功，Session ID: ${this.mcpSessionId.substring(0, 8)}...`,
+				title: `MCP initialize succeeded, session ID: ${this.mcpSessionId.substring(0, 8)}...`,
 			});
 			setCachedSessionId(this.gatewayBaseUrl, result);
 			return result;
@@ -513,7 +513,7 @@ export class ToolOrchestrator {
 		this.emit({
 			stage: 'mcp-session',
 			status: 'success',
-			title: 'MCP initialize 成功，但未获取到 Session ID (CORS?)，降级为无状态模式',
+			title: 'MCP initialize succeeded but no session ID was returned (CORS?). Falling back to stateless mode',
 		});
 		setCachedSessionId(this.gatewayBaseUrl, result);
 		return result;
@@ -526,7 +526,7 @@ export class ToolOrchestrator {
 		skipSessionHeader = false,
 	): Promise<T> {
 		if (signal?.aborted) {
-			throw new Error('请求已取消');
+			throw new Error('Request was canceled');
 		}
 
 		const url = `${this.gatewayBaseUrl}${path}`;
@@ -578,8 +578,8 @@ export class ToolOrchestrator {
 					this.emit({
 						stage: 'mcp-session',
 						status: 'error',
-						title: 'MCP Session 失效，已清除缓存',
-						error: `Gateway HTTP ${response.status}，后续请求将重新 initialize`,
+						title: 'MCP session became invalid and the cache was cleared',
+						error: `Gateway HTTP ${response.status}; future requests will re-run initialize`,
 					});
 				}
 
@@ -853,14 +853,14 @@ function parseSSEResponse(text: string): unknown {
 	}
 
 	if (!dataLine) {
-		throw new Error('SSE 响应中未找到 data 字段');
+		throw new Error('No data field was found in the SSE response');
 	}
 
 	try {
 		return JSON.parse(dataLine);
 	}
 	catch (error) {
-		throw new Error(`SSE data 解析失败: ${error instanceof Error ? error.message : String(error)}`);
+		throw new Error(`Failed to parse SSE data: ${error instanceof Error ? error.message : String(error)}`);
 	}
 }
 

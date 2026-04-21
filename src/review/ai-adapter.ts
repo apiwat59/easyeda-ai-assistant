@@ -1,7 +1,7 @@
 /**
- * AI原理图审查 - AI通信适配器
+ * AI schematic review - AI communication adapter
  *
- * 封装OpenAI兼容格式API通信，处理CORS、超时、重试
+ * Wraps OpenAI-compatible API communication, including CORS and retry handling.
  */
 import type { ConfigStore, SchReviewChunk } from './types';
 import { buildSystemPrompt, buildUserPrompt } from './prompt-builder';
@@ -9,7 +9,7 @@ import { getModelTemperature } from './reasoning-config';
 import { ErrorCode, ReviewError } from './types';
 
 /**
- * AI响应接口
+ * Parsed AI response format.
  */
 interface AIResponse {
 	must_fix: Array<{
@@ -41,7 +41,7 @@ interface AIResponse {
 }
 
 /**
- * 发送分块到AI进行审查
+ * Send a schematic chunk to the AI for review.
  */
 export async function reviewChunkWithAI(
 	chunk: SchReviewChunk,
@@ -54,7 +54,7 @@ export async function reviewChunkWithAI(
 }
 
 /**
- * 调用OpenAI兼容格式API
+ * Call an OpenAI-compatible API endpoint.
  */
 async function callOpenAICompatible(
 	systemPrompt: string,
@@ -72,7 +72,7 @@ async function callOpenAICompatible(
 		response_format: { type: 'json_object' },
 	};
 
-	// temperature 需特殊处理：o1/o3 不接受，Kimi 有硬约束
+	// Temperature requires special handling for some model families.
 	const temperature = getModelTemperature(config.model, 'none', 0.3);
 	if (temperature !== undefined) {
 		body.temperature = temperature;
@@ -82,7 +82,7 @@ async function callOpenAICompatible(
 }
 
 /**
- * 发送HTTP请求（带重试）
+ * Send an HTTP request with retry handling.
  */
 async function makeRequest(
 	url: string,
@@ -115,18 +115,17 @@ async function makeRequest(
 			return parseAIResponse(data);
 		}
 		catch (error) {
-			// P1: ReviewError应该直接透传，不应该被重试逻辑吞掉
+			// `ReviewError` should pass through directly and must not be swallowed by retry logic.
 			if (error instanceof ReviewError) {
 				throw error;
 			}
 
 			lastError = error instanceof Error ? error : new Error(String(error));
 
-			// 判断错误类型
 			if (lastError.message.includes('401') || lastError.message.includes('403')) {
 				throw new ReviewError(
 					ErrorCode.AI_AUTH_ERROR,
-					'API Key无效或权限不足',
+					'The API key is invalid or does not have permission',
 					lastError,
 				);
 			}
@@ -134,7 +133,7 @@ async function makeRequest(
 			if (lastError.message.includes('429')) {
 				throw new ReviewError(
 					ErrorCode.AI_RATE_LIMIT,
-					'API请求频率超限',
+					'The API rate limit was exceeded',
 					lastError,
 				);
 			}
@@ -142,48 +141,44 @@ async function makeRequest(
 			if (lastError.message.includes('CORS')) {
 				throw new ReviewError(
 					ErrorCode.AI_CORS_ERROR,
-					'CORS错误，请检查API地址或使用代理',
+					'CORS error. Check the API URL or use a proxy',
 					lastError,
 				);
 			}
 
-			// 如果是最后一次尝试，抛出错误
 			if (attempt === maxRetries) {
 				throw new ReviewError(
 					ErrorCode.AI_NETWORK_ERROR,
-					`网络请求失败（已重试${maxRetries}次）: ${lastError.message}`,
+					`Network request failed after ${maxRetries} attempts: ${lastError.message}`,
 					lastError,
 				);
 			}
 
-			// 等待后重试
 			await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
 		}
 	}
 
 	throw new ReviewError(
 		ErrorCode.AI_NETWORK_ERROR,
-		'网络请求失败',
+		'Network request failed',
 		lastError,
 	);
 }
 
 /**
- * 解析AI响应
+ * Parse the AI response.
  */
 function parseAIResponse(data: any): AIResponse {
 	try {
 		let contentText = '';
 
-		// OpenAI兼容格式
 		if (data.choices && data.choices[0]?.message?.content) {
 			contentText = data.choices[0].message.content;
 		}
 		else {
-			throw new Error('无法解析AI响应格式');
+			throw new Error('Unable to parse the AI response format');
 		}
 
-		// 清理markdown code fence（如果存在）
 		contentText = contentText.trim();
 		if (contentText.startsWith('```json')) {
 			contentText = contentText.replace(/^```json\s*/, '').replace(/```\s*$/, '');
@@ -198,14 +193,14 @@ function parseAIResponse(data: any): AIResponse {
 	catch (error) {
 		throw new ReviewError(
 			ErrorCode.AI_INVALID_RESPONSE,
-			`AI响应格式无效: ${error instanceof Error ? error.message : String(error)}`,
+			`Invalid AI response format: ${error instanceof Error ? error.message : String(error)}`,
 			data,
 		);
 	}
 }
 
 /**
- * 规范化响应格式
+ * Normalize the AI response structure.
  */
 function normalizeResponse(content: any): AIResponse {
 	return {

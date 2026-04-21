@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 原理图助手</title>
+    <title>AI Schematic Assistant</title>
     <style>
         :root {
             --bg-app: #f0f2f5;
@@ -1023,34 +1023,34 @@
 <body>
     <div id="sidebar">
         <div class="sidebar-header">
-            <div class="sidebar-title">原理图助手</div>
+            <div class="sidebar-title">Schematic Assistant</div>
         </div>
         <div class="sidebar-content">
             <div class="info-section">
                 <div class="info-label">
-                    <span class="info-label-text">原理图数据</span>
-                    <button class="btn-refresh" id="btn-refresh" title="刷新原理图数据">
+                    <span class="info-label-text">Schematic Data</span>
+                    <button class="btn-refresh" id="btn-refresh" title="Refresh schematic data">
                         <span class="refresh-icon">↻</span>
                     </button>
                 </div>
-                <div class="info-value" id="info-components">器件: 采集中...</div>
-                <div class="info-value" id="info-pins">引脚: 采集中...</div>
-                <div class="info-value" id="info-nets">网络: 采集中...</div>
-                <div class="info-value" id="info-tools">MCP: 未启用</div>
+                <div class="info-value" id="info-components">Components: Collecting...</div>
+                <div class="info-value" id="info-pins">Pins: Collecting...</div>
+                <div class="info-value" id="info-nets">Nets: Collecting...</div>
+                <div class="info-value" id="info-tools">MCP: Disabled</div>
             </div>
             <div class="info-section">
-                <button class="btn" id="btn-config">配置 AI</button>
+                <button class="btn" id="btn-config">Configure AI</button>
             </div>
             <div class="info-section">
-                <button class="btn btn-secondary" id="btn-new-chat">新建对话</button>
+                <button class="btn btn-secondary" id="btn-new-chat">New Chat</button>
             </div>
             <div class="info-section">
-                <button class="btn btn-secondary" id="btn-debug-log">调试日志</button>
+                <button class="btn btn-secondary" id="btn-debug-log">Debug Log</button>
             </div>
             <div class="history-section">
-                <div class="info-label">历史会话</div>
+                <div class="info-label">Chat History</div>
                 <div class="history-list" id="history-list">
-                    <div class="history-empty">暂无历史记录</div>
+                    <div class="history-empty">No history yet</div>
                 </div>
             </div>
         </div>
@@ -1061,28 +1061,28 @@
             <button class="toggle-sidebar" id="toggle-sidebar">&#9776;</button>
             <div class="status-indicator">
                 <span class="status-dot" id="status-dot"></span>
-                <span id="status-text">就绪</span>
+                <span id="status-text">Ready</span>
             </div>
             <div style="display: flex; gap: 6px;">
-                <button class="header-debug-btn" id="header-ui-settings-btn" title="界面设置">⚙️</button>
-                <button class="header-debug-btn" id="header-debug-btn" title="打开调试日志 (Ctrl+D)">🐛</button>
+                <button class="header-debug-btn" id="header-ui-settings-btn" title="UI settings">⚙️</button>
+                <button class="header-debug-btn" id="header-debug-btn" title="Open debug log (Ctrl+D)">🐛</button>
             </div>
         </div>
 
         <div id="messages">
             <div class="empty-state">
                 <div class="empty-state-icon">&#128172;</div>
-                <div class="empty-state-text">AI 原理图助手</div>
-                <div class="empty-state-hint">询问原理图问题、请求审查建议或上传截图</div>
+                <div class="empty-state-text">AI Schematic Assistant</div>
+                <div class="empty-state-hint">Ask schematic questions, request review advice, or upload screenshots</div>
             </div>
         </div>
 
         <div id="input-area">
             <div class="file-previews" id="file-previews"></div>
             <div class="input-wrapper">
-                <button class="input-btn" id="attach-btn" title="上传图片">&#128206;</button>
-                <textarea id="message-input" placeholder="输入消息... (Shift+Enter换行)" rows="1"></textarea>
-                <button class="input-btn" id="send-btn" title="发送">&#10148;</button>
+                <button class="input-btn" id="attach-btn" title="Upload images">&#128206;</button>
+                <textarea id="message-input" placeholder="Type a message... (Shift+Enter for newline)" rows="1"></textarea>
+                <button class="input-btn" id="send-btn" title="Send">&#10148;</button>
             </div>
             <input type="file" id="file-input" accept="image/*" multiple style="display: none;">
         </div>
@@ -1090,48 +1090,48 @@
 
     <div id="config-modal">
         <div class="modal-content">
-            <div class="modal-header">AI 配置</div>
+            <div class="modal-header">AI Configuration</div>
             <div class="modal-body">
                 <div class="config-section">
                     <button type="button" class="config-section-header" onclick="toggleConfigSection(this)" aria-expanded="true">
-                        <span class="config-section-arrow">▼</span> 基础配置
+                        <span class="config-section-arrow">▼</span> Basic Settings
                     </button>
                     <div class="config-section-body">
                         <div class="form-group">
-                            <label class="form-label">API 预设</label>
+                            <label class="form-label">API Preset</label>
                             <select class="form-control" id="cfg-api-preset" onchange="applyApiPreset()">
-                                <option value="custom" selected>自定义</option>
-                                <optgroup label="── 国际服务商 ──">
-                                    <option value="openai">OpenAI 官方</option>
+                                <option value="custom" selected>Custom</option>
+                                <optgroup label="── International Providers ──">
+                                    <option value="openai">OpenAI Official</option>
                                     <option value="deepseek">DeepSeek</option>
-                                    <option value="openrouter">OpenRouter (聚合平台)</option>
-                                    <option value="groq">Groq (高速推理)</option>
+                                    <option value="openrouter">OpenRouter (Aggregator)</option>
+                                    <option value="groq">Groq (Fast Inference)</option>
                                     <option value="xai">xAI Grok</option>
                                     <option value="mistral">Mistral AI</option>
                                     <option value="gemini">Google Gemini</option>
                                 </optgroup>
-                                <optgroup label="── 国内服务商 ──">
-                                    <option value="qwen">阿里通义千问</option>
-                                    <option value="glm">智谱 GLM</option>
-                                    <option value="kimi">月之暗面 Kimi</option>
-                                    <option value="siliconflow">硅基流动 (聚合平台)</option>
-                                    <option value="doubao">火山引擎豆包</option>
-                                    <option value="yi">零一万物 Yi</option>
+                                <optgroup label="── China Providers ──">
+                                    <option value="qwen">Alibaba Qwen</option>
+                                    <option value="glm">Zhipu GLM</option>
+                                    <option value="kimi">Moonshot Kimi</option>
+                                    <option value="siliconflow">SiliconFlow (Aggregator)</option>
+                                    <option value="doubao">Doubao</option>
+                                    <option value="yi">01.AI Yi</option>
                                 </optgroup>
                             </select>
-                            <div class="form-hint">选择后自动填充 API 地址和推荐模型，仍可手动修改</div>
+                            <div class="form-hint">Auto-fills the API URL and recommended model, but you can still edit them manually</div>
                         </div>
                         <div class="form-group">
-                            <label class="form-label">API 地址</label>
+                            <label class="form-label">API URL</label>
                             <input type="text" class="form-control" id="cfg-apiurl" placeholder="https://api.openai.com/v1/chat/completions">
-                            <div class="form-hint">OpenAI 兼容的 Chat Completions 接口地址</div>
+                            <div class="form-hint">OpenAI-compatible Chat Completions endpoint</div>
                         </div>
                         <div class="form-group">
                             <label class="form-label">API Key</label>
-                            <input type="password" class="form-control" id="cfg-apikey" placeholder="输入你的 API Key">
+                            <input type="password" class="form-control" id="cfg-apikey" placeholder="Enter your API key">
                         </div>
                         <div class="form-group">
-                            <label class="form-label">模型名称</label>
+                            <label class="form-label">Model Name</label>
                             <input type="text" class="form-control" id="cfg-model" value="gpt-4o">
                         </div>
                     </div>
@@ -1139,160 +1139,160 @@
 
                 <div class="config-section collapsed">
                     <button type="button" class="config-section-header" onclick="toggleConfigSection(this)" aria-expanded="false">
-                        <span class="config-section-arrow">▼</span> MCP 工具网关
+                        <span class="config-section-arrow">▼</span> MCP Tool Gateway
                     </button>
                     <div class="config-section-body">
                         <div class="form-group">
                             <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-primary);margin-bottom:6px;">
                                 <input type="checkbox" id="cfg-mcp-enabled">
-                                启用 MCP 工具调用
+                                Enable MCP tool calls
                             </label>
                             <input type="text" class="form-control" id="cfg-mcp-gateway-url" placeholder="https://mcp-gateway.example.com">
-                            <div class="form-hint">用于代理 tools/list 与 tools/call 的 Gateway 地址</div>
+                            <div class="form-hint">Gateway URL used to proxy `tools/list` and `tools/call`</div>
                         </div>
                         <div class="form-group">
-                            <label class="form-label">Gateway API Key（可选）</label>
-                            <input type="password" class="form-control" id="cfg-mcp-gateway-apikey" placeholder="可选">
+                            <label class="form-label">Gateway API Key (Optional)</label>
+                            <input type="password" class="form-control" id="cfg-mcp-gateway-apikey" placeholder="Optional">
                         </div>
                         <div class="form-group">
                             <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-primary);margin-bottom:6px;">
                                 <input type="checkbox" id="cfg-mcp-auto-approve" checked>
-                                默认自动批准工具调用
+                                Auto-approve tool calls by default
                             </label>
                         </div>
                         <div class="form-group">
-                            <label class="form-label">工具预览</label>
-                            <div class="form-hint" id="cfg-tools-preview">尚未加载工具列表</div>
+                            <label class="form-label">Tool Preview</label>
+                            <div class="form-hint" id="cfg-tools-preview">Tool list not loaded yet</div>
                         </div>
                         <div class="form-group">
-                            <label class="form-label">MCP Bridge 地址（本地数据暴露）</label>
+                            <label class="form-label">MCP Bridge URL (Local Data Exposure)</label>
                             <input type="text" class="form-control" id="cfg-mcp-bridge-url" placeholder="ws://127.0.0.1:3100">
-                            <div class="form-hint">本地 eda-mcp-server WebSocket 地址，用于向外部 AI 工具暴露原理图数据</div>
+                            <div class="form-hint">Local `eda-mcp-server` WebSocket URL used to expose schematic data to external AI tools</div>
                         </div>
                     </div>
                 </div>
 
                 <div class="config-section collapsed">
                     <button type="button" class="config-section-header" onclick="toggleConfigSection(this)" aria-expanded="false">
-                        <span class="config-section-arrow">▼</span> 原理图字段
+                        <span class="config-section-arrow">▼</span> Schematic Fields
                     </button>
                     <div class="config-section-body">
                         <div class="form-group">
                             <div class="sch-fields-toolbar">
-                                <button type="button" class="btn btn-secondary btn-xs" onclick="selectAllSchematicFields(true)">全选</button>
-                                <button type="button" class="btn btn-secondary btn-xs" onclick="selectAllSchematicFields(false)">全不选</button>
-                                <button type="button" class="btn btn-secondary btn-xs" onclick="resetSchematicFieldsToDefault()">重置默认</button>
+                                <button type="button" class="btn btn-secondary btn-xs" onclick="selectAllSchematicFields(true)">Select All</button>
+                                <button type="button" class="btn btn-secondary btn-xs" onclick="selectAllSchematicFields(false)">Select None</button>
+                                <button type="button" class="btn btn-secondary btn-xs" onclick="resetSchematicFieldsToDefault()">Reset Defaults</button>
                             </div>
                             <div class="sch-fields-section">
-                                <div class="sch-fields-group-title">器件字段</div>
+                                <div class="sch-fields-group-title">Component Fields</div>
                                 <div class="sch-fields-grid">
-                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-componentName"> 器件名称</label>
-                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-componentValue"> 器件值/型号</label>
-                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-componentManufacturer"> 制造商</label>
-                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-componentManufacturerPartNumber"> 制造商料号</label>
-                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-componentLcscPart"> LCSC 料号</label>
-                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-componentAddIntoPcb"> 加入PCB</label>
-                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-componentBomInclude"> BOM包含</label>
-                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-componentXy"> 坐标 (X/Y)</label>
-                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-componentRotation"> 旋转角度</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-componentName"> Component Name</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-componentValue"> Value / Part Number</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-componentManufacturer"> Manufacturer</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-componentManufacturerPartNumber"> Manufacturer Part Number</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-componentLcscPart"> LCSC Part Number</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-componentAddIntoPcb"> Add to PCB</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-componentBomInclude"> Include in BOM</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-componentXy"> Coordinates (X/Y)</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-componentRotation"> Rotation</label>
                                 </div>
                             </div>
                             <div class="sch-fields-section">
-                                <div class="sch-fields-group-title">引脚字段</div>
+                                <div class="sch-fields-group-title">Pin Fields</div>
                                 <div class="sch-fields-grid">
-                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-pinPinName"> 引脚名称</label>
-                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-pinPinType"> 引脚类型</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-pinPinName"> Pin Name</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-pinPinType"> Pin Type</label>
                                 </div>
                             </div>
                             <div class="sch-fields-section">
-                                <div class="sch-fields-group-title">网络字段</div>
+                                <div class="sch-fields-group-title">Net Fields</div>
                                 <div class="sch-fields-grid">
-                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-netPinCount"> 引脚数</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-netPinCount"> Pin Count</label>
                                 </div>
                             </div>
                             <div class="sch-fields-section">
-                                <div class="sch-fields-group-title">扩展数据 <span class="sch-fields-badge">默认关闭</span></div>
+                                <div class="sch-fields-group-title">Extended Data <span class="sch-fields-badge">Off by Default</span></div>
                                 <div class="sch-fields-grid">
-                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includeTexts"> 文本标注</label>
-                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includeBuses"> 总线数据</label>
-                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includeNetLabels"> 网络标记(GND/VCC等)</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includeTexts"> Text Annotations</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includeBuses"> Bus Data</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includeNetLabels"> Net Labels (GND/VCC, etc.)</label>
                                 </div>
                             </div>
                             <div class="sch-fields-section">
-                                <div class="sch-fields-group-title">图形图元 <span class="sch-fields-badge">默认关闭</span></div>
+                                <div class="sch-fields-group-title">Graphics <span class="sch-fields-badge">Off by Default</span></div>
                                 <div class="sch-fields-grid">
-                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includeArcs"> 圆弧</label>
-                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includeCircles"> 圆</label>
-                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includePolygons"> 多边形/折线</label>
-                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includeRectangles"> 矩形</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includeArcs"> Arcs</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includeCircles"> Circles</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includePolygons"> Polygons / Polylines</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includeRectangles"> Rectangles</label>
                                 </div>
                             </div>
                             <div class="sch-fields-section">
-                                <div class="sch-fields-group-title">增强数据 <span class="sch-fields-badge">默认关闭</span></div>
+                                <div class="sch-fields-group-title">Enhanced Data <span class="sch-fields-badge">Off by Default</span></div>
                                 <div class="sch-fields-grid">
-                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includePrimitivePins"> 独立引脚</label>
-                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includeDrc"> DRC 检查结果</label>
-                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includeProjectInfo"> 工程信息</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includePrimitivePins"> Standalone Pins</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includeDrc"> DRC Results</label>
+                                    <label class="sch-field-item"><input type="checkbox" id="sch-field-includeProjectInfo"> Project Info</label>
                                 </div>
                             </div>
-                            <div class="form-hint">控制发给 AI 的原理图数据范围，减少字段可节省 Token</div>
+                            <div class="form-hint">Control how much schematic data is sent to the AI. Fewer fields reduce token usage.</div>
                         </div>
                     </div>
                 </div>
 
                 <div class="config-section collapsed">
                     <button type="button" class="config-section-header" onclick="toggleConfigSection(this)" aria-expanded="false">
-                        <span class="config-section-arrow">▼</span> 高级设置
+                        <span class="config-section-arrow">▼</span> Advanced Settings
                     </button>
                     <div class="config-section-body">
                         <div class="form-group">
-                            <label class="form-label">自定义系统提示词（可选）</label>
+                            <label class="form-label">Custom System Prompt (Optional)</label>
                             <textarea class="form-control" id="cfg-custom-system-prompt" rows="4" maxlength="5000"
-                                      placeholder="例如：请用英文回答所有问题；回答时重点关注电源完整性问题"
+                                      placeholder="Example: Answer all questions in English; focus on power integrity issues"
                                       style="resize:vertical;min-height:60px;font-size:12px;"></textarea>
-                            <div class="form-hint">追加到内置提示词之后，个性化 AI 回答风格或附加指令（最多 5000 字）</div>
+                            <div class="form-hint">Appended after the built-in prompt to customize response style or add extra instructions (max 5000 characters)</div>
                         </div>
                     </div>
                 </div>
             </div>
             <div class="modal-actions">
-                <button class="btn btn-secondary" id="btn-cancel-config">取消</button>
-                <button class="btn" id="btn-save-config">保存</button>
+                <button class="btn btn-secondary" id="btn-cancel-config">Cancel</button>
+                <button class="btn" id="btn-save-config">Save</button>
             </div>
         </div>
     </div>
 
     <div id="ui-settings-modal">
         <div class="modal-content">
-            <div class="modal-header">界面设置</div>
+            <div class="modal-header">UI Settings</div>
             <div class="form-group">
-                <label class="form-label">窗口尺寸</label>
+                <label class="form-label">Window Size</label>
                 <div style="display: flex; gap: 10px; align-items: center;">
                     <div style="flex: 1;">
                         <input type="number" class="form-control" id="cfg-window-width" placeholder="960" min="400" max="3840" style="width: 100%;">
-                        <div class="form-hint" style="margin-top: 2px;">宽度 (400-3840)</div>
+                        <div class="form-hint" style="margin-top: 2px;">Width (400-3840)</div>
                     </div>
                     <span style="color: var(--text-secondary);">×</span>
                     <div style="flex: 1;">
                         <input type="number" class="form-control" id="cfg-window-height" placeholder="700" min="300" max="2160" style="width: 100%;">
-                        <div class="form-hint" style="margin-top: 2px;">高度 (300-2160)</div>
+                        <div class="form-hint" style="margin-top: 2px;">Height (300-2160)</div>
                     </div>
                 </div>
-                <div class="form-hint">保存后下次打开生效</div>
+                <div class="form-hint">Takes effect the next time you open it</div>
             </div>
             <div class="modal-actions">
-                <button class="btn btn-secondary" id="btn-cancel-ui-settings">取消</button>
-                <button class="btn" id="btn-save-ui-settings">保存</button>
+                <button class="btn btn-secondary" id="btn-cancel-ui-settings">Cancel</button>
+                <button class="btn" id="btn-save-ui-settings">Save</button>
             </div>
         </div>
     </div>
 
     <div id="error-modal">
         <div class="error-modal-content">
-            <div class="error-modal-header">错误详情</div>
+            <div class="error-modal-header">Error Details</div>
             <div class="error-modal-body" id="error-modal-body"></div>
             <div class="error-modal-footer">
-                <button class="btn btn-secondary" id="btn-close-error-modal">关闭</button>
+                <button class="btn btn-secondary" id="btn-close-error-modal">Close</button>
             </div>
         </div>
     </div>
@@ -1300,20 +1300,20 @@
     <div id="debug-modal">
         <div class="debug-modal-content">
             <div class="debug-modal-header">
-                <span>调试日志</span>
-                <span class="debug-stats" id="debug-stats">0 条日志</span>
+                <span>Debug Log</span>
+                <span class="debug-stats" id="debug-stats">0 entries</span>
             </div>
             <div class="debug-modal-body" id="debug-modal-body">
-                <div style="color: #888; text-align: center; padding: 20px;">暂无日志</div>
+                <div style="color: #888; text-align: center; padding: 20px;">No logs yet</div>
             </div>
             <div class="debug-modal-footer">
                 <div class="debug-stats">
-                    <span id="debug-filter-info">显示全部</span>
+                    <span id="debug-filter-info">Showing all</span>
                 </div>
                 <div style="display: flex; gap: 8px;">
-                    <button class="btn btn-secondary" id="btn-clear-debug-log">清空</button>
-                    <button class="btn btn-secondary" id="btn-copy-debug-log">复制全部</button>
-                    <button class="btn btn-secondary" id="btn-close-debug-modal">关闭</button>
+                    <button class="btn btn-secondary" id="btn-clear-debug-log">Clear</button>
+                    <button class="btn btn-secondary" id="btn-copy-debug-log">Copy All</button>
+                    <button class="btn btn-secondary" id="btn-close-debug-modal">Close</button>
                 </div>
             </div>
         </div>
@@ -1385,12 +1385,12 @@
             var stats = document.getElementById('debug-stats');
 
             if (debugLogs.length === 0) {
-                body.innerHTML = '<div style="color: #888; text-align: center; padding: 20px;">暂无日志</div>';
-                stats.textContent = '0 条日志';
+                body.innerHTML = '<div style="color: #888; text-align: center; padding: 20px;">No logs yet</div>';
+                stats.textContent = '0 entries';
                 return;
             }
 
-            stats.textContent = debugLogs.length + ' 条日志';
+            stats.textContent = debugLogs.length + ' entries';
 
             var html = '';
             for (var i = debugLogs.length - 1; i >= 0; i--) {
@@ -1408,9 +1408,9 @@
         }
 
         function copyDebugLogs() {
-            var text = '=== AI 原理图助手 - 调试日志 ===\n';
-            text += '生成时间: ' + new Date().toISOString() + '\n';
-            text += '日志数量: ' + debugLogs.length + '\n\n';
+            var text = '=== AI Schematic Assistant - Debug Log ===\n';
+            text += 'Generated at: ' + new Date().toISOString() + '\n';
+            text += 'Entry count: ' + debugLogs.length + '\n\n';
 
             for (var i = 0; i < debugLogs.length; i++) {
                 var log = debugLogs[i];
@@ -1468,7 +1468,7 @@
             if (_initialized) return;
             _initialized = true;
             setupEventListeners();
-            setStatus('ready', '就绪');
+            setStatus('ready', 'Ready');
             publishMessage('ai-chat/request-data', {});
             publishMessage('ai-chat/request-config', {});
             publishMessage('ai-chat/request-history', {});
@@ -1509,12 +1509,12 @@
                         if (statusEl) {
                             if (update.status === 'streaming') {
                                 var elapsed = ((Date.now() - update.startTime) / 1000).toFixed(1);
-                                statusEl.textContent = '思考中... ' + elapsed + 's';
+                                statusEl.textContent = 'Thinking... ' + elapsed + 's';
                             } else if (update.status === 'paused') {
-                                statusEl.innerHTML = '<span class="status-paused">已停止思考</span>';
+                                statusEl.innerHTML = '<span class="status-paused">Thinking stopped</span>';
                             } else {
                                 // 由于后端一次性发送所有事件，时间计算不准确，改为固定文案
-                                statusEl.textContent = 'AI已深度思考';
+                                statusEl.textContent = 'AI completed deep reasoning';
                             }
                         }
                         // 流式/完成 class 切换（expanded 由数据层 block.uiExpanded 控制，
@@ -1552,7 +1552,7 @@
                                 pausedMark.className = 'status-paused';
                                 pausedMark.style.fontSize = '11px';
                                 pausedMark.style.marginTop = '6px';
-                                pausedMark.textContent = '[已停止生成]';
+                                pausedMark.textContent = '[Generation stopped]';
                                 el.appendChild(pausedMark);
                             }
                         }
@@ -1625,7 +1625,7 @@
                             if (block.type === 'text' && block.content) {
                                 content += block.content;
                             } else if (block.type === 'error' && block.content) {
-                                content += '错误: ' + block.content;
+                                content += 'Error: ' + block.content;
                             }
                         }
                     }
@@ -1688,20 +1688,20 @@
                     return title;
                 }
             }
-            return '新对话';
+            return 'New Chat';
         }
 
         function renderHistoryList() {
             historyList.innerHTML = '';
             if (historySessions.length === 0) {
-                historyList.innerHTML = '<div class="history-empty">暂无历史记录</div>';
+                historyList.innerHTML = '<div class="history-empty">No history yet</div>';
                 return;
             }
             historySessions.forEach(function(session) {
                 var item = document.createElement('div');
                 item.className = 'history-item' + (session.id === currentSessionId ? ' active' : '');
-                item.textContent = session.title || '新对话';
-                item.title = session.title || '新对话';
+                item.textContent = session.title || 'New Chat';
+                item.title = session.title || 'New Chat';
                 item.addEventListener('click', function() { loadSession(session.id); });
                 historyList.appendChild(item);
             });
@@ -1882,9 +1882,9 @@
             var n = data.summary.nets;
 
             if (c < 0) {
-                addDebugLog('info', '原理图数据采集中...');
+                addDebugLog('info', 'Collecting schematic data...');
             } else {
-                addDebugLog('success', '原理图数据就绪', {
+                addDebugLog('success', 'Schematic data ready', {
                     components: c,
                     pins: p,
                     nets: n,
@@ -1897,9 +1897,9 @@
                 }
             }
 
-            document.getElementById('info-components').textContent = '器件: ' + (c < 0 ? '采集中...' : c);
-            document.getElementById('info-pins').textContent = '引脚: ' + (p < 0 ? '采集中...' : p);
-            document.getElementById('info-nets').textContent = '网络: ' + (n < 0 ? '采集中...' : n);
+            document.getElementById('info-components').textContent = 'Components: ' + (c < 0 ? 'Collecting...' : c);
+            document.getElementById('info-pins').textContent = 'Pins: ' + (p < 0 ? 'Collecting...' : p);
+            document.getElementById('info-nets').textContent = 'Nets: ' + (n < 0 ? 'Collecting...' : n);
         }
 
         function handleConfigData(data) {
@@ -1935,17 +1935,17 @@
             var toolsInfoEl = document.getElementById('info-tools');
             if (!toolsInfoEl) return;
             if (!currentConfig.mcpEnabled) {
-                toolsInfoEl.textContent = 'MCP: 未启用';
+                toolsInfoEl.textContent = 'MCP: Disabled';
                 return;
             }
             if (!currentConfig.mcpGatewayUrl) {
-                toolsInfoEl.textContent = 'MCP: 未配置网关';
+                toolsInfoEl.textContent = 'MCP: Gateway not configured';
                 return;
             }
             if (availableTools.length > 0) {
-                toolsInfoEl.textContent = 'MCP: 已启用 (' + availableTools.length + ' 个工具)';
+                toolsInfoEl.textContent = 'MCP: Enabled (' + availableTools.length + ' tools)';
             } else {
-                toolsInfoEl.textContent = 'MCP: 已启用 (工具加载中)';
+                toolsInfoEl.textContent = 'MCP: Enabled (loading tools)';
             }
         }
 
@@ -1953,15 +1953,15 @@
             var previewEl = document.getElementById('cfg-tools-preview');
             if (!previewEl) return;
             if (!currentConfig.mcpEnabled) {
-                previewEl.textContent = '未启用 MCP 工具';
+                previewEl.textContent = 'MCP tools are disabled';
                 return;
             }
             if (availableTools.length === 0) {
-                previewEl.textContent = '工具列表为空或尚未加载';
+                previewEl.textContent = 'Tool list is empty or not loaded yet';
                 return;
             }
             var names = availableTools.map(function(tool) { return tool.name; }).join(', ');
-            previewEl.textContent = '已加载: ' + names.substring(0, 180);
+            previewEl.textContent = 'Loaded: ' + names.substring(0, 180);
         }
 
         function handleToolsData(data) {
@@ -2042,7 +2042,7 @@
             if (!entry) {
                 entry = {
                     id: entryId,
-                    toolName: data.toolName || (data.stage === 'tools-list' ? '工具清单' : '工具调用'),
+                    toolName: data.toolName || (data.stage === 'tools-list' ? 'Tool list' : 'Tool call'),
                     status: data.status || 'pending',
                     detail: '',
                     resultPreview: '',
@@ -2084,7 +2084,7 @@
                 return;
             }
 
-            addDebugLog('info', 'AI 响应完成', {
+            addDebugLog('info', 'AI response completed', {
                 requestId: data.requestId,
                 contentLength: data.content.length
             });
@@ -2380,7 +2380,7 @@
         }
 
         function handleError(data) {
-            addDebugLog('error', '收到错误: ' + (data.message || '未知错误'), {
+            addDebugLog('error', 'Received error: ' + (data.message || 'Unknown error'), {
                 code: data.code,
                 requestId: data.requestId,
                 details: data.details
@@ -2408,7 +2408,7 @@
                     streamMsg.blocks.push({
                         id: generateUUID(),
                         type: 'error',
-                        content: data.message || '未知错误',
+                        content: data.message || 'Unknown error',
                         errorCode: data.code || '',
                         errorDetails: data.details || null,
                         status: 'error'
@@ -2429,7 +2429,7 @@
                         blocks: [{
                             id: generateUUID(),
                             type: 'error',
-                            content: data.message || '未知错误',
+                            content: data.message || 'Unknown error',
                             errorCode: data.code || '',
                             errorDetails: data.details || null,
                             status: 'error'
@@ -2450,7 +2450,7 @@
                 blocks: [{
                     id: generateUUID(),
                     type: 'error',
-                    content: data.message || '未知错误',
+                    content: data.message || 'Unknown error',
                     errorCode: data.code || '',
                     errorDetails: data.details || null,
                     status: 'error'
@@ -2515,7 +2515,7 @@
             attachedFiles = [];
             renderFilePreviews();
 
-            setStatus('thinking', 'AI 正在思考...');
+            setStatus('thinking', 'AI is thinking...');
             isThinking = true;
             updateSendButton();
 
@@ -2589,7 +2589,7 @@
             var requestId = generateUUID();
             activeRequestId = requestId;
 
-            setStatus('thinking', 'AI 正在思考...');
+            setStatus('thinking', 'AI is thinking...');
             isThinking = true;
             updateSendButton();
             renderMessages();
@@ -2610,7 +2610,7 @@
             if (activeRequestId === requestId) {
                 activeRequestId = null;
                 isThinking = false;
-                setStatus('ready', '就绪');
+                setStatus('ready', 'Ready');
                 updateSendButton();
             }
             // 清理 pendingRequests
@@ -2621,11 +2621,11 @@
             if (isThinking) {
                 sendBtn.classList.add('generating');
                 sendBtn.innerHTML = '&#9632;'; // 方块图标
-                sendBtn.title = '停止生成';
+                sendBtn.title = 'Stop generation';
             } else {
                 sendBtn.classList.remove('generating');
                 sendBtn.innerHTML = '&#10148;'; // 发送图标
-                sendBtn.title = '发送';
+                sendBtn.title = 'Send';
             }
         }
 
@@ -2746,8 +2746,8 @@
                 // 复制按钮
                 var copyBtn = document.createElement('button');
                 copyBtn.className = 'action-btn';
-                copyBtn.innerHTML = '&#128203; 复制';
-                copyBtn.title = '复制内容';
+                copyBtn.innerHTML = '&#128203; Copy';
+                copyBtn.title = 'Copy content';
                 copyBtn.addEventListener('click', function() {
                     var textContent = '';
                     for (var j = 0; j < msg.blocks.length; j++) {
@@ -2763,8 +2763,8 @@
                 if (messages[messages.length - 1] === msg && currentSessionId && !isThinking) {
                     var regenBtn = document.createElement('button');
                     regenBtn.className = 'action-btn';
-                    regenBtn.innerHTML = '&#8635; 重新生成';
-                    regenBtn.title = '重新生成回复';
+                    regenBtn.innerHTML = '&#8635; Regenerate';
+                    regenBtn.title = 'Regenerate response';
                     regenBtn.addEventListener('click', regenerateMessage);
                     actionsDiv.appendChild(regenBtn);
                 }
@@ -2791,7 +2791,7 @@
                 placeholderDiv.className = 'message-images';
                 placeholderDiv.style.color = 'var(--text-secondary)';
                 placeholderDiv.style.fontStyle = 'italic';
-                placeholderDiv.textContent = '[' + msg.imageCount + ' 张图片]';
+                placeholderDiv.textContent = '[' + msg.imageCount + ' images]';
                 bodyDiv.appendChild(placeholderDiv);
             }
 
@@ -2828,19 +2828,19 @@
             var statusSpan = document.createElement('span');
             statusSpan.className = 'thinking-status-text';
             if (block.status === 'streaming') {
-                statusSpan.textContent = '思考中...';
+                statusSpan.textContent = 'Thinking...';
             } else if (block.status === 'paused') {
-                statusSpan.innerHTML = '<span class="status-paused">已停止思考</span>';
+                statusSpan.innerHTML = '<span class="status-paused">Thinking stopped</span>';
             } else {
                 // 由于后端一次性发送所有事件，时间计算不准确，改为固定文案
-                statusSpan.textContent = 'AI已深度思考';
+                statusSpan.textContent = 'AI completed deep reasoning';
             }
 
             // 复制思考内容按钮
             var copyBtn = document.createElement('button');
             copyBtn.className = 'thinking-copy-btn';
-            copyBtn.textContent = '复制';
-            copyBtn.title = '复制思考内容';
+            copyBtn.textContent = 'Copy';
+            copyBtn.title = 'Copy reasoning content';
             copyBtn.addEventListener('click', function(e) {
                 e.stopPropagation();
                 copyToClipboard(block.content || '');
@@ -2880,12 +2880,12 @@
 
         function getToolStatusText(status) {
             switch (status) {
-                case 'pending': return '待执行';
-                case 'running': return '执行中';
-                case 'success': return '已完成';
-                case 'error': return '失败';
-                case 'skipped': return '已跳过';
-                default: return '未知';
+                case 'pending': return 'Pending';
+                case 'running': return 'Running';
+                case 'success': return 'Completed';
+                case 'error': return 'Failed';
+                case 'skipped': return 'Skipped';
+                default: return 'Unknown';
             }
         }
 
@@ -2906,11 +2906,11 @@
             var title = document.createElement('span');
             title.className = 'tool-title';
             if (block.status === 'streaming') {
-                title.textContent = '工具调用中...';
+                title.textContent = 'Tool call in progress...';
             } else if (block.status === 'error') {
-                title.textContent = '工具调用完成（含错误）';
+                title.textContent = 'Tool call finished (with errors)';
             } else {
-                title.textContent = '工具调用完成';
+                title.textContent = 'Tool call finished';
             }
 
             header.appendChild(icon);
@@ -2935,7 +2935,7 @@
                 var empty = document.createElement('div');
                 empty.style.padding = '8px';
                 empty.style.color = 'var(--text-secondary)';
-                empty.textContent = '暂无工具调用记录';
+                empty.textContent = 'No tool calls yet';
                 content.appendChild(empty);
             } else {
                 for (var i = 0; i < entries.length; i++) {
@@ -2946,7 +2946,7 @@
 
                     var entryName = document.createElement('div');
                     entryName.className = 'tool-entry-name';
-                    entryName.textContent = (entry.toolName || '未知工具') + ' - ' + getToolStatusText(entry.status || 'success');
+                    entryName.textContent = (entry.toolName || 'Unknown tool') + ' - ' + getToolStatusText(entry.status || 'success');
 
                     item.appendChild(entryName);
 
@@ -3010,7 +3010,7 @@
                     pausedMark.className = 'status-paused';
                     pausedMark.style.fontSize = '11px';
                     pausedMark.style.marginTop = '6px';
-                    pausedMark.textContent = '[已停止生成]';
+                    pausedMark.textContent = '[Generation stopped]';
                     div.appendChild(pausedMark);
                 }
             }
@@ -3028,7 +3028,7 @@
 
             var header = document.createElement('div');
             header.className = 'error-header';
-            header.innerHTML = '&#9888; ' + escapeHtml(block.content || '未知错误');
+            header.innerHTML = '&#9888; ' + escapeHtml(block.content || 'Unknown error');
             if (block.errorCode) {
                 var codeSpan = document.createElement('span');
                 codeSpan.className = 'error-code';
@@ -3040,7 +3040,7 @@
             if (block.errorDetails) {
                 var detailsBtn = document.createElement('button');
                 detailsBtn.className = 'error-details-btn';
-                detailsBtn.textContent = '查看详情';
+                detailsBtn.textContent = 'View details';
                 detailsBtn.addEventListener('click', function() {
                     showErrorDetails(block.errorDetails);
                 });
@@ -3356,7 +3356,7 @@
                 img.onerror = function() {
                     // 清理 blob URL，防止内存泄漏
                     URL.revokeObjectURL(img.src);
-                    reject(new Error('图片加载失败'));
+                    reject(new Error('Failed to load image'));
                 };
                 img.src = URL.createObjectURL(file);
             });
@@ -3377,8 +3377,8 @@
                             renderFilePreviews();
                         })
                         .catch(function(error) {
-                            addDebugLog('error', '图片压缩失败', { error: error.message || String(error) });
-                            showError('图片压缩失败: ' + error.message);
+                            addDebugLog('error', 'Image compression failed', { error: error.message || String(error) });
+                            showError('Image compression failed: ' + error.message);
                         });
                 }
             });
@@ -3506,7 +3506,7 @@
             var customSystemPrompt = document.getElementById('cfg-custom-system-prompt').value.trim();
             if (customSystemPrompt.length > 5000) {
                 addDebugLog('warn', '[配置] 自定义系统提示词超过 5000 字符限制 (' + customSystemPrompt.length + ')');
-                alert('自定义系统提示词最多 5000 字符，当前 ' + customSystemPrompt.length + ' 字符');
+                alert('The custom system prompt can be at most 5000 characters. Current length: ' + customSystemPrompt.length);
                 return;
             }
             var config = {
@@ -3566,15 +3566,15 @@
             messages = [];
             isThinking = false;
             activeRequestId = null;
-            setStatus('ready', '就绪');
+            setStatus('ready', 'Ready');
             updateSendButton();
             pendingRequests = {};
             publishMessage('ai-chat/clear-session', {});
             messagesContainer.innerHTML =
                 '<div class="empty-state">' +
                 '<div class="empty-state-icon">&#128172;</div>' +
-                '<div class="empty-state-text">AI 原理图助手</div>' +
-                '<div class="empty-state-hint">询问原理图问题、请求审查建议或上传截图</div></div>';
+                '<div class="empty-state-text">AI Schematic Assistant</div>' +
+                '<div class="empty-state-hint">Ask schematic questions, request review advice, or upload screenshots</div></div>';
             renderHistoryList();
         }
 
@@ -3594,7 +3594,7 @@
             btn.classList.add('refreshing');
 
             addDebugLog('info', '[用户操作] 手动刷新原理图数据', { timestamp: _refreshTimestamp });
-            setStatus('thinking', '正在采集原理图...');
+            setStatus('thinking', 'Collecting schematic data...');
             publishMessage('ai-chat/refresh-data', { timestamp: _refreshTimestamp });
 
             // 设置超时兜底：如果 30 秒后仍未收到响应，强制恢复按钮状态
@@ -3626,7 +3626,7 @@
             }
 
             if (!isThinking) {
-                setStatus('ready', '就绪');
+                setStatus('ready', 'Ready');
             }
         }
 
@@ -3657,8 +3657,8 @@
                 var eventMsg = {
                     id: generateUUID(),
                     role: 'system-event',
-                    content: '📋 原理图数据已更新（' + summary.components + ' 个器件，' +
-                        summary.pins + ' 个引脚，' + summary.nets + ' 个网络）',
+                    content: '📋 Schematic data updated (' + summary.components + ' components, ' +
+                        summary.pins + ' pins, ' + summary.nets + ' nets)',
                     timestamp: Date.now()
                 };
                 messages.push(eventMsg);

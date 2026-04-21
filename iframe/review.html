@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -189,7 +189,7 @@
 
     <header>
         <h2>AI Schematic Review</h2>
-        <button class="config-toggle" id="btn-toggle-config">⚙ 配置</button>
+        <button class="config-toggle" id="btn-toggle-config">⚙ Settings</button>
     </header>
 
     <div id="config-panel">
@@ -209,7 +209,7 @@
             <input type="text" class="form-control" id="cfg-model" value="gpt-4o">
         </div>
         <div style="text-align: right;">
-            <button class="btn" id="btn-save-config">保存配置</button>
+            <button class="btn" id="btn-save-config">Save Settings</button>
         </div>
     </div>
 
@@ -229,7 +229,7 @@
 
     <div id="content-area">
         <div style="text-align: center; color: var(--text-secondary); padding-top: 40px;">
-            等待审查结果...
+            Waiting for review results...
         </div>
     </div>
 
@@ -279,7 +279,7 @@
             const items = reviewData[currentTab] || [];
 
             if (items.length === 0) {
-                contentArea.innerHTML = '<div style="text-align: center; color: var(--text-secondary); padding-top: 40px;">无相关条目</div>';
+                contentArea.innerHTML = '<div style="text-align: center; color: var(--text-secondary); padding-top: 40px;">No matching items</div>';
                 return;
             }
 
@@ -301,28 +301,28 @@
                     <div class="card-header">
                         <span class="card-title">${escapeHtml(item.title)}</span>
                         <div class="confidence-wrapper">
-                            <span>置信度: ${confidencePercent}%</span>
+                            <span>Confidence: ${confidencePercent}%</span>
                             <div class="progress-bg">
                                 <div class="progress-fill" style="width: ${confidencePercent}%"></div>
                             </div>
                         </div>
                     </div>
                     <div class="card-section">
-                        <span class="section-label">原因:</span>
+                        <span class="section-label">Reason:</span>
                         <span class="section-content">${escapeHtml(item.reason)}</span>
                     </div>
                     <div class="card-section">
-                        <span class="section-label">影响:</span>
+                        <span class="section-label">Impact:</span>
                         <span class="section-content">${escapeHtml(item.impact)}</span>
                     </div>
                     <div class="card-section">
-                        <span class="section-label">建议:</span>
+                        <span class="section-label">Recommendation:</span>
                         <span class="section-content">${escapeHtml(item.fix)}</span>
                     </div>
                     ${evidenceHtml ? `<div class="evidence-tags">${evidenceHtml}</div>` : ''}
                     <div class="actions">
                         ${item.evidence?.datasheet_urls?.length ? `<button class="btn btn-sm" data-action="datasheet" data-url="${escapeHtml(item.evidence.datasheet_urls[0])}">Datasheet</button>` : ''}
-                        <button class="btn btn-sm" data-action="locate" data-evidence='${escapeHtml(JSON.stringify(item.evidence))}'>🔍 定位</button>
+                        <button class="btn btn-sm" data-action="locate" data-evidence='${escapeHtml(JSON.stringify(item.evidence))}'>🔍 Locate</button>
                     </div>
                 `;
                 contentArea.appendChild(card);
@@ -402,9 +402,9 @@
             }
             console.log('Received review data:', data);
             if (data.status) {
-                if (data.status === 'analyzing') showStatus('AI 正在分析原理图...', 'processing');
-                if (data.status === 'complete') showStatus('分析完成', 'active');
-                if (data.status === 'error') showStatus('分析失败: ' + (data.message || ''), 'active');
+                if (data.status === 'analyzing') showStatus('AI is analyzing the schematic...', 'processing');
+                if (data.status === 'complete') showStatus('Analysis complete', 'active');
+                if (data.status === 'error') showStatus('Analysis failed: ' + (data.message || ''), 'active');
             }
 
             if (data.result) {
