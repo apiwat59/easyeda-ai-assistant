@@ -1,4 +1,4 @@
-[简体中文](./README.md) | [English](./README.en.md) | [繁體中文](./README.zh-Hant.md) | [日本語](#) | [Русский](./README.ru.md)
+[简体中文](./README.md) | [English](./README.md) | [繁體中文](./README.zh-Hant.md) | [日本語](#) | [Русский](./README.ru.md)
 
 # pro-api-sdk
 
